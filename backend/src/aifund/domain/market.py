@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from decimal import Decimal
+from enum import StrEnum
 from typing import Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -169,3 +170,43 @@ class OrderResult(BaseModel):
     volume: Decimal = Decimal(0)
     price: Decimal = Decimal(0)
     comment: str = ""
+
+
+class TradeAction(StrEnum):
+    DEAL = "DEAL"  # market order (open or close)
+    SLTP = "SLTP"  # modify stop-loss / take-profit of a position
+
+
+class FillingMode(StrEnum):
+    FOK = "FOK"
+    IOC = "IOC"
+    RETURN = "RETURN"
+
+
+class OrderRequest(BaseModel):
+    """Broker-neutral order request built by the executor from an issued OrderIntent."""
+
+    model_config = _FROZEN
+
+    action: TradeAction
+    symbol: str
+    side: Side | None = None
+    volume: Decimal | None = Field(default=None, gt=0)
+    price: Decimal | None = Field(default=None, gt=0)
+    sl: Decimal | None = Field(default=None, gt=0)
+    tp: Decimal | None = Field(default=None, gt=0)
+    deviation_points: int = Field(default=0, ge=0)
+    magic: int = Field(gt=0)
+    comment: str = Field(default="", max_length=31)
+    filling: FillingMode | None = None
+    position_ticket: int | None = Field(default=None, gt=0)
+
+    @model_validator(mode="after")
+    def _action_fields(self) -> Self:
+        if self.action is TradeAction.DEAL and (
+            self.side is None or self.volume is None or self.price is None
+        ):
+            raise ValueError("DEAL requests require side, volume and price")
+        if self.action is TradeAction.SLTP and self.position_ticket is None:
+            raise ValueError("SLTP requests require position_ticket")
+        return self
