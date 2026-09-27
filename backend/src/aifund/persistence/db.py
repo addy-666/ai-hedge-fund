@@ -13,9 +13,10 @@ from contextlib import contextmanager
 from datetime import datetime
 from decimal import Decimal
 from enum import Enum
+from pathlib import Path
 from typing import Any
 
-from sqlalchemy import Engine, create_engine, event
+from sqlalchemy import Engine, create_engine, event, make_url
 from sqlalchemy.orm import Session, sessionmaker
 
 SQLITE_PRAGMAS = (
@@ -44,6 +45,9 @@ def json_dumps(value: Any) -> str:
 
 
 def make_engine(url: str, *, echo: bool = False) -> Engine:
+    parsed = make_url(url)
+    if parsed.get_backend_name() == "sqlite" and parsed.database not in (None, "", ":memory:"):
+        Path(parsed.database).parent.mkdir(parents=True, exist_ok=True)
     engine = create_engine(url, echo=echo, json_serializer=json_dumps, future=True)
     if engine.dialect.name == "sqlite":
 

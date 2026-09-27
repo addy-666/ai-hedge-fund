@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta, timezone
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
 from alembic import command
@@ -136,3 +137,12 @@ def test_foreign_keys_are_enforced(engine: Engine) -> None:
                 "VALUES ('a', 'STOPPED', 'SIM', 0, '2026-09-28T09:00:00.000000Z', 'NOPE')"
             )
         )
+
+
+def test_sqlite_parent_directory_is_created(tmp_path: Path) -> None:
+    url = f"sqlite:///{tmp_path / 'nested' / 'dir' / 'x.db'}"
+    eng = make_engine(url)
+    with eng.connect() as conn:
+        conn.execute(text("SELECT 1"))
+    eng.dispose()
+    assert (tmp_path / "nested" / "dir" / "x.db").exists()
