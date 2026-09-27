@@ -67,7 +67,7 @@ Unique: (`symbol`, `trigger_tf`, `bar_time`, `feature_set_version`).
 | symbol, trigger_tf, bar_time | |
 | snapshot_id | FK |
 | stage_reached | PREFLIGHT / SETUP / ANALYST / RULES / PORTFOLIO / RISK / EXECUTION |
-| outcome | SKIPPED / NO_SETUP / HOLD / RULE_BLOCKED / BELOW_THRESHOLD / RISK_REJECTED / ORDERED / ERROR |
+| outcome | SKIPPED / NO_SETUP / HOLD / INVALID / RULE_BLOCKED / BELOW_THRESHOLD / RISK_REJECTED / ORDERED / ERROR — `INVALID` = no readable analyst decision (LLM error or schema failure); kept distinct from `HOLD` so failures never pollute HOLD statistics or calibration |
 | reason_code, reason_detail | e.g. `SPREAD_TOO_WIDE`, `DUPLICATE_SAME_DIRECTION` |
 | setups JSON | detector output |
 | proposal JSON | validated `TradeProposal` (or null) |
@@ -269,7 +269,8 @@ snapshots that lack it; the miner only uses snapshots that have it).
 
 Two sources, both validated at startup by Pydantic; the engine refuses to start on any validation error.
 
-- **`.env`** — secrets and host-specific paths only: `DEEPSEEK_API_KEY`, `MT5_LOGIN`, `MT5_PASSWORD`,
+- **`.env`** — secrets and host-specific paths only (with `BROKER=mt5`, `MT5_LOGIN`/`MT5_PASSWORD`/`MT5_SERVER` are all
+  mandatory — the engine never trades whatever account the terminal happens to be logged into): `DEEPSEEK_API_KEY`, `MT5_LOGIN`, `MT5_PASSWORD`,
   `MT5_SERVER`, `MT5_PATH`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `HEALTHCHECKS_URL`,
   `API_SECRET_KEY`, `ADMIN_PASSWORD_HASH`, `DATABASE_URL`, `BROKER` (mt5|sim), `CONFIG_PATH`.
 - **`config/trading.yaml`** — everything else. Stored into `config_versions` on load; changes from the
@@ -345,6 +346,7 @@ risk:
     daily_loss_limit_pct: 3.0           # → HALTED until next trading day
     weekly_loss_limit_pct: 6.0          # → HALTED until operator re-arm
     max_drawdown_pct: 10.0              # from peak → HALTED + re-arm (re-auth)
+    max_notional_leverage: 10           # Σ open notional ≤ equity × this, independent of broker margin
   guards:
     cooldown_bars_after_close: 2
     cooldown_bars_after_loss: 4
