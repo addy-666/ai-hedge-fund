@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Hedge Fund Terminal</title>
+    <style>
+        :root {
+            --bg-dark: #090d14;
+            --panel-bg: #151b26;
+            --text-main: #e2e8f0;
+            --text-muted: #94a3b8;
+            --accent-blue: #3b82f6;
+            --success: #10b981;
+            --danger: #ef4444;
+            --border: #334155;
+        }
+        body {
+            background-color: var(--bg-dark);
+            color: var(--text-main);
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            margin: 0;
+            padding: 20px;
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 20px;
+            margin-bottom: 20px;
+        }
+        .brand { font-size: 24px; font-weight: bold; display: flex; align-items: center; gap: 10px; }
+        .controls { display: flex; gap: 15px; align-items: center; }
+        select, input, button {
+            background: var(--panel-bg);
+            border: 1px solid var(--border);
+            color: white;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-family: inherit;
+        }
+        button { cursor: pointer; transition: 0.2s; font-weight: bold; }
+        button:hover { filter: brightness(1.2); }
+        .btn-start { background: var(--success); border: none; }
+        .btn-stop { background: var(--danger); border: none; }
+        
+        .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; margin-bottom: 20px; }
+        .card {
+            background: var(--panel-bg);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 20px;
+        }
+        .card h3 { margin: 0 0 10px 0; color: var(--text-muted); font-size: 14px; text-transform: uppercase; }
+        .metric { font-size: 32px; font-weight: bold; }
+        
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; }
+        
+        table { width: 100%; border-collapse: collapse; }
+        th, td { text-align: left; padding: 12px; border-bottom: 1px solid var(--border); }
+        th { color: var(--text-muted); text-transform: uppercase; font-size: 12px; }
+        .badge { padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; }
+        .badge-buy { background: rgba(16, 185, 129, 0.2); color: var(--success); border: 1px solid var(--success); }
+        .badge-sell { background: rgba(239, 68, 68, 0.2); color: var(--danger); border: 1px solid var(--danger); }
+        .badge-hold { background: rgba(148, 163, 184, 0.2); color: var(--text-muted); border: 1px solid var(--text-muted); }
+        
+        .pulse {
+            width: 12px; height: 12px; border-radius: 50%; display: inline-block;
+        }
+        .pulse.active { background: var(--success); box-shadow: 0 0 10px var(--success); animation: pulse 2s infinite; }
+        .pulse.inactive { background: var(--text-muted); }
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="brand">
+            <span class="pulse inactive" id="status-pulse"></span>
+            AI Hedge Fund Terminal
+        </div>
+        <div class="controls">
+            <label>Scan Interval:</label>
+            <select id="interval-select">
+                <option value="30">30 Seconds</option>
+                <option value="60">1 Minute</option>
+                <option value="300">5 Minutes</option>
+                <option value="3600">1 Hour</option>
+            </select>
+            <label>Risk Per Trade %:</label>
+            <input type="number" id="risk-input" step="0.1" value="1.0" style="width: 70px;">
+            <button id="toggle-btn" class="btn-start" onclick="toggleEngine()">START ENGINE</button>
+            <button onclick="runAudit()" style="background: var(--accent-blue); border: none;">Run Audit Now</button>
+        </div>
+    </div>
+
+    <div class="grid-4">
+        <div class="card">
+            <h3>Live Equity</h3>
+            <div class="metric" id="equity-val">$0.00</div>
+        </div>
+        <div class="card">
+            <h3>Engine Status</h3>
+            <div class="metric" id="status-val">STOPPED</div>
+        </div>
+        <div class="card">
+            <h3>Last AI Confidence</h3>
+            <div class="metric" id="confidence-val">0%</div>
+        </div>
+        <div class="card">
+            <h3>Confirmed Fills</h3>
+            <div class="metric" id="fills-val">0</div>
+        </div>
+    </div>
+
+    <div class="grid-2">
+        <div class="card">
+            <h3>Decision Intelligence</h3>
+            <div style="margin-bottom: 15px;">
+                Signal: <span id="signal-badge" class="badge badge-hold">HOLD</span>
+            </div>
+            <p id="logic-val" style="color: var(--text-muted); font-size: 14px; line-height: 1.5;"></p>
+            <div style="display: flex; gap: 10px; margin-top: 15px;">
+                <span class="badge" style="border: 1px solid var(--border)">ENTRY: <span id="entry-val">-</span></span>
+                <span class="badge" style="border: 1px solid var(--border)">SL: <span id="sl-val">-</span></span>
+                <span class="badge" style="border: 1px solid var(--border)">TP: <span id="tp-val">-</span></span>
+            </div>
+        </div>
+        <div class="card">
+            <h3>Portfolio Exposure</h3>
+            <table id="positions-table">
+                <thead>
+                    <tr>
+                        <th>Symbol</th>
+                        <th>Type</th>
+                        <th>Vol</th>
+                        <th>P/L</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <!-- Populated via JS -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="card">
+        <h3>Self-Learning Desk (Active Rules: <span id="rules-count">0</span>)</h3>
+        <table id="rules-table">
+            <thead>
+                <tr>
+                    <th>Symbol</th>
+                    <th>Setup/Pattern</th>
+                    <th>Penalty</th>
+                    <th>Evidence</th>
+                </tr>
+            </thead>
+            <tbody>
+                <!-- Populated via JS -->
+            </tbody>
+        </table>
+    </div>
+
+    <script>
+        let isRunning = false;
+
+        async function fetchStatus() {
+            try {
+                const res = await fetch('/api/status');
+                const data = await res.json();
+                
+                // Update Top Cards
+                document.getElementById('equity-val').innerText = '$' + data.equity.toFixed(2);
+                document.getElementById('confidence-val').innerText = data.last_confidence + '%';
+                document.getElementById('fills-val').innerText = data.confirmed_fills;
+                
+                isRunning = data.is_running;
+                const statusPulse = document.getElementById('status-pulse');
+                const statusVal = document.getElementById('status-val');
+                const toggleBtn = document.getElementById('toggle-btn');
+                
+                if (isRunning) {
+                    statusPulse.className = 'pulse active';
+                    statusVal.innerText = 'SCANNING';
+                    toggleBtn.className = 'btn-stop';
+                    toggleBtn.innerText = 'STOP ENGINE';
+                } else {
+                    statusPulse.className = 'pulse inactive';
+                    statusVal.innerText = 'STOPPED';
+                    toggleBtn.className = 'btn-start';
+                    toggleBtn.innerText = 'START ENGINE';
+                }
+
+                // Update Controls
+                document.getElementById('interval-select').value = data.interval;
+                document.getElementById('risk-input').value = data.risk_percent;
+
+                // Update AI Decision
+                const sigBadge = document.getElementById('signal-badge');
+                sigBadge.innerText = data.last_signal;
+                sigBadge.className = 'badge ' + (data.last_signal === 'BUY' ? 'badge-buy' : data.last_signal === 'SELL' ? 'badge-sell' : 'badge-hold');
+                document.getElementById('logic-val').innerText = data.last_logic || 'Awaiting tick...';
+                document.getElementById('entry-val').innerText = data.last_entry_price || '-';
+                document.getElementById('sl-val').innerText = data.last_stop_loss || '-';
+                document.getElementById('tp-val').innerText = data.last_take_profit || '-';
+
+                // Update Positions Table
+                const tbody = document.querySelector('#positions-table tbody');
+                tbody.innerHTML = '';
+                if (data.open_positions.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color: #94a3b8;">No open positions</td></tr>';
+                } else {
+                    data.open_positions.forEach(p => {
+                        const tr = document.createElement('tr');
+                        const plColor = p.profit >= 0 ? 'var(--success)' : 'var(--danger)';
+                        tr.innerHTML = `
+                            <td><strong>${p.symbol}</strong><br><small>${p.ticket}</small></td>
+                            <td><span class="badge ${p.type === 'BUY' ? 'badge-buy' : 'badge-sell'}">${p.type}</span></td>
+                            <td>${p.volume}</td>
+                            <td style="color: ${plColor}; font-weight: bold;">$${p.profit.toFixed(2)}</td>
+                            <td><button onclick="closePosition(${p.ticket})" style="background: var(--danger); border: none; padding: 4px 8px; font-size: 12px;">CLOSE</button></td>
+                        `;
+                        tbody.appendChild(tr);
+                    });
+                }
+
+                // Update Rules Table
+                document.getElementById('rules-count').innerText = data.learned_rules.length;
+                const rbody = document.querySelector('#rules-table tbody');
+                rbody.innerHTML = '';
+                data.learned_rules.forEach(r => {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td><span class="badge" style="border:1px solid var(--border)">${r.affected_symbol}</span></td>
+                        <td>${r.setup}</td>
+                        <td style="color: var(--danger); font-weight: bold;">-${r.confidence_reduction_points} pts</td>
+                        <td style="font-size:12px; color:var(--text-muted);">${r.evidence}</td>
+                    `;
+                    rbody.appendChild(tr);
+                });
+
+            } catch (e) {
+                console.error("Error fetching status", e);
+            }
+        }
+
+        async function toggleEngine() {
+            const action = isRunning ? 'stop' : 'start';
+            const interval = parseInt(document.getElementById('interval-select').value);
+            const risk = parseFloat(document.getElementById('risk-input').value);
+            
+            await fetch('/api/control', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ action: action, interval: interval, risk_percent: risk })
+            });
+            fetchStatus();
+        }
+
+        async function closePosition(ticket) {
+            if(confirm('Are you sure you want to market close ticket ' + ticket + '?')) {
+                await fetch('/api/close', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ ticket: ticket })
+                });
+                fetchStatus();
+            }
+        }
+
+        async function runAudit() {
+            if(confirm('Force the DeepSeek auditor to analyze recent trades now?')) {
+                await fetch('/api/audit', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ force: true })
+                });
+                alert('Audit complete. Check rules table.');
+                fetchStatus();
+            }
+        }
+
+        // Poll every 3 seconds
+        setInterval(fetchStatus, 3000);
+        fetchStatus();
+    </script>
+</body>
+</html>

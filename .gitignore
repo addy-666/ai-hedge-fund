@@ -1,0 +1,39 @@
+# Secrets and local config
+.env
+.env.*
+!.env.example
+config/trading.yaml
+
+# Runtime data
+data/
+logs/
+backups/
+exports/
+*.db
+*.db-wal
+*.db-shm
+memory.json
+new_rules.json
+server.log
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+dist/
+build/
+*.egg-info/
+
+# Node
+node_modules/
+frontend/dist/
+
+# OS / editors
+.DS_Store
+.idea/
+.vscode/
