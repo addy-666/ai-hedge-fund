@@ -1,6 +1,10 @@
 # 02 — Data Model, State Machines, Feature Registry, Config
 
-Conventions for all tables:
+Conventions for all tables (implemented in `backend/src/aifund/persistence/tables.py`; the migration is the
+source of truth for the physical schema):
+
+- Links that would form foreign-key cycles are stored on one side only: a decision's intent is found via
+  `order_intents.decision_id`; an audit run's LLM call via `llm_calls.audit_run_id`.
 
 - Primary keys: `id` = ULID string (sortable, generated in app) unless noted.
 - Timestamps: stored as UTC ISO-8601 strings with `Z` (SQLite) / `timestamptz` (Postgres). Broker server time is
@@ -44,7 +48,7 @@ APPROVE_RULE, REJECT_RULE, RETIRE_RULE, RELOAD_CONFIG, SET_MODE), `payload JSON`
 `ip`, `ts`.
 
 **`llm_calls`**: `id`, `agent` (analyst/critic/reviewer/auditor…), `decision_id` null, `trade_id` null,
-`audit_run_id` null, `model`, `prompt_template`, `prompt_version`, `prompt_sha256`, `messages JSON` (full),
+`audit_run_id` null, `model` (requested), `model_reported` (what the provider says it used), `prompt_template`, `prompt_version`, `prompt_sha256`, `messages JSON` (full),
 `response_text`, `parsed JSON`, `valid bool`, `error`, `prompt_tokens`, `completion_tokens`,
 `cached_tokens`, `cost_usd`, `latency_ms`, `created_at`.
 
@@ -77,7 +81,6 @@ Unique: (`symbol`, `trigger_tf`, `bar_time`, `feature_set_version`).
 | lessons_shown JSON | rule ids rendered into prompt |
 | rulebook_version, prompt_version, model, config_version_id | provenance |
 | risk_calc JSON | full sizing worksheet (see 03 §7) |
-| intent_id | FK null |
 | latency_ms, cost_usd | |
 
 ### 1.3 Orders, trades, deals
@@ -129,7 +132,7 @@ Unique: (`symbol`, `trigger_tf`, `bar_time`, `feature_set_version`).
 spread), `sl`, `tp`, `status` OPEN/CLOSED/EXPIRED, `exit_time`, `exit_price`, `exit_reason`, `r_multiple`,
 `mae_r`, `mfe_r`, `blocked_by` (rule id / guard reason), `snapshot_id`.
 
-**`equity_snapshots`**: `ts`, `balance`, `equity`, `margin`, `free_margin`, `open_risk_money`,
+**`equity_snapshots`**: `ts`, `balance`, `equity`, `margin`, `free_margin`, `open_risk_money`, `open_notional`,
 `open_positions`, `day_pnl`, `drawdown_pct`.
 
 ### 1.4 Learning
@@ -159,7 +162,7 @@ spread), `sl`, `tp`, `status` OPEN/CLOSED/EXPIRED, `exit_time`, `exit_price`, `e
 `action_applied JSON`. (Only matched rows stored to keep the table small.)
 
 **`audit_runs`**: `id`, `trigger` (SCHEDULE/THRESHOLD/MANUAL), `window_from`, `window_to`, `n_trades`,
-`n_virtual`, `miner_output JSON`, `llm_call_id`, `candidates JSON`, `validation JSON`, `lessons_md`,
+`n_virtual`, `miner_output JSON`, `candidates JSON`, `validation JSON`, `lessons_md`,
 `status`, `created_at`, `finished_at`.
 
 **`calibration_models`**: `version`, `method` (IDENTITY/ISOTONIC), `params JSON`, `n_samples`,

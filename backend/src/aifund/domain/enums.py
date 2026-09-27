@@ -123,6 +123,31 @@ class DealReason(StrEnum):
     OTHER = "OTHER"
 
 
+class CommandType(StrEnum):
+    """Operator commands submitted by the API and executed by the engine (docs/02 `commands`)."""
+
+    START = "START"
+    PAUSE = "PAUSE"
+    RESUME = "RESUME"
+    STOP = "STOP"
+    REARM = "REARM"
+    FLATTEN_ALL = "FLATTEN_ALL"
+    CLOSE_POSITION = "CLOSE_POSITION"
+    RUN_AUDIT = "RUN_AUDIT"
+    APPROVE_RULE = "APPROVE_RULE"
+    REJECT_RULE = "REJECT_RULE"
+    RETIRE_RULE = "RETIRE_RULE"
+    RELOAD_CONFIG = "RELOAD_CONFIG"
+    SET_MODE = "SET_MODE"
+
+
+class CommandStatus(StrEnum):
+    PENDING = "PENDING"
+    RUNNING = "RUNNING"
+    DONE = "DONE"
+    FAILED = "FAILED"
+
+
 class ReversalMode(StrEnum):
     IGNORE = "ignore"
     CLOSE_ONLY = "close_only"

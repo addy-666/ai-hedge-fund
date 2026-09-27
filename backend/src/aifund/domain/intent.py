@@ -16,7 +16,7 @@ from typing import Any, Self
 
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, model_validator
 
-from aifund.domain.enums import Direction, IntentKind, ReasonCode, Side, Timeframe
+from aifund.domain.enums import Direction, IntentKind, IntentStatus, ReasonCode, Side, Timeframe
 from aifund.domain.values import UtcDatetime
 
 MT5_COMMENT_MAX = 31
@@ -119,3 +119,21 @@ class Rejection(BaseModel):
 
     reason: ReasonCode
     detail: str = ""
+
+
+# docs/02 §2.1 — the only legal OrderIntent status transitions.
+INTENT_TRANSITIONS: dict[IntentStatus, frozenset[IntentStatus]] = {
+    IntentStatus.PENDING: frozenset({IntentStatus.CHECK_FAILED, IntentStatus.SENT}),
+    IntentStatus.SENT: frozenset(
+        {IntentStatus.FILLED, IntentStatus.REJECTED, IntentStatus.RETRYING, IntentStatus.UNKNOWN}
+    ),
+    IntentStatus.RETRYING: frozenset({IntentStatus.SENT, IntentStatus.REJECTED}),
+    IntentStatus.UNKNOWN: frozenset({IntentStatus.FILLED, IntentStatus.REJECTED}),
+    IntentStatus.FILLED: frozenset(),
+    IntentStatus.REJECTED: frozenset(),
+    IntentStatus.CHECK_FAILED: frozenset(),
+}
+
+
+def can_transition(current: IntentStatus, new: IntentStatus) -> bool:
+    return new in INTENT_TRANSITIONS[current]
