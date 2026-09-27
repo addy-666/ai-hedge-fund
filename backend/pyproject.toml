@@ -1,0 +1,135 @@
+[project]
+name = "aifund"
+version = "0.0.1"
+description = "AI Fund OS: autonomous MT5 trading engine with a deterministic risk core and a validated self-learning loop"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "pydantic>=2.8,<3",
+    "pydantic-settings>=2.4,<3",
+    "pyyaml>=6.0",
+    "sqlalchemy>=2.0.30,<2.1",
+    "alembic>=1.13,<2",
+    "structlog>=24.1",
+    "python-ulid>=2.7,<4",
+]
+
+[project.optional-dependencies]
+# Windows VPS only: the MetaTrader5 package ships Windows wheels exclusively.
+mt5 = ["MetaTrader5>=5.0.5000; sys_platform == 'win32'"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.2",
+    "pytest-asyncio>=0.23",
+    "hypothesis>=6.100",
+    "time-machine>=2.14",
+    "ruff>=0.6",
+    "mypy>=1.11",
+    "import-linter>=2.0",
+    "types-PyYAML>=6.0",
+]
+
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/aifund"]
+
+# ---------------------------------------------------------------- ruff
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF", "DTZ", "PT", "S"]
+ignore = [
+    "S101",   # assert is fine in tests and for invariants
+    "RUF001", "RUF002", "RUF003",  # unicode arrows/dashes in docstrings are intentional
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S", "DTZ"]
+"alembic/**" = ["E501"]
+
+# ---------------------------------------------------------------- mypy
+[tool.mypy]
+python_version = "3.12"
+mypy_path = "src"
+packages = ["aifund"]
+plugins = ["pydantic.mypy"]
+warn_unused_ignores = true
+warn_redundant_casts = true
+no_implicit_optional = true
+check_untyped_defs = true
+
+# Money-path and pure-logic packages are held to strict typing.
+[[tool.mypy.overrides]]
+module = [
+    "aifund.domain.*",
+    "aifund.risk.*",
+    "aifund.execution.*",
+    "aifund.reconcile.*",
+    "aifund.rules.*",
+    "aifund.config.*",
+    "aifund.persistence.*",
+]
+strict = true
+
+[[tool.mypy.overrides]]
+module = ["MetaTrader5", "MetaTrader5.*"]
+ignore_missing_imports = true
+
+# ---------------------------------------------------------------- pytest
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "-ra --strict-markers"
+markers = [
+    "scenario: multi-component flows against SimBroker/FakeLLM/FakeClock",
+]
+
+# ---------------------------------------------------------------- import-linter
+[tool.importlinter]
+root_package = "aifund"
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+name = "Layered architecture (docs/01 §12)"
+type = "layers"
+layers = [
+    "aifund.api",
+    "aifund.engine",
+    "aifund.agents | aifund.execution | aifund.reconcile | aifund.vault",
+    "aifund.risk | aifund.rules | aifund.strategies | aifund.market",
+    "aifund.ports",
+    "aifund.domain",
+]
+exhaustive = false
+
+[[tool.importlinter.contracts]]
+name = "Agents never reach execution or the broker"
+type = "forbidden"
+source_modules = ["aifund.agents"]
+forbidden_modules = ["aifund.execution", "aifund.adapters", "MetaTrader5"]
+
+[[tool.importlinter.contracts]]
+name = "Pure layers do no I/O"
+type = "forbidden"
+source_modules = ["aifund.domain", "aifund.risk", "aifund.rules", "aifund.ports"]
+forbidden_modules = [
+    "aifund.persistence", "aifund.adapters", "aifund.api", "aifund.engine",
+    "sqlalchemy", "MetaTrader5", "structlog",
+]
+
+[[tool.importlinter.contracts]]
+name = "Only the MT5 adapter imports MetaTrader5"
+type = "forbidden"
+source_modules = [
+    "aifund.api", "aifund.engine", "aifund.agents", "aifund.execution", "aifund.reconcile",
+    "aifund.vault", "aifund.risk", "aifund.rules", "aifund.strategies", "aifund.market",
+    "aifund.ports", "aifund.domain", "aifund.config", "aifund.persistence",
+    "aifund.adapters.sim", "aifund.adapters.llm", "aifund.adapters.notify",
+]
+forbidden_modules = ["MetaTrader5"]
