@@ -124,6 +124,16 @@ forbidden_modules = [
 ]
 
 [[tool.importlinter.contracts]]
+name = "Only the Risk Manager issues executable order intents"
+type = "forbidden"
+source_modules = [
+    "aifund.api", "aifund.engine", "aifund.agents", "aifund.execution", "aifund.reconcile",
+    "aifund.vault", "aifund.rules", "aifund.strategies", "aifund.market", "aifund.ports",
+    "aifund.config", "aifund.persistence", "aifund.adapters",
+]
+forbidden_modules = ["aifund.domain._issuance"]
+
+[[tool.importlinter.contracts]]
 name = "Only the MT5 adapter imports MetaTrader5"
 type = "forbidden"
 source_modules = [

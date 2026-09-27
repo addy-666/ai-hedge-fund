@@ -82,6 +82,47 @@ class AssetClass(StrEnum):
     ENERGY = "energy"
 
 
+class AccountTradeMode(StrEnum):
+    DEMO = "DEMO"
+    CONTEST = "CONTEST"
+    REAL = "REAL"
+
+
+class MarginMode(StrEnum):
+    NETTING = "NETTING"
+    EXCHANGE = "EXCHANGE"
+    HEDGING = "HEDGING"
+
+
+class DealEntry(StrEnum):
+    """MT5 DEAL_ENTRY_*: whether a deal opens, closes, reverses or closes-by a position."""
+
+    IN = "IN"
+    OUT = "OUT"
+    INOUT = "INOUT"
+    OUT_BY = "OUT_BY"
+
+    @property
+    def reduces_position(self) -> bool:
+        return self in (DealEntry.OUT, DealEntry.OUT_BY, DealEntry.INOUT)
+
+
+class DealReason(StrEnum):
+    """MT5 DEAL_REASON_*: who or what caused a deal."""
+
+    CLIENT = "CLIENT"
+    MOBILE = "MOBILE"
+    WEB = "WEB"
+    EXPERT = "EXPERT"
+    SL = "SL"
+    TP = "TP"
+    SO = "SO"
+    ROLLOVER = "ROLLOVER"
+    VMARGIN = "VMARGIN"
+    SPLIT = "SPLIT"
+    OTHER = "OTHER"
+
+
 class ReversalMode(StrEnum):
     IGNORE = "ignore"
     CLOSE_ONLY = "close_only"
