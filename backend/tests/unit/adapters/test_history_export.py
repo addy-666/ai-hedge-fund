@@ -166,3 +166,23 @@ async def test_script_end_to_end_with_explicit_offset(
     assert "XAUUSDm H4:" in out
     assert (tmp_path / "XAUUSDm" / "H4.parquet").is_file()
     assert not {"order_send", "order_check"} & set(fake.names())
+
+
+async def test_export_warns_when_history_ends_long_before_now(tmp_path: Path) -> None:
+    fake = FakeMT5()
+    start = NOW - timedelta(days=30)
+    fake.rates[("XAUUSDm", c.TIMEFRAMES[Timeframe.H1])] = _rows(
+        Timeframe.H1, start, 24 * 20
+    )  # ends 10 days ago
+    gw = MT5Gateway(
+        MT5Credentials(login=12345678, password="x", server="Broker-Demo"),
+        clock=FakeClock(NOW),
+        module_loader=lambda: fake,
+    )
+    await gw.connect()
+    gw.set_server_offset(OFFSET)
+    result = await export_history(
+        gw, symbols=["XAUUSDm"], timeframes=[Timeframe.H1], start=start, now=NOW, root=tmp_path
+    )
+    await gw.close()
+    assert any("looks unsynchronised" in w for w in result.warnings)

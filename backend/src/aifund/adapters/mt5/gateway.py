@@ -56,6 +56,10 @@ class GatewayDisconnected(GatewayError, BrokerUnavailable):
     """The terminal is not connected to the broker (or the IPC link is down)."""
 
 
+class HistoryNotSynced(GatewayError):
+    """The terminal's local bar history for a symbol/timeframe is far behind its live quote."""
+
+
 class AccountMismatch(GatewayError):
     """The terminal is logged into a different account/server than configured. Never trade it."""
 
@@ -104,6 +108,7 @@ class MT5Gateway:
         order_timeout_s: float = 15.0,
         init_timeout_ms: int = 60_000,
         max_backoff_s: float = 60.0,
+        history_sync_attempts: int = 4,
     ) -> None:
         self._creds = credentials
         self._clock = clock
@@ -114,6 +119,7 @@ class MT5Gateway:
         self._order_timeout = order_timeout_s
         self._init_timeout_ms = init_timeout_ms
         self._max_backoff = max_backoff_s
+        self._history_sync_attempts = max(1, history_sync_attempts)
         self._offset: timedelta | None = None
         self._specs: dict[str, SymbolSpec] = {}
         self.state = ConnectionState.DISCONNECTED
@@ -343,7 +349,37 @@ class MT5Gateway:
                 raise self._fail(mt5, f"copy_rates_from_pos({symbol}, {timeframe})")
             return rates
 
-        return m.bars_from_mt5(await self._run(_rates), symbol, timeframe, spec.digits, self.server_offset)
+        delay = 1.0
+        for attempt in range(1, self._history_sync_attempts + 1):
+            bars = m.bars_from_mt5(
+                await self._run(_rates), symbol, timeframe, spec.digits, self.server_offset
+            )
+            lag = await self._history_lag(symbol, timeframe, bars)
+            if lag is None:
+                return bars
+            if attempt < self._history_sync_attempts:
+                await self._clock.sleep(delay)  # asking for the bars makes the terminal download them
+                delay *= 2
+        raise HistoryNotSynced(
+            f"{symbol} {timeframe}: last closed bar is {lag} behind the live quote — the terminal's local "
+            f"history is not synchronised. Open a {symbol} {timeframe} chart in MT5 (or wait) and retry."
+        )
+
+    async def _history_lag(self, symbol: str, timeframe: Timeframe, bars: list[Bar]) -> timedelta | None:
+        """How far the last closed bar trails a LIVE quote, if that is implausibly far; else None.
+
+        The threshold (max(4 days, 3 bars)) is deliberately wide: weekends, holidays and daily breaks
+        never trip it. It only catches a stale local cache (seen live: EURUSD M15 returning 2024 bars
+        on the first request). Finer staleness is the feature builder's job (STALE_DATA).
+        """
+        if not bars:
+            return None
+        tick = await self.tick(symbol)
+        if tick is None or self._clock.now() - tick.time > timedelta(minutes=10):
+            return None  # market closed or quiet: nothing to compare against
+        lag = tick.time - (bars[-1].time + timedelta(minutes=timeframe.minutes))
+        threshold = max(timedelta(days=4), timedelta(minutes=3 * timeframe.minutes))
+        return lag if lag > threshold else None
 
     async def bars_range(
         self, symbol: str, timeframe: Timeframe, start: datetime, end: datetime

@@ -8,8 +8,13 @@ Updated by the coding agent at the end of every task.
 - Next task: 2.1 Setup detector `mtf_trend_pullback`
 - Rollout level: none (pre-L0). No code path places orders yet (SimBroker can, but nothing calls it).
 - Tests: 343 passing + 1 Windows-only (MQL5 constant cross-check against the real MetaTrader5 package).
-- Pending on Windows: run `scripts/mt5_smoke.py` against a demo account, then `scripts/export_history.py`
-  and copy `data/history/` to the Mac for replay on real bars.
+- Windows run 2026-09-28 (VantageMarkets-Demo, hedging, 1:500, server UTC+3): smoke checks passed; history
+  exported. Replay of the real export builds valid snapshots for XAUUSD/EURUSD/BTCUSD.
+- Findings from real data: (1) the terminal's first M15 request for EURUSD returned 2024 bars (stale local
+  cache) → gateway now retries and raises HistoryNotSynced; (2) a 6-month export has only ~126 D1 bars, so
+  D1-context snapshots are refused (need 300) → export `--months 15` for replay; (3) EURUSD spread ≈ 26% of
+  M15 ATR on this account vs `max_spread_to_atr: 0.10` — decide in Phase 2 (raw-spread account, higher
+  timeframe for EURUSD, or drop it).
 
 ## Completed tasks
 

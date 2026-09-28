@@ -63,6 +63,12 @@ async def export_history(
                     f"{symbol} {tf}: history starts {first:%Y-%m-%d}, later than requested "
                     f"{start:%Y-%m-%d} (raise 'Max bars in chart' in the terminal to get more)"
                 )
+            last_close = max(unique) + span
+            if now - last_close > max(timedelta(days=4), 3 * span):
+                result.warnings.append(
+                    f"{symbol} {tf}: history ends {last_close:%Y-%m-%d %H:%M}Z — the terminal's local "
+                    f"history looks unsynchronised; open a {symbol} {tf.value} chart in MT5 and re-export"
+                )
             hs.write_bars(root, symbol, tf, list(unique.values()))
             result.rows[symbol][tf.value] = len(unique)
             progress(f"{symbol} {tf.value}: {len(unique)} bars from {first:%Y-%m-%d}")

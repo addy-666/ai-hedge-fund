@@ -329,3 +329,77 @@ async def test_data_calls_before_offset_is_known_fail_loudly(clock: FakeClock, f
     gateway.set_server_offset(OFFSET)
     assert await gateway.tick("XAUUSDm") is not None
     await gateway.close()
+
+
+# ---------------------------------------------------------------- stale local history (seen live on Vantage)
+
+
+def _m15_rows(last_open: datetime, n: int = 5) -> list[dict[str, object]]:
+    return [
+        {
+            "time": server_epoch(last_open - timedelta(minutes=15 * (n - 1 - i))),
+            "open": 1.1,
+            "high": 1.2,
+            "low": 1.0,
+            "close": 1.1,
+            "tick_volume": 1,
+            "spread": 10,
+        }
+        for i in range(n + 1)
+    ]  # +1 forming
+
+
+async def test_stale_local_history_is_retried_then_refused(
+    gw: MT5Gateway, fake: FakeMT5, clock: FakeClock
+) -> None:
+    from aifund.adapters.mt5.gateway import HistoryNotSynced
+
+    fake.rates[("XAUUSDm", 15)] = _m15_rows(datetime(2024, 8, 21, 1, 15, tzinfo=UTC))
+    before = clock.now()
+    with pytest.raises(HistoryNotSynced, match="not synchronised"):
+        await gw.closed_bars("XAUUSDm", Timeframe.M15, 3)
+    assert clock.now() - before == timedelta(seconds=1 + 2 + 4)  # 4 attempts with backoff
+    assert fake.names().count("copy_rates_from_pos") == 4
+
+
+async def test_history_that_syncs_during_retries_is_returned(
+    gw: MT5Gateway, fake: FakeMT5, clock: FakeClock
+) -> None:
+    stale = _m15_rows(datetime(2024, 8, 21, 1, 15, tzinfo=UTC))
+    fresh = _m15_rows(datetime(2026, 9, 28, 8, 30, tzinfo=UTC))  # closes 08:45, quote ~09:00
+    real = fake.copy_rates_from_pos
+    calls = {"n": 0}
+
+    def syncing(symbol: str, tf: int, start: int, count: int):  # type: ignore[no-untyped-def]
+        calls["n"] += 1
+        fake.rates[("XAUUSDm", 15)] = stale if calls["n"] == 1 else fresh
+        return real(symbol, tf, start, count)
+
+    fake.copy_rates_from_pos = syncing  # type: ignore[method-assign]
+    bars = await gw.closed_bars("XAUUSDm", Timeframe.M15, 3)
+    assert bars[-1].time == datetime(2026, 9, 28, 8, 30, tzinfo=UTC)
+    assert calls["n"] == 2
+
+
+async def test_weekend_gaps_and_closed_markets_are_not_mistaken_for_stale_history(
+    gw: MT5Gateway, fake: FakeMT5, clock: FakeClock
+) -> None:
+    # Monday 09:00 quote vs Friday's D1 bar (closed Fri 21:00 UTC): 60 h, well inside the 4-day allowance
+    fake.rates[("XAUUSDm", 16408)] = [
+        {
+            "time": server_epoch(datetime(2026, 9, 24, 21, 0, tzinfo=UTC) - timedelta(days=d)),
+            "open": 1.1,
+            "high": 1.2,
+            "low": 1.0,
+            "close": 1.1,
+            "tick_volume": 1,
+            "spread": 10,
+        }
+        for d in (2, 1, 0, -3)  # last entry = Monday's forming bar
+    ]
+    assert len(await gw.closed_bars("XAUUSDm", Timeframe.D1, 3)) == 3
+    # market closed: an hour-old quote means there is nothing to compare against -> bars returned as-is
+    fake.tick_advance_ms = 0
+    fake.ticks["XAUUSDm"] = fresh_tick(age_s=3600)
+    fake.rates[("XAUUSDm", 15)] = _m15_rows(datetime(2024, 8, 21, 1, 15, tzinfo=UTC))
+    assert len(await gw.closed_bars("XAUUSDm", Timeframe.M15, 3)) == 3
