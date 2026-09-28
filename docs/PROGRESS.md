@@ -5,7 +5,7 @@ Updated by the coding agent at the end of every task.
 ## Current position
 
 - Phase: 2 — Risk & execution (deterministic baseline strategy)
-- Next task: 2.4 Limits & exposure
+- Next task: 2.5 Guards
 - Rollout level: none (pre-L0). No code path places orders yet (SimBroker can, but nothing calls it).
 - Tests: 343 passing + 1 Windows-only (MQL5 constant cross-check against the real MetaTrader5 package).
 - Windows run 2026-09-28 (VantageMarkets-Demo, hedging, 1:500, server UTC+3): smoke checks passed; history
@@ -45,6 +45,8 @@ Updated by the coding agent at the end of every task.
 | 2026-09-28 | 2.2 Stops | ATR-clamped SL from invalidation, RR-banded TP, tick rounding, distances re-derived from rounded levels; property tests | TP rounds away when rounding toward entry would break rr_min (edge case caught by a hand test) | — |
 
 | 2026-09-28 | 2.3 Sizing | Pure Decimal sizing from broker loss-per-lot; confidence/volatility/drawdown/rule factors only scale down; floor to step; reject instead of upsizing to min lot; margin cap; full worksheet | Margin breach rejects (no downsizing to fit) | — |
+
+| 2026-09-28 | 2.4 Limits & exposure | Daily/weekly loss and drawdown breaches (most severe first); max positions, portfolio heat, bucket heat, notional leverage; UTC trading-day/week boundaries | Trading week starts at the Sunday boundary | — |
 
 ## Decisions log
 
