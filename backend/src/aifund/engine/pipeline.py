@@ -24,9 +24,18 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from aifund.config.trading_config import ProfileConfig, SymbolConfig, TradingConfig
 from aifund.domain.decision import FeatureSnapshot, FinalDecision, SetupCandidate
-from aifund.domain.enums import DealEntry, DecisionOutcome, Direction, IntentKind, IntentStatus, ReasonCode
+from aifund.domain.enums import (
+    CloseReason,
+    DealEntry,
+    DecisionOutcome,
+    Direction,
+    IntentKind,
+    IntentStatus,
+    ReasonCode,
+)
 from aifund.domain.ids import new_id
 from aifund.domain.market import Position, SymbolSpec, Tick
+from aifund.domain.trade import gets_virtual_trade
 from aifund.domain.values import to_decimal
 from aifund.engine.equity import EquityTracker
 from aifund.execution.executor import ExecutionResult, Executor
@@ -38,6 +47,7 @@ from aifund.persistence.db import unit_of_work
 from aifund.persistence.repositories.decisions import DecisionRepository
 from aifund.persistence.repositories.intents import IntentRepository
 from aifund.persistence.repositories.market import FeatureSnapshotRepository
+from aifund.persistence.repositories.virtual import VirtualTradeRepository
 from aifund.ports.broker import BrokerError, BrokerPort, MarketDataPort
 from aifund.ports.system import ClockPort
 from aifund.risk.guards import GuardAction, GuardContext
@@ -65,7 +75,24 @@ class DecisionRecord:
     confidence: int | None = None
     risk_calc: dict[str, str] | None = None
     execution: ExecutionResult | None = None
+    virtual: dict[str, Any] | None = None  # a blocked signal's counterfactual trade plan (docs/03 §14.4)
     decision_id: str = field(default_factory=new_id)
+
+
+MAX_VIRTUAL_BARS = 96  # expiry for virtual trades when no time stop is configured
+
+
+@dataclass(frozen=True)
+class _Blocked:
+    """What a blocked signal's virtual trade is planned from."""
+
+    event: BarClosed
+    sym_cfg: SymbolConfig
+    roles: TfRoles
+    spec: SymbolSpec
+    tick: Tick
+    snapshot: FeatureSnapshot
+    decision: FinalDecision
 
 
 class _Stop(Exception):
@@ -156,6 +183,51 @@ class DecisionPipeline:
     ) -> NoReturn:
         record.outcome, record.reason, record.detail = outcome, reason, detail
         raise _Stop
+
+    def _block(
+        self, record: DecisionRecord, b: _Blocked, outcome: DecisionOutcome, reason: ReasonCode, detail: str
+    ) -> NoReturn:
+        """End a run on a blocked signal, planning its virtual trade when the reason qualifies."""
+        if gets_virtual_trade(outcome, reason):
+            plan = self._virtual_plan(b)
+            record.virtual = None if plan is None else {**plan, "blocked_by": reason.value}
+        self._end(record, outcome, reason, detail)
+
+    def _virtual_plan(self, b: _Blocked) -> dict[str, Any] | None:
+        atr = self._stop_atr(b.snapshot, b.roles)
+        stops = self._risk.counterfactual_stops(b.decision, b.tick, atr, b.spec) if atr else None
+        if stops is None:
+            return None
+        tf = timedelta(minutes=b.roles.trigger.minutes)
+        entry_time = b.event.bar_time + tf  # the next trigger bar opens as this one closes
+        pm = self._cfg.position_management
+        expires_at = entry_time + tf * (pm.time_stop_bars or MAX_VIRTUAL_BARS)
+        reason = CloseReason.TIME_STOP
+        session = self._sessions.get(b.sym_cfg.session) if b.sym_cfg.session else None
+        if not b.sym_cfg.trade_weekends and session is not None and pm.flatten_before_close_minutes:
+            long_close = session.next_long_close(entry_time, timedelta(hours=pm.long_close_hours))
+            flatten_at = long_close - timedelta(minutes=pm.flatten_before_close_minutes)
+            if flatten_at <= entry_time:
+                return None  # a real trade would have been flattened at once
+            if flatten_at < expires_at:
+                expires_at, reason = flatten_at, CloseReason.FLATTEN
+        return dict(
+            side=b.decision.direction.to_side(),
+            setup_tag=b.decision.setup_tag,
+            entry_time=entry_time,
+            sl_distance=stops.sl_distance,
+            tp_distance=stops.tp_distance,
+            expires_at=expires_at,
+            expire_reason=reason,
+        )
+
+    def _stop_atr(self, snapshot: FeatureSnapshot, roles: TfRoles) -> Decimal | None:
+        """ATR on the configured stops timeframe, as the Risk Manager receives it."""
+        stops_tf = roles.trigger if self._cfg.risk.stops.atr_tf == "trigger" else roles.setup
+        value = snapshot.features.get(f"{tf_prefix(stops_tf)}.atr14")
+        if not isinstance(value, float):
+            value = snapshot.features.get(f"{tf_prefix(roles.trigger)}.atr14")
+        return to_decimal(value) if isinstance(value, float) else None
 
     async def _run(self, event: BarClosed, record: DecisionRecord) -> None:
         sym_cfg = self._by_broker.get(event.symbol)
@@ -264,8 +336,9 @@ class DecisionPipeline:
             invalidation_price=best.key_levels.get("invalidation"),
             target_price=best.key_levels.get("target"),
         )
+        blocked = _Blocked(event, sym_cfg, roles, spec, tick, snapshot, decision)
         if decision.final_confidence < self._cfg.risk.confidence_threshold:
-            self._end(record, DecisionOutcome.BELOW_THRESHOLD, ReasonCode.BELOW_THRESHOLD, "")
+            self._block(record, blocked, DecisionOutcome.BELOW_THRESHOLD, ReasonCode.BELOW_THRESHOLD, "")
 
         # 5–7. risk (guards, stops, sizing, exposure)
         record.stage = "RISK"
@@ -295,7 +368,8 @@ class DecisionPipeline:
         if outcome.intent is None:
             rejection = outcome.rejection
             reason = rejection.reason if rejection else ReasonCode.INTERNAL_ERROR
-            self._end(record, DecisionOutcome.RISK_REJECTED, reason, rejection.detail if rejection else "")
+            detail = rejection.detail if rejection else ""
+            self._block(record, blocked, DecisionOutcome.RISK_REJECTED, reason, detail)
 
         # 8. execution
         record.stage = "EXECUTION"
@@ -332,8 +406,6 @@ class DecisionPipeline:
     ) -> RiskRequest:
         now = self._clock.now()
         day_start = self._equity.day_start or now
-        stops_tf = roles.trigger if self._cfg.risk.stops.atr_tf == "trigger" else roles.setup
-        stop_atr = snapshot.features.get(f"{tf_prefix(stops_tf)}.atr14")
         rank = snapshot.features.get(f"{tf_prefix(roles.trigger)}.atr14_pct_rank100")
         close = snapshot.features.get(f"{tf_prefix(roles.trigger)}.close")
 
@@ -378,7 +450,7 @@ class DecisionPipeline:
             spec=spec,
             tick=tick,
             reference_price=to_decimal(close) if isinstance(close, float) else tick.bid,
-            atr=to_decimal(stop_atr) if isinstance(stop_atr, float) else trigger_atr,
+            atr=self._stop_atr(snapshot, roles) or trigger_atr,
             atr_pct_rank=rank if isinstance(rank, float) else None,
             account=account,
             equity_state=equity_state,
@@ -423,5 +495,13 @@ class DecisionPipeline:
                 risk_calc=record.risk_calc,
                 latency_ms=latency_ms,
             )
+            if record.virtual is not None:
+                VirtualTradeRepository(s, self._clock).add_pending(
+                    account_id=self._account,
+                    decision_id=record.decision_id,
+                    snapshot_id=record.snapshot_id,
+                    symbol=record.symbol,
+                    **record.virtual,
+                )
 
         await self._tx(_write)

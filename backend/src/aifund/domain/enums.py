@@ -215,6 +215,16 @@ class TradeOutcome(StrEnum):
     BREAKEVEN = "BREAKEVEN"
 
 
+class VirtualStatus(StrEnum):
+    """Counterfactual trade for a blocked signal (docs/03 §14.4)."""
+
+    PENDING = "PENDING"  # waiting for the next trigger bar's open (its entry)
+    OPEN = "OPEN"
+    CLOSED = "CLOSED"  # stop or target hit
+    EXPIRED = "EXPIRED"  # time stop or pre-close flatten, exited at the market
+    NO_ENTRY = "NO_ENTRY"  # the entry bar never arrived (market closed, no data)
+
+
 class CloseReason(StrEnum):
     SL = "SL"
     TP = "TP"

@@ -41,6 +41,7 @@ from aifund.domain.enums import (
     Side,
     TradeOutcome,
     TradeStatus,
+    VirtualStatus,
 )
 from aifund.persistence.types import DecimalText, UtcDateTime
 
@@ -56,13 +57,15 @@ ULID = String(26)
 ACCOUNT = String(64)
 
 
-def _enum(enum_cls: type[StrEnum]) -> Enum:
+def _enum(enum_cls: type[StrEnum], name: str | None = None) -> Enum:
+    """A checked enum column; pass ``name`` when one table has two columns of the same enum (the CHECK
+    constraint is named after it)."""
     return Enum(
         enum_cls,
         native_enum=False,
         create_constraint=True,
         length=24,
-        name=enum_cls.__name__.lower(),
+        name=name or enum_cls.__name__.lower(),
         values_callable=lambda e: [m.value for m in e],
         validate_strings=True,
     )
@@ -351,19 +354,23 @@ class VirtualTradeRow(Base):
 
     id: Mapped[str] = mapped_column(ULID, primary_key=True)
     account_id: Mapped[str] = mapped_column(ACCOUNT)
-    decision_id: Mapped[str] = mapped_column(ForeignKey("decisions.id"))
+    decision_id: Mapped[str] = mapped_column(ForeignKey("decisions.id"), unique=True)
     snapshot_id: Mapped[str | None] = mapped_column(ForeignKey("feature_snapshots.id"))
     symbol: Mapped[str] = mapped_column(String(32))
     side: Mapped[Side] = mapped_column(_enum(Side))
     setup_tag: Mapped[str | None] = mapped_column(String(40))
-    entry_time: Mapped[datetime]
-    entry_price: Mapped[Decimal]
-    sl: Mapped[Decimal]
-    tp: Mapped[Decimal]
-    status: Mapped[str] = mapped_column(String(16))
+    entry_time: Mapped[datetime]  # the next trigger bar's open: known when the signal is blocked
+    entry_price: Mapped[Decimal | None]  # None while PENDING
+    sl: Mapped[Decimal | None]
+    tp: Mapped[Decimal | None]
+    sl_distance: Mapped[Decimal]  # what stage 10 would have planned (docs/03 §10)
+    tp_distance: Mapped[Decimal]
+    expires_at: Mapped[datetime]  # time stop, or the pre-close flatten if that comes first
+    expire_reason: Mapped[CloseReason] = mapped_column(_enum(CloseReason, "expire_reason"))
+    status: Mapped[VirtualStatus] = mapped_column(_enum(VirtualStatus))
     exit_time: Mapped[datetime | None]
     exit_price: Mapped[Decimal | None]
-    exit_reason: Mapped[str | None] = mapped_column(String(24))
+    exit_reason: Mapped[CloseReason | None] = mapped_column(_enum(CloseReason, "exit_reason"))
     r_multiple: Mapped[Decimal | None]
     mae_r: Mapped[Decimal | None]
     mfe_r: Mapped[Decimal | None]

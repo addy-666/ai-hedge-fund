@@ -485,10 +485,21 @@ balance/credit/fee deals equals the account balance to the cent (`adapters/mt5/d
 ### 14.4 Virtual trades (`reconcile/virtual.py`)
 
 For decisions ending in `RULE_BLOCKED`, `BELOW_THRESHOLD` (with a directional proposal) or
-`RISK_REJECTED` (guard/limit reasons, not broker errors): create a virtual trade with entry = next trigger bar
-open ± half spread, and the SL/TP that stage 10 would have produced. Advance on M1 bars every minute; SL first
-if both touched in one bar; expire after `time_stop_bars`. Virtual trades use the same R/MAE/MFE maths and feed
-the miner, validator and calibration with a `virtual=true` flag.
+`RISK_REJECTED` for a guard/limit reason (`domain.trade.VIRTUAL_REASONS`: rule block, threshold, loss limit,
+cooldown, flip-flop, daily cap, foreign position, reversal rules, exposure caps; NOT duplicates of a position
+already held, sizing, broker or internal errors): the pipeline records a PENDING virtual trade with the stop
+and target distances stage 10 would have planned (`RiskManager.counterfactual_stops`, the same planning a real
+order gets; nothing is issued). The tracker (`reconcile/virtual.py`, every minute):
+
+- enters at the next trigger bar's open: a BUY at the ask (bid open + that bar's spread), a SELL at the bid,
+  as real fills are made (MT5 bars are bid prices, so "open ± half spread" would not match real fills);
+  SL/TP at exactly the planned distances from the fill. No bar within 5 min of the entry time → NO_ENTRY.
+- exits with the SimBroker's own rule (`market/fills.py`): stop first if both are touched in one bar, a gap
+  through the stop fills at the open; otherwise it expires at the time stop, or at the pre-close flatten if
+  that comes first (as a real trade would), at the market (last bar close; ask for a SELL).
+- R = price move / stop distance (no size, so no commission); MAE/MFE with the enrichment rule (§14.3).
+
+Virtual trades feed the miner, validator and calibration with a `virtual=true` flag.
 
 ---
 

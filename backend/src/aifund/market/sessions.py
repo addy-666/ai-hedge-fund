@@ -83,6 +83,16 @@ class SessionCalendar:
                 return self.close_of(d), self.open_of(self._next_trading_day(d))
         raise ValueError(f"no trading day within {_SEARCH_DAYS} days of {now}")
 
+    def next_long_close(self, now: datetime, min_closed: timedelta) -> datetime:
+        """The first close after ``now`` that keeps the market shut for at least ``min_closed``."""
+        moment = now
+        for _ in range(_SEARCH_DAYS * 2):
+            close, reopen = self.next_close(moment)
+            if reopen - close >= min_closed:
+                return close
+            moment = reopen
+        raise ValueError(f"no closure of {min_closed} within {_SEARCH_DAYS} days of {now}")
+
     def long_close_ahead(self, now: datetime, min_closed: timedelta) -> datetime | None:
         """The next close if the market then stays shut for at least ``min_closed``, else None."""
         close, reopen = self.next_close(now)

@@ -115,3 +115,9 @@ def test_config_validation() -> None:
     with pytest.raises(ValueError, match="both"):
         SessionConfig(early_closes={date(2026, 12, 25): "13:00"}, closed_days=[date(2026, 12, 25)])
     assert CAL.daily_close == time(17, 0)
+
+
+def test_next_long_close_skips_the_evening_breaks() -> None:
+    assert CAL.next_long_close(utc(2026, 9, 16, 12, 0), H24) == utc(2026, 9, 18, 21, 0)  # Wed -> Friday close
+    assert CAL.next_long_close(utc(2026, 6, 18, 12, 0), H24) == utc(2026, 6, 19, 17, 0)  # Juneteenth early
+    assert CAL.next_long_close(utc(2026, 9, 19, 12, 0), H24) == utc(2026, 9, 25, 21, 0)  # from a Saturday

@@ -119,16 +119,7 @@ class RiskManager:
             )
 
         try:
-            stops = plan_stops(
-                side=side,
-                entry_ref=entry,
-                spread=req.tick.spread,
-                atr=req.atr,
-                spec=req.spec,
-                cfg=self._cfg.stops,
-                invalidation=d.invalidation_price,
-                target=d.target_price,
-            )
+            stops = self._plan_stops(d, req.tick, req.atr, req.spec)
         except StopError as exc:
             return reject(ReasonCode.INTERNAL_ERROR, f"no valid stop: {exc}")
         ws.update(
@@ -201,6 +192,33 @@ class RiskManager:
             created_at=self._clock.now(),
         )
         return RiskOutcome(intent=intent, action=GuardAction.OPEN, stops=stops, sizing=sizing, worksheet=ws)
+
+    def _plan_stops(self, d: FinalDecision, tick: Tick, atr: Decimal, spec: SymbolSpec) -> StopPlan:
+        side = d.direction.to_side()
+        return plan_stops(
+            side=side,
+            entry_ref=tick.entry_price(side),
+            spread=tick.spread,
+            atr=atr,
+            spec=spec,
+            cfg=self._cfg.stops,
+            invalidation=d.invalidation_price,
+            target=d.target_price,
+        )
+
+    def counterfactual_stops(
+        self, d: FinalDecision, tick: Tick, atr: Decimal, spec: SymbolSpec
+    ) -> StopPlan | None:
+        """The stop/target stage 10 would plan for a signal that was blocked (for virtual trades).
+
+        Exactly the planning a real order gets; nothing is issued. None if no valid stop exists.
+        """
+        if d.direction is Direction.NONE or atr <= 0:
+            return None
+        try:
+            return self._plan_stops(d, tick, atr, spec)
+        except StopError:
+            return None
 
     def _close_intent(self, req: RiskRequest, pos: Position) -> OrderIntent:
         intent_id = new_id()

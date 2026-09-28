@@ -33,6 +33,7 @@ from aifund.persistence.repositories.cursors import DecisionCursorStore
 from aifund.persistence.tables import DecisionRow, OrderIntentRow
 from aifund.reconcile.enrichment import Enricher
 from aifund.reconcile.reconciler import Reconciler
+from aifund.reconcile.virtual import VirtualTracker
 from aifund.risk.manager import RiskManager
 from aifund.risk.position_manager import PositionManager
 from aifund.strategies.base import TfRoles
@@ -104,6 +105,7 @@ async def test_baseline_stack_replay_holds_every_invariant(
         pipeline=pipeline,
         bar_clock=bar_clock,
         position_loop=loop,
+        virtual_tracker=VirtualTracker(broker, feed, factory, clock),
         enricher=Enricher(
             broker,
             feed,
@@ -137,6 +139,9 @@ async def test_baseline_stack_replay_holds_every_invariant(
     assert report.ledger_closed == report.closed_trades  # every closed position is a CLOSED trade
     assert sum(report.close_reasons.values()) == report.closed_trades
     assert report.enriched == report.closed_trades  # MAE/MFE etc. for every closed trade
+    # guard rejections (flip-flop, cooldown, reversal rules...) get counterfactual trades; duplicates do not
+    assert report.virtual is not None
+    assert sum(report.virtual.values()) >= 1
     with factory() as s:
         ordered = s.scalars(
             select(DecisionRow.id).where(DecisionRow.outcome == DecisionOutcome.ORDERED)
