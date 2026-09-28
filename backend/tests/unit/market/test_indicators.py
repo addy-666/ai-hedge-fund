@@ -74,6 +74,18 @@ def test_adx_by_hand() -> None:
     close_to(ind.adx(high, low, close, 2), [NAN, NAN, NAN, 100, 100])
 
 
+def test_adx_is_defined_from_bar_2n_minus_1_regardless_of_series_length() -> None:
+    # Regression (found by the no-lookahead property): a 2n-bar series used to be all-NaN.
+    rng = np.random.default_rng(7)
+    close = 100 + np.cumsum(rng.normal(size=60))
+    high, low = close + 0.5, close - 0.5
+    full = ind.adx(high, low, close, 14)
+    exact = ind.adx(high[:28], low[:28], close[:28], 14)
+    assert np.isnan(full[26])
+    assert not np.isnan(full[27])
+    assert exact[27] == full[27]
+
+
 def test_bollinger_width_by_hand() -> None:
     # SMA(1,2,3)=2, population sigma = sqrt(2/3) ; width = 2*2*sigma/2
     close_to(ind.bollinger_width(np.array([1.0, 2, 3]), 3, 2.0), [NAN, NAN, 2 * math.sqrt(2 / 3)])
@@ -148,7 +160,7 @@ INDICATORS: dict[str, Callable[[np.ndarray, np.ndarray, np.ndarray], np.ndarray]
 
 
 @pytest.mark.parametrize("name", sorted(INDICATORS))
-@settings(max_examples=40, deadline=None)
+@settings(max_examples=200, deadline=None)
 @given(data=ohlc(), cut=st.floats(0.3, 0.95))
 def test_appending_future_bars_never_changes_past_values(name: str, data: Series, cut: float) -> None:
     high, low, close = data

@@ -101,7 +101,7 @@ def rsi(close: Arr, n: int = 14) -> Arr:
 def adx(high: Arr, low: Arr, close: Arr, n: int = 14) -> Arr:
     high, low, close = _as_float(high), _as_float(low), _as_float(close)
     size = len(close)
-    if size < 2 * n + 1:
+    if size < 2:  # warm-up (first value at index 2n-1) is handled by the Wilder averages themselves
         return _nan(size)
     up = np.diff(high)
     down = -np.diff(low)
