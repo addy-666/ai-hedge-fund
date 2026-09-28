@@ -37,6 +37,7 @@ from aifund.execution.executor import Executor
 from aifund.market.bar_clock import BarClock
 from aifund.persistence.db import make_engine, make_session_factory
 from aifund.persistence.repositories.cursors import DecisionCursorStore
+from aifund.reconcile.enrichment import Enricher
 from aifund.reconcile.reconciler import Reconciler
 from aifund.risk.manager import RiskManager
 from aifund.risk.position_manager import PositionManager
@@ -117,6 +118,14 @@ async def main(argv: list[str]) -> int:
         pipeline=pipeline,
         bar_clock=bar_clock,
         position_loop=loop,
+        enricher=Enricher(
+            broker,
+            feed,
+            factory,
+            clock,
+            NullNotifier(),
+            trigger_tfs={s.broker: cfg.profiles[s.profile].trigger_tf for s in cfg.symbols},
+        ),
         reconciler=Reconciler(
             broker, factory, clock, NullNotifier(), account_id="replay", magic=cfg.engine.magic
         ),

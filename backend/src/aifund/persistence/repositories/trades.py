@@ -21,6 +21,11 @@ _CLOSE_FIELDS = {
     "close_time", "close_price_vwap", "close_reason", "gross_profit", "commission", "swap", "fee",
     "net_pnl", "r_multiple", "outcome",
 }  # fmt: skip
+_ENRICH_FIELDS = {
+    "mae_price", "mfe_price", "mae_r", "mfe_r", "bars_held", "holding_minutes", "entry_slippage_points",
+    "exit_slippage_points",
+}  # fmt: skip
+CLOSED_STATUSES = (TradeStatus.CLOSED, TradeStatus.ORPHAN_CLOSED)
 
 
 class TradeRepository:
@@ -72,6 +77,29 @@ class TradeRepository:
         for key, value in fields.items():
             setattr(row, key, value)
         row.updated_at = self._clock.now()
+        self._s.flush()
+        return row
+
+    def unenriched(self, limit: int = 50) -> Sequence[TradeRow]:
+        """Closed trades whose enrichment (MAE/MFE, holding time, slippage) has not run yet, oldest first."""
+        return self._s.scalars(
+            select(TradeRow)
+            .where(TradeRow.status.in_(CLOSED_STATUSES), TradeRow.enriched_at.is_(None))
+            .order_by(TradeRow.close_time)
+            .limit(limit)
+        ).all()
+
+    def enrich(self, position_id: int, **fields: Any) -> TradeRow:
+        """Record enrichment once; a closed trade's ledger fields are never touched here."""
+        unknown = set(fields) - _ENRICH_FIELDS
+        if unknown:
+            raise InvariantViolation(f"not enrichment fields: {sorted(unknown)}")
+        row = self._require(position_id)
+        if row.status not in CLOSED_STATUSES or row.enriched_at is not None:
+            raise InvariantViolation(f"trade {row.id} is {row.status}, enriched_at={row.enriched_at}")
+        for key, value in fields.items():
+            setattr(row, key, value)
+        row.enriched_at = row.updated_at = self._clock.now()
         self._s.flush()
         return row
 

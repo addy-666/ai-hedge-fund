@@ -308,8 +308,13 @@ class TradeRow(Base):
     r_multiple: Mapped[Decimal | None]
     mae_r: Mapped[Decimal | None]
     mfe_r: Mapped[Decimal | None]
+    mae_price: Mapped[Decimal | None]
+    mfe_price: Mapped[Decimal | None]
+    entry_slippage_points: Mapped[int | None]
+    exit_slippage_points: Mapped[int | None]
     bars_held: Mapped[int | None]
     holding_minutes: Mapped[int | None]
+    enriched_at: Mapped[datetime | None]
     outcome: Mapped[TradeOutcome | None] = mapped_column(_enum(TradeOutcome))
     review_status: Mapped[str] = mapped_column(String(16), default="PENDING")
     created_at: Mapped[datetime]

@@ -18,12 +18,13 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from aifund.adapters.clock import FakeClock
 from aifund.adapters.sim.sim_broker import SimBroker
-from aifund.domain.enums import DealEntry, IntentKind, IntentStatus, TradeStatus
+from aifund.domain.enums import DealEntry, IntentKind, IntentStatus, Side, TradeStatus
 from aifund.domain.market import Deal
 from aifund.engine.pipeline import DecisionPipeline
 from aifund.engine.position_loop import PositionLoop
 from aifund.market.bar_clock import BarClock
 from aifund.persistence.tables import DecisionRow, OrderIntentRow, TradeRow
+from aifund.reconcile.enrichment import Enricher
 from aifund.reconcile.reconciler import Reconciler, ReconcileReport
 
 
@@ -43,6 +44,9 @@ class ReplayReport:
     position_actions: Counter[str] = field(default_factory=Counter)
     ledger_closed: int | None = None  # trades the reconciler closed (None: no reconciler in this run)
     close_reasons: Counter[str] = field(default_factory=Counter)
+    enriched: int | None = None  # closed trades with MAE/MFE etc. (None: no enricher in this run)
+    mean_mae_r: Decimal | None = None
+    mean_mfe_r: Decimal | None = None
     violations: list[str] = field(default_factory=list)
 
     def render(self) -> str:
@@ -64,6 +68,12 @@ class ReplayReport:
                 else f"{self.ledger_closed} closed trades; "
                 + (", ".join(f"{k}={v}" for k, v in self.close_reasons.most_common()) or "none")
             ),
+            "enrichment: "
+            + (
+                "no enricher"
+                if self.enriched is None
+                else f"{self.enriched} trades; mean MAE {self.mean_mae_r}R, mean MFE {self.mean_mfe_r}R"
+            ),
             f"invariant violations: {len(self.violations)}",
         ]
         lines += [f"  ! {v}" for v in self.violations[:20]]
@@ -83,6 +93,7 @@ async def run_replay(
     max_positions_per_symbol: int = 1,
     position_loop: PositionLoop | None = None,
     reconciler: Reconciler | None = None,
+    enricher: Enricher | None = None,
     progress: Callable[[str], None] = lambda _msg: None,
 ) -> ReplayReport:
     report = ReplayReport(start=clock.now(), end=end)
@@ -100,6 +111,9 @@ async def run_replay(
                 report.position_actions[kind.value] += 1
         if reconciler is not None:
             _record_reconcile(report, await reconciler.run_once())
+        if enricher is not None:
+            for message in (await enricher.run_once()).errors:
+                report.violations.append(f"enricher error: {message}")
         await _check_step(report, broker, factory, magic, max_positions_per_symbol)
         if clock.now().date() != last_day:
             last_day = clock.now().date()
@@ -121,7 +135,38 @@ async def run_replay(
     _check_final(report, factory)
     if reconciler is not None:
         _check_ledger(report, factory, mine, closed, open_ids)
+    if enricher is not None:
+        _check_enrichment(report, factory, clock.now() - timedelta(minutes=1))
     return report
+
+
+def _check_enrichment(report: ReplayReport, factory: sessionmaker[Session], settled_before: datetime) -> None:
+    """Every settled closed trade is enriched, and its exit lies within its own excursions."""
+    with factory() as s:
+        closed = [t for t in s.scalars(select(TradeRow)).all() if t.close_time is not None]
+    done = [t for t in closed if t.enriched_at is not None]
+    report.enriched = len(done)
+    for t in closed:
+        if t.enriched_at is None and t.close_time is not None and t.close_time < settled_before:
+            report.violations.append(f"trade {t.position_id} closed {t.close_time} but was never enriched")
+    for t in done:
+        if t.mae_price is None or t.mfe_price is None or t.close_price_vwap is None:
+            report.violations.append(f"trade {t.position_id}: enriched without excursions")
+            continue
+        realised = (t.close_price_vwap - t.open_price) * (1 if t.side is Side.BUY else -1)
+        if not -t.mae_price <= realised <= t.mfe_price:
+            report.violations.append(
+                f"trade {t.position_id}: exit move {realised} outside [-{t.mae_price}, {t.mfe_price}]"
+            )
+        if t.mae_r is not None and t.mfe_r is not None and not t.mae_r <= 0 <= t.mfe_r:
+            report.violations.append(f"trade {t.position_id}: MAE {t.mae_r}R / MFE {t.mfe_r}R signs")
+    maes = [t.mae_r for t in done if t.mae_r is not None]
+    mfes = [t.mfe_r for t in done if t.mfe_r is not None]
+    cent = Decimal("0.01")
+    if maes:
+        report.mean_mae_r = (sum(maes, Decimal(0)) / len(maes)).quantize(cent)
+    if mfes:
+        report.mean_mfe_r = (sum(mfes, Decimal(0)) / len(mfes)).quantize(cent)
 
 
 def _record_reconcile(report: ReplayReport, result: ReconcileReport) -> None:

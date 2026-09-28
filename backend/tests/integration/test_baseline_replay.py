@@ -31,6 +31,7 @@ from aifund.execution.executor import Executor
 from aifund.market.bar_clock import BarClock
 from aifund.persistence.repositories.cursors import DecisionCursorStore
 from aifund.persistence.tables import DecisionRow, OrderIntentRow
+from aifund.reconcile.enrichment import Enricher
 from aifund.reconcile.reconciler import Reconciler
 from aifund.risk.manager import RiskManager
 from aifund.risk.position_manager import PositionManager
@@ -103,6 +104,14 @@ async def test_baseline_stack_replay_holds_every_invariant(
         pipeline=pipeline,
         bar_clock=bar_clock,
         position_loop=loop,
+        enricher=Enricher(
+            broker,
+            feed,
+            factory,
+            clock,
+            NullNotifier(),
+            trigger_tfs={s.broker: cfg.profiles[s.profile].trigger_tf for s in cfg.symbols},
+        ),
         reconciler=Reconciler(
             broker, factory, clock, NullNotifier(), account_id="acc", magic=cfg.engine.magic
         ),
@@ -127,6 +136,7 @@ async def test_baseline_stack_replay_holds_every_invariant(
     assert report.max_positions_per_symbol == 1
     assert report.ledger_closed == report.closed_trades  # every closed position is a CLOSED trade
     assert sum(report.close_reasons.values()) == report.closed_trades
+    assert report.enriched == report.closed_trades  # MAE/MFE etc. for every closed trade
     with factory() as s:
         ordered = s.scalars(
             select(DecisionRow.id).where(DecisionRow.outcome == DecisionOutcome.ORDERED)

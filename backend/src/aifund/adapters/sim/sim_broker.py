@@ -165,9 +165,8 @@ class SimBroker:
             for bar in self.feed.bars_closing_in(symbol, QUOTE_TF, self._walked_until, now):
                 spread = spec.point * Decimal(bar.spread_points)
                 for pos in [p for p in self._positions.values() if p.symbol == symbol and p.time <= bar.time]:
-                    self._check_exits(
-                        pos, bar.open, bar.high, bar.low, spread, bar.time + timedelta(minutes=1)
-                    )
+                    # stamped with the minute the level was touched, as MT5 stamps a deal inside its minute
+                    self._check_exits(pos, bar.open, bar.high, bar.low, spread, bar.time)
         self._walked_until = now
 
     def _check_exits(

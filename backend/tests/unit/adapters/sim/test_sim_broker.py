@@ -144,7 +144,7 @@ async def test_take_profit_fills_at_tp_with_exact_profit() -> None:
     assert len(out) == 1
     assert (out[0].reason, out[0].price, out[0].side) == (DealReason.TP, D("2360.00"), Side.SELL)
     assert out[0].profit == D("98.00")  # (2360.00-2350.20)/0.01 ticks x $1 x 0.10 lot
-    assert out[0].time == T0 + timedelta(minutes=3)
+    assert out[0].time == T0 + timedelta(minutes=2)  # stamped in the minute the TP was touched
     assert broker.balance == D("10000") + D("98.00") - D("0.70")
 
 

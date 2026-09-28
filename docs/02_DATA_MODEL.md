@@ -118,8 +118,11 @@ Unique: (`symbol`, `trigger_tf`, `bar_time`, `feature_set_version`).
 | close_time, close_price_vwap, close_reason | SL / TP / STOP_OUT / ENGINE / OPERATOR / MANUAL_EXTERNAL / REVERSAL / TIME_STOP / FLATTEN |
 | gross_profit, commission, swap, fee, net_pnl | Σ over all deals of the position |
 | r_multiple | net_pnl / initial_risk_money (null for orphans) |
-| mae_r, mfe_r | max adverse / favourable excursion in R (from M1 bars) |
-| bars_held, holding_minutes | |
+| mae_r, mfe_r | max adverse / favourable excursion in R of the initial stop distance: mae_r ≤ 0 ≤ mfe_r (from M1 bars, see `03` §14.3) |
+| mae_price, mfe_price | the same in price (≥ 0; orphans have these but no R) |
+| entry_slippage_points, exit_slippage_points | positive = worse than requested; exit vs the SL/TP level or the engine's close request; null for manual exits |
+| bars_held, holding_minutes | whole trigger-TF bars (as the time stop counts) and minutes |
+| enriched_at | set once when enrichment ran (`03` §14.3) |
 | outcome | WIN (R ≥ +0.1) / LOSS (R ≤ −0.1) / BREAKEVEN |
 | review_status | PENDING / DONE / FAILED |
 | is_virtual | false here (virtual trades live in their own table) |
