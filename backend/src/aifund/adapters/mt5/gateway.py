@@ -455,6 +455,24 @@ class MT5Gateway:
 
         return self._map_deals(await self._run(_deals))
 
+    async def raw_deals_between(self, start_server_epoch: int, end_server_epoch: int) -> list[dict[str, Any]]:
+        """Every deal in a server-time window as MT5 returns it (incl. balance / credit / fee deals).
+
+        For recording fixtures (scripts/capture_deals.py): values are left exactly as the terminal reports
+        them so a test can run them through the production mapping.
+        """
+
+        def _deals(mt5: Any) -> Any:
+            raw = mt5.history_deals_get(start_server_epoch, end_server_epoch)
+            if raw is None:
+                code, _ = self._error(mt5)
+                if code != RES_S_OK:
+                    raise self._fail(mt5, "history_deals_get(range)")
+                return ()
+            return [d._asdict() if hasattr(d, "_asdict") else dict(vars(d)) for d in raw]
+
+        return list(await self._run(_deals))
+
     def _map_deals(self, raw: Any) -> list[Deal]:
         deals = [d for d in (m.deal_from_mt5(r, self.server_offset) for r in raw) if d is not None]
         deals.sort(key=lambda d: (d.time, d.ticket))

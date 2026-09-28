@@ -28,6 +28,7 @@ cd backend && uv run python scripts/mt5_smoke.py   # Windows + MT5 terminal only
 cd backend && uv run python scripts/export_history.py --months 15  # Windows: bars -> <repo>/data/history (Parquet)
 cd backend && uv run python scripts/replay.py --from 2026-06-15 --to 2026-09-27   # full stack on exported history (SimBroker)
 cd backend && uv run python scripts/spread_report.py   # spread vs ATR per symbol: evidence for the spread gates
+cd backend && uv run python scripts/capture_deals.py  # Windows, DEMO: record deal history -> tests/fixtures/mt5_deals (READ-ONLY)
 ```
 
 Not yet available (the phase that adds each is in brackets; update this list when it lands):
