@@ -12,6 +12,7 @@ dependencies = [
     "structlog>=24.1",
     "python-ulid>=2.7,<4",
     "pyarrow>=17",
+    "numpy>=2.0",
 ]
 
 [project.optional-dependencies]
