@@ -54,6 +54,11 @@ def test_quantize_to_step(value: str, step: str, rounding: Rounding, expected: s
     assert quantize_to_step(Decimal(value), Decimal(step), rounding) == Decimal(expected)
 
 
+def test_rounded_values_stay_in_plain_notation() -> None:
+    assert str(floor_volume(Decimal(10), Decimal(1))) == "10"
+    assert str(floor_volume(Decimal("12.3456"), Decimal("0.01"))) == "12.34"
+
+
 def test_quantize_rejects_non_positive_step() -> None:
     with pytest.raises(ValueError, match="step must be positive"):
         quantize_to_step(Decimal(1), Decimal(0), Rounding.DOWN)

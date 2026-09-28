@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Mapping
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any, Self
 
@@ -35,9 +35,8 @@ def make_idempotency_key(
     """Deterministic key: the same bar/direction can be acted on at most once, even across restarts."""
     if bar_time.tzinfo is None:
         raise ValueError("bar_time must be timezone-aware")
-    material = "|".join(
-        [str(account), symbol, trigger_tf.value, bar_time.isoformat(), direction.value, strategy_version]
-    )
+    instant = bar_time.astimezone(UTC).isoformat()  # same instant -> same key, whatever the tz
+    material = "|".join([str(account), symbol, trigger_tf.value, instant, direction.value, strategy_version])
     return hashlib.sha256(material.encode("utf-8")).hexdigest()[:24]
 
 
@@ -85,6 +84,12 @@ class OrderIntent(BaseModel):
                 raise ValueError("BUY requires sl < price_ref < tp")
             if self.side is Side.SELL and not self.tp < self.price_ref < self.sl:
                 raise ValueError("SELL requires tp < price_ref < sl")
+            # The executor re-derives SL/TP from these distances around the live price (docs/03 §12),
+            # so they must describe exactly the levels the position was sized on.
+            if self.sl_distance != abs(self.price_ref - self.sl):
+                raise ValueError("sl_distance must equal |price_ref - sl|")
+            if self.tp_distance != abs(self.tp - self.price_ref):
+                raise ValueError("tp_distance must equal |tp - price_ref|")
         elif self.position_ticket is None:
             raise ValueError(f"{self.kind} intents require position_ticket")
         if not self.comment.startswith(COMMENT_PREFIX):

@@ -198,6 +198,7 @@ def upgrade() -> None:
         sa.Column("severity", sa.String(length=16), nullable=False),
         sa.Column("payload", sa.JSON(), nullable=True),
         sa.PrimaryKeyConstraint("seq", name=op.f("pk_events")),
+        sqlite_autoincrement=True,
     )
     with op.batch_alter_table("events", schema=None) as batch_op:
         batch_op.create_index(batch_op.f("ix_events_ts"), ["ts"], unique=False)

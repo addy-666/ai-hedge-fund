@@ -124,6 +124,12 @@ forbidden_modules = [
 ]
 
 [[tool.importlinter.contracts]]
+name = "Market data and strategies use ports, not adapters or the database"
+type = "forbidden"
+source_modules = ["aifund.market", "aifund.strategies"]
+forbidden_modules = ["aifund.adapters", "aifund.persistence", "aifund.engine", "sqlalchemy", "MetaTrader5"]
+
+[[tool.importlinter.contracts]]
 name = "Only the Risk Manager issues executable order intents"
 type = "forbidden"
 source_modules = [

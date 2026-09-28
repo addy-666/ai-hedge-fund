@@ -14,6 +14,7 @@ import re
 import sys
 from collections.abc import Iterator, Mapping, MutableMapping
 from contextlib import contextmanager
+from itertools import pairwise
 from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
 from typing import IO, Any
@@ -24,9 +25,15 @@ from pydantic import SecretStr
 from aifund.config.settings import Settings
 
 REDACTED = "***REDACTED***"
-_SENSITIVE_KEY = re.compile(
-    r"(pass(word)?|secret|token|api[_-]?key|authorization|auth|cookie|credential)", re.I
-)
+# Matched against whole key segments (split on _ - . space and camelCase), not substrings, so
+# "prompt_tokens", "checks_passed" or "author" stay readable while "bot_token", "botToken", "apiKey",
+# "x-api-key", "mt5_password" and "Authorization" are redacted.
+_SENSITIVE_SEGMENTS = frozenset(
+    {"password", "passwd", "pwd", "secret", "token", "apikey", "authorization", "auth", "cookie",
+     "credential", "credentials", "bearer"}
+)  # fmt: skip
+_CAMEL = re.compile(r"([a-z0-9])([A-Z])")
+_SEGMENT_SPLIT = re.compile(r"[_\-.\s]+")
 _MIN_SECRET_LEN = 6
 _secrets: set[str] = set()
 
@@ -57,8 +64,15 @@ def _scrub_str(text: str) -> str:
     return text
 
 
+def _is_sensitive_key(key: str) -> bool:
+    segments = [seg for seg in _SEGMENT_SPLIT.split(_CAMEL.sub(r"\1_\2", key).lower()) if seg]
+    if any(seg in _SENSITIVE_SEGMENTS for seg in segments):
+        return True
+    return any(a == "api" and b == "key" for a, b in pairwise(segments))
+
+
 def _redact(value: Any, key: str | None = None) -> Any:
-    if key is not None and _SENSITIVE_KEY.search(key):
+    if key is not None and _is_sensitive_key(key):
         return REDACTED
     if isinstance(value, SecretStr):
         return REDACTED

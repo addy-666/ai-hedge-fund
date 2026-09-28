@@ -6,12 +6,31 @@ versioned and audited.
 
 from __future__ import annotations
 
+import os
 from enum import StrEnum
 from pathlib import Path
 from typing import Self
 
-from pydantic import Field, SecretStr, model_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from sqlalchemy.engine import make_url
+
+
+def find_project_root() -> Path:
+    """Repo root (the directory holding AGENTS.md and backend/). Relative paths in settings resolve here,
+    so commands behave the same whether run from the repo root or from backend/.
+
+    Override with AIFUND_HOME for installs outside a checkout.
+    """
+    if home := os.environ.get("AIFUND_HOME"):
+        return Path(home).resolve()
+    for candidate in Path(__file__).resolve().parents:
+        if (candidate / "AGENTS.md").is_file() and (candidate / "backend").is_dir():
+            return candidate
+    return Path.cwd()
+
+
+PROJECT_ROOT = find_project_root()
 
 
 class BrokerKind(StrEnum):
@@ -21,7 +40,7 @@ class BrokerKind(StrEnum):
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=PROJECT_ROOT / ".env",
         env_file_encoding="utf-8",
         extra="ignore",
         case_sensitive=True,
@@ -29,8 +48,8 @@ class Settings(BaseSettings):
     )
 
     BROKER: BrokerKind = BrokerKind.SIM
-    CONFIG_PATH: Path = Path("config/trading.yaml")
-    DATABASE_URL: str = "sqlite:///data/aifund.db"
+    CONFIG_PATH: Path = Path("config/trading.yaml")  # relative -> PROJECT_ROOT
+    DATABASE_URL: str = "sqlite:///data/aifund.db"  # relative SQLite path -> PROJECT_ROOT
 
     # --- LLM
     DEEPSEEK_API_KEY: SecretStr | None = None
@@ -49,6 +68,24 @@ class Settings(BaseSettings):
     # --- API
     API_SECRET_KEY: SecretStr | None = None
     ADMIN_PASSWORD_HASH: SecretStr | None = None
+
+    @field_validator("CONFIG_PATH")
+    @classmethod
+    def _config_path_from_root(cls, value: Path) -> Path:
+        return value if value.is_absolute() else PROJECT_ROOT / value
+
+    @field_validator("DATABASE_URL")
+    @classmethod
+    def _sqlite_path_from_root(cls, value: str) -> str:
+        url = make_url(value)
+        database = url.database
+        if (
+            url.get_backend_name() != "sqlite"
+            or database in (None, "", ":memory:")
+            or Path(database).is_absolute()
+        ):
+            return value
+        return url.set(database=str(PROJECT_ROOT / database)).render_as_string(hide_password=False)
 
     @model_validator(mode="after")
     def _mt5_requires_explicit_account(self) -> Self:

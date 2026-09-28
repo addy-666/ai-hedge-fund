@@ -131,6 +131,9 @@ class CommandRow(Base):
 
 class EventRow(Base):
     __tablename__ = "events"
+    # AUTOINCREMENT: seq must never be reused, even after the newest rows are deleted — API clients
+    # resume their event stream with ?since=<seq> (docs/05).
+    __table_args__ = {"sqlite_autoincrement": True}  # noqa: RUF012
 
     seq: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     ts: Mapped[datetime] = mapped_column(index=True)

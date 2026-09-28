@@ -92,7 +92,7 @@ def test_placeholder_models_are_allowed_in_sim(base: dict[str, Any]) -> None:
         ("profiles.intraday_m15.setup_tf", "M5", "setup_tf must be a higher timeframe"),
         ("profiles.intraday_m15.context_tfs", ["H1", "D1"], "must be higher than setup_tf"),
         ("profiles.intraday_m15.context_tfs", ["D1", "D1"], "duplicates"),
-        ("profiles.intraday_m15.bars_per_tf", 100, "greater than or equal to 250"),
+        ("profiles.intraday_m15.bars_per_tf", 299, "greater than or equal to 300"),
         ("strategy.analyst_enabled", False, "enable analyst_enabled and/or baseline_enabled"),
         ("llm.base_url", "http://api.deepseek.com", "should match pattern"),
         ("learning.min_matches_holdout", 50, "min_matches_holdout must be <= min_matches_total"),
@@ -177,3 +177,10 @@ def test_error_message_lists_every_problem(base: dict[str, Any]) -> None:
 def test_missing_file_raises_config_error(tmp_path: Path) -> None:
     with pytest.raises(ConfigError, match="cannot read"):
         load_trading_config(tmp_path / "nope.yaml")
+
+
+@pytest.mark.parametrize("value", [".inf", "-.inf", ".nan", ".NaN"])
+def test_non_finite_yaml_numbers_raise_config_error(value: str) -> None:
+    text = EXAMPLE.read_text().replace("  bar_close_grace_s: 3\n", f"  bar_close_grace_s: {value}\n")
+    with pytest.raises(ConfigError, match="non-finite number"):
+        parse_trading_config(text)

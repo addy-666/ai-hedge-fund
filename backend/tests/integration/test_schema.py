@@ -146,3 +146,16 @@ def test_sqlite_parent_directory_is_created(tmp_path: Path) -> None:
         conn.execute(text("SELECT 1"))
     eng.dispose()
     assert (tmp_path / "nested" / "dir" / "x.db").exists()
+
+
+def test_event_sequence_is_never_reused_after_deleting_newest_rows(factory: sessionmaker[Session]) -> None:
+    with factory.begin() as s:
+        for _ in range(3):
+            s.add(EventRow(ts=T0, type="x", severity="info"))
+    with factory.begin() as s:
+        s.execute(text("DELETE FROM events"))  # e.g. a retention purge during a quiet period
+    with factory.begin() as s:
+        row = EventRow(ts=T0, type="y", severity="info")
+        s.add(row)
+        s.flush()
+        assert row.seq == 4

@@ -22,7 +22,7 @@ cd backend && uv sync --python 3.12                # install incl. dev tools (ma
 cd backend && uv sync --python 3.12 --extra mt5    # Windows VPS only: adds the MetaTrader5 wheel
 cd backend && uv run pytest -q
 cd backend && uv run ruff check . && uv run ruff format --check . && uv run mypy && uv run lint-imports
-cd backend && uv run alembic upgrade head          # DATABASE_URL, default sqlite:///data/aifund.db (backend/data/)
+cd backend && uv run alembic upgrade head          # DATABASE_URL, default <repo>/data/aifund.db
 cd backend && uv run alembic revision --autogenerate -m "<change>"   # then review the generated file
 ```
 
@@ -55,6 +55,9 @@ cd frontend && npm run gen:api                                  # [Phase 6] rege
 14. **Unit tests never hit the network or a real broker.** Use `SimBroker`, `FakeLLM`, `FakeClock`.
 
 ## Conventions
+
+- `.env`, `CONFIG_PATH` and relative SQLite paths resolve against the repo root (`config/settings.py`
+  `PROJECT_ROOT`), so commands behave the same from the repo root or `backend/`. Keep `.env` at the repo root.
 
 - Python 3.12, type hints everywhere, Pydantic v2 models for all boundaries, `Decimal` for money/volume.
 - Package `aifund` under `backend/src/`. Layering per `docs/01_ARCHITECTURE.md` §12 (enforced by import-linter).

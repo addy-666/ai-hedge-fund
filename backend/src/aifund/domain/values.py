@@ -45,7 +45,7 @@ def quantize_to_step(value: Decimal, step: Decimal, rounding: Rounding) -> Decim
     if step <= 0:
         raise ValueError(f"step must be positive, got {step}")
     units = (value / step).to_integral_value(rounding=_MODES[rounding])
-    return (units * step).normalize() if units else Decimal(0)
+    return units * step
 
 
 def floor_volume(volume: Decimal, step: Decimal) -> Decimal:

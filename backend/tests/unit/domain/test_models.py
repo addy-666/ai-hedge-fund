@@ -166,7 +166,8 @@ def test_idempotency_key_is_deterministic_and_input_sensitive() -> None:
 
 def test_idempotency_key_is_timezone_independent_for_the_same_instant() -> None:
     same_instant = T0.astimezone(timezone(timedelta(hours=5, minutes=30)))
-    assert _key(bar_time=same_instant.astimezone(UTC)) == _key()
+    assert same_instant.utcoffset() != timedelta(0)
+    assert _key(bar_time=same_instant) == _key()
     with pytest.raises(ValueError, match="timezone-aware"):
         _key(bar_time=T0.replace(tzinfo=None))
 
@@ -227,6 +228,8 @@ def test_copies_and_reconstructions_are_never_executable() -> None:
         {"risk_money": Decimal(0)},
         {"comment": "AI Brain Entry"},
         {"comment": "AF:" + "x" * 40},
+        {"sl_distance": Decimal("1.50")},  # sized on a different stop than the one placed
+        {"tp_distance": Decimal("20")},
     ],
 )
 def test_intent_geometry_and_fields_are_validated(overrides: dict[str, Any]) -> None:

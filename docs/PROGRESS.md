@@ -7,7 +7,7 @@ Updated by the coding agent at the end of every task.
 - Phase: 1 — Market data & features
 - Next task: 1.1 MT5 gateway
 - Rollout level: none (pre-L0). Nothing in this repo can place an order yet.
-- Tests: 150 passing (unit + integration against a migrated SQLite file). CI defined but not yet run
+- Tests: 189 passing (unit + integration against a migrated SQLite file). CI defined but not yet run
   (repo not pushed at the time of writing).
 
 ## Completed tasks
@@ -23,6 +23,8 @@ Updated by the coding agent at the end of every task.
 | 2026-09-28 | 0.7 Persistence | 21 tables, `DecimalText`/`UtcDateTime` types, WAL pragmas, initial Alembic migration with zero-drift test, repositories for intents and control tables | FK cycles removed (`decisions.intent_id`, `audit_runs.llm_call_id`); `llm_calls.model_reported`, `equity_snapshots.open_notional` added | Repositories for trades, deals, decisions, rules etc. arrive with the phases that use them |
 | 2026-09-28 | 0.8 Logging | structlog JSON lines, daily-rotated files, redaction by key and by registered secret value (incl. exception text), correlation ids | Module is `aifund/observability.py` | — |
 | 2026-09-28 | 0.9 AGENTS/PROGRESS | Every "working now" command in AGENTS.md executed; not-yet-available commands marked with their phase | `make_engine` creates the SQLite parent directory | — |
+
+| 2026-09-28 | PR #1 review fixes | Self-review found 10 issues, all fixed: idempotency key normalised to UTC; log redaction by key segment (token counts no longer hidden); settings paths resolve from the repo root; events.seq uses SQLite AUTOINCREMENT; intent distances must match SL/TP; non-finite YAML numbers -> ConfigError; no scientific notation from rounding; config `latest()` ordered by time; bars_per_tf >= 300; market/strategies import contract | Initial migration edited in place (never deployed) | — |
 
 ## Decisions log
 

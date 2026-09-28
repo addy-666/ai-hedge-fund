@@ -82,7 +82,11 @@ class ConfigVersionRepository(_Repo):
         return row
 
     def latest(self) -> ConfigVersionRow | None:
-        stmt = select(ConfigVersionRow).order_by(ConfigVersionRow.id.desc()).limit(1)
+        stmt = (
+            select(ConfigVersionRow)
+            .order_by(ConfigVersionRow.created_at.desc(), ConfigVersionRow.id.desc())
+            .limit(1)
+        )
         return self._s.scalars(stmt).first()
 
 

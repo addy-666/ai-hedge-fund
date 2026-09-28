@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 
@@ -27,7 +27,14 @@ class _DecimalSafeLoader(yaml.SafeLoader):
 
 
 def _construct_decimal(loader: yaml.SafeLoader, node: yaml.ScalarNode) -> Decimal:
-    return Decimal(loader.construct_scalar(node))
+    text = str(loader.construct_scalar(node))
+    try:
+        value = Decimal(text)
+    except InvalidOperation:
+        value = Decimal("NaN")  # .inf / .nan and friends: YAML floats Decimal cannot parse
+    if not value.is_finite():
+        raise ConfigError(f"non-finite number {text!r} at line {node.start_mark.line + 1}")
+    return value
 
 
 def _construct_mapping_no_duplicates(loader: yaml.SafeLoader, node: yaml.MappingNode) -> dict[Any, Any]:

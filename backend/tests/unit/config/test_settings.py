@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from pydantic import ValidationError
 
-from aifund.config.settings import BrokerKind, Settings
+from aifund.config.settings import PROJECT_ROOT, BrokerKind, Settings
 
 ENV_KEYS = [
     "BROKER",
@@ -55,3 +57,32 @@ def test_secrets_are_masked_in_repr_and_str() -> None:
     assert "hunter2" not in str(s)
     assert s.DEEPSEEK_API_KEY is not None
     assert s.DEEPSEEK_API_KEY.get_secret_value() == "sk-very-secret"
+
+
+def test_project_root_is_the_repo_root() -> None:
+    assert (PROJECT_ROOT / "AGENTS.md").is_file()
+    assert (PROJECT_ROOT / "config" / "trading.example.yaml").is_file()
+
+
+def test_env_file_is_read_from_the_repo_root_regardless_of_cwd(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)  # e.g. running from backend/ or anywhere else
+    assert Settings.model_config["env_file"] == PROJECT_ROOT / ".env"
+
+
+def test_relative_paths_resolve_against_the_repo_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    s = make()
+    assert s.CONFIG_PATH == PROJECT_ROOT / "config" / "trading.yaml"
+    assert f"sqlite:///{PROJECT_ROOT / 'data' / 'aifund.db'}" == s.DATABASE_URL
+
+
+def test_absolute_and_non_sqlite_urls_are_left_alone(tmp_path: Path) -> None:
+    assert f"sqlite:///{tmp_path}/x.db" == make(DATABASE_URL=f"sqlite:///{tmp_path}/x.db").DATABASE_URL
+    assert make(DATABASE_URL="sqlite://").DATABASE_URL == "sqlite://"
+    pg = "postgresql+psycopg://u:p@host:5432/aifund"
+    assert pg == make(DATABASE_URL=pg).DATABASE_URL
+    assert tmp_path / "t.yaml" == make(CONFIG_PATH=str(tmp_path / "t.yaml")).CONFIG_PATH

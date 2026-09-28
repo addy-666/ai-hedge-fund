@@ -77,7 +77,7 @@ class ProfileConfig(_Strict):
     trigger_tf: Timeframe
     setup_tf: Timeframe
     context_tfs: list[Timeframe] = Field(min_length=1)
-    bars_per_tf: int = Field(default=300, ge=250, le=5000)
+    bars_per_tf: int = Field(default=300, ge=300, le=5000)  # EMA200 warm-up + 100-bar percentiles
     require_setup: bool = True
 
     @model_validator(mode="after")

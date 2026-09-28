@@ -107,3 +107,50 @@ def test_file_handler_writes_jsonl(tmp_path: Path) -> None:
     content = (tmp_path / "logs" / "engine.jsonl").read_text()
     assert json.loads(content.splitlines()[0])["event"] == "hello"
     logging.getLogger().handlers.clear()
+
+
+@pytest.mark.parametrize(
+    "key",
+    [
+        "password",
+        "mt5_password",
+        "MT5_PASSWORD",
+        "api_key",
+        "apiKey",
+        "x-api-key",
+        "X-Api-Key",
+        "bot_token",
+        "botToken",
+        "TELEGRAM_BOT_TOKEN",
+        "Authorization",
+        "auth",
+        "secret",
+        "client_secret",
+        "cookie",
+        "credentials",
+        "access_token",
+    ],
+)
+def test_credential_keys_are_redacted(stream: io.StringIO, key: str) -> None:
+    get_logger("x").info("e", **{key: "value-1234"})
+    assert lines(stream)[0][key] == REDACTED
+
+
+@pytest.mark.parametrize(
+    "key",
+    [
+        "prompt_tokens",
+        "completion_tokens",
+        "cached_tokens",
+        "checks_passed",
+        "author",
+        "authority",
+        "idempotency_key",
+        "keyword",
+        "passage",
+        "tokenizer_name",
+    ],
+)
+def test_ordinary_keys_that_contain_credential_words_stay_readable(stream: io.StringIO, key: str) -> None:
+    get_logger("x").info("e", **{key: 812})
+    assert lines(stream)[0][key] == 812
