@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: backend
+
+jobs:
+  backend:
+    name: backend (${{ matrix.os }}${{ matrix.tz && format(', TZ={0}', matrix.tz) || '' }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+          # A run away from UTC catches naive-datetime / server-time conversion bugs.
+          - os: ubuntu-latest
+            tz: Asia/Kolkata
+          # The VPS platform: installs the real MetaTrader5 wheel to catch import/packaging issues.
+          - os: windows-latest
+            mt5: true
+    env:
+      TZ: ${{ matrix.tz }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Install
+        run: uv sync --python 3.12 ${{ matrix.mt5 && '--extra mt5' || '' }}
+      - name: MetaTrader5 wheel importable
+        if: matrix.mt5
+        run: uv run python -c "import MetaTrader5 as mt5; print('MetaTrader5', mt5.__version__)"
+      - name: Lint
+        run: uv run ruff check . && uv run ruff format --check .
+      - name: Types
+        run: uv run mypy
+      - name: Import contracts
+        run: uv run lint-imports
+      - name: Tests
+        run: uv run pytest -q

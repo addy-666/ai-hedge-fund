@@ -15,16 +15,24 @@ fully before every task, then `docs/00_INDEX.md` and the docs referenced by your
 
 ## Commands (keep this list accurate)
 
+Working now (verified at the end of Phase 0; Python 3.12 via uv):
+
 ```bash
-cd backend && uv sync                      # install (macOS: without the mt5 extra)
-cd backend && uv sync --extra mt5          # Windows VPS only
+cd backend && uv sync --python 3.12                # install incl. dev tools (macOS: no MT5 extra needed)
+cd backend && uv sync --python 3.12 --extra mt5    # Windows VPS only: adds the MetaTrader5 wheel
 cd backend && uv run pytest -q
-cd backend && uv run ruff check . && uv run ruff format --check . && uv run mypy src && uv run lint-imports
-cd backend && uv run alembic upgrade head
-cd backend && BROKER=sim uv run python -m aifund.engine        # engine against SimBroker + replay
-cd backend && uv run uvicorn aifund.api.app:app --reload        # API
-cd frontend && npm ci && npm run dev | npm run build | npm test
-cd frontend && npm run gen:api                                  # regenerate OpenAPI types
+cd backend && uv run ruff check . && uv run ruff format --check . && uv run mypy && uv run lint-imports
+cd backend && uv run alembic upgrade head          # DATABASE_URL, default <repo>/data/aifund.db
+cd backend && uv run alembic revision --autogenerate -m "<change>"   # then review the generated file
+```
+
+Not yet available (the phase that adds each is in brackets; update this list when it lands):
+
+```bash
+cd backend && BROKER=sim uv run python -m aifund.engine        # [Phase 5] engine against SimBroker + replay
+cd backend && uv run uvicorn aifund.api.app:app --reload        # [Phase 6] API
+cd frontend && npm ci && npm run dev | npm run build | npm test  # [Phase 6]
+cd frontend && npm run gen:api                                  # [Phase 6] regenerate OpenAPI types
 ```
 
 ## Invariants — never violate, never "temporarily" bypass
@@ -48,9 +56,17 @@ cd frontend && npm run gen:api                                  # regenerate Ope
 
 ## Conventions
 
+- `.env`, `CONFIG_PATH` and relative SQLite paths resolve against the repo root (`config/settings.py`
+  `PROJECT_ROOT`), so commands behave the same from the repo root or `backend/`. Keep `.env` at the repo root.
+
 - Python 3.12, type hints everywhere, Pydantic v2 models for all boundaries, `Decimal` for money/volume.
 - Package `aifund` under `backend/src/`. Layering per `docs/01_ARCHITECTURE.md` §12 (enforced by import-linter).
 - Reason codes, close reasons, statuses are enums in `domain/` — never string literals scattered in code.
 - Log with structlog, include correlation ids (`decision_id`, `intent_id`, `position_id`).
 - DB access only via repositories in `persistence/repositories/`; schema changes only via Alembic.
+  Repositories are synchronous; async code calls them through `asyncio.to_thread` in short transactions.
+- Money/price columns use `DecimalText`, timestamps `UtcDateTime` (never plain `Numeric`/`DateTime` —
+  SQLite would round money through binary float). Add a table → add a migration → the drift test must pass.
+- Only `aifund.risk` may import `aifund.domain._issuance`; the executor rejects intents that were not issued
+  (import-linter enforces this).
 - Frontend: TypeScript strict; API types only from generated `openapi.d.ts`.

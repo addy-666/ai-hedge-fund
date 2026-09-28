@@ -63,7 +63,7 @@ passes or terminates the decision with an outcome + reason code. Every run write
 | 1 | Pre-flight gates (§4) | `SKIPPED` |
 | 2 | Feature snapshot (§5) | `ERROR` (`STALE_DATA`, `INSUFFICIENT_BARS`) |
 | 3 | Setup detection (§6) | `NO_SETUP` (if `require_setup`) |
-| 4 | Analyst LLM (§7) | `HOLD` (incl. LLM failure → HOLD with reason) |
+| 4 | Analyst LLM (§7) | `HOLD` (analyst chose no trade) or `INVALID` (LLM error / unreadable output) |
 | 5 | Rule engine (`04_LEARNING_LOOP.md` §7) | `RULE_BLOCKED` |
 | 6 | Portfolio manager / confidence (§8) | `BELOW_THRESHOLD` |
 | 7 | Guards + limits + sizing (§9–§11) | `RISK_REJECTED` |
@@ -182,7 +182,7 @@ class TradeProposal(BaseModel):
 
 ### 7.3 Validation & fallbacks
 
-1. JSON parse + schema validation. On failure: one repair call with the validation error message; then HOLD
+1. JSON parse + schema validation. On failure: one repair call with the validation error message; then INVALID
    (`LLM_INVALID_OUTPUT`).
 2. `direction == NONE` or `setup_tag == none` (when `require_setup`) → HOLD.
 3. `setup_tag` not among detected candidates → HOLD (`SETUP_MISMATCH`) — prevents hallucinated setups.
@@ -325,6 +325,8 @@ Portfolio limits (after sizing, using `initial_risk_money`):
 - `Σ open initial risk + new ≤ max_portfolio_heat_pct × equity` → else `PORTFOLIO_HEAT`.
 - Same for the symbol's `correlation_bucket` with `max_bucket_heat_pct` → else `BUCKET_HEAT`.
 - `open positions < max_open_positions` → else `MAX_POSITIONS`.
+- `Σ open notional + new notional ≤ equity × max_notional_leverage` → else `LEVERAGE_CAP`. Broker margin
+  alone is not a limit on high-leverage accounts.
 
 The full worksheet (every input and intermediate value above) is stored in `decisions.risk_calc`.
 **Property-based tests** (hypothesis) must assert for random valid symbol specs and prices: lots is a multiple of
