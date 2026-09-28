@@ -131,10 +131,12 @@ Unique: (`symbol`, `trigger_tf`, `bar_time`, `feature_set_version`).
 `time_utc`, `time_server`, `type`, `entry` (IN/OUT/INOUT/OUT_BY), `reason`, `magic`, `symbol`, `volume`,
 `price`, `profit`, `commission`, `swap`, `fee`, `comment`, `raw JSON`. Idempotent upsert by ticket.
 
-**`virtual_trades`**: counterfactual trades for signals that were blocked or rejected (not for HOLDs):
-`id`, `decision_id`, `symbol`, `side`, `setup_tag`, `entry_time`, `entry_price` (next bar open + half
-spread), `sl`, `tp`, `status` OPEN/CLOSED/EXPIRED, `exit_time`, `exit_price`, `exit_reason`, `r_multiple`,
-`mae_r`, `mfe_r`, `blocked_by` (rule id / guard reason), `snapshot_id`.
+**`virtual_trades`**: counterfactual trades for signals that were blocked or rejected (not for HOLDs), at
+most one per decision: `id`, `decision_id` (UNIQUE), `symbol`, `side`, `setup_tag`, `entry_time` (the next
+trigger bar's open), `entry_price`, `sl`, `tp` (null while PENDING), `sl_distance`, `tp_distance` (as stage 10
+would have planned), `expires_at` + `expire_reason` (TIME_STOP or FLATTEN), `status`
+PENDING/OPEN/CLOSED/EXPIRED/NO_ENTRY, `exit_time`, `exit_price`, `exit_reason`, `r_multiple`, `mae_r`, `mfe_r`,
+`blocked_by` (rule id / guard reason), `snapshot_id`. The blocking reason is the decision's `reason_code`.
 
 **`equity_snapshots`**: `ts`, `balance`, `equity`, `margin`, `free_margin`, `open_risk_money`, `open_notional`,
 `open_positions`, `day_pnl`, `drawdown_pct`.

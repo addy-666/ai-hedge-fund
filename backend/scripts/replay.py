@@ -39,6 +39,7 @@ from aifund.persistence.db import make_engine, make_session_factory
 from aifund.persistence.repositories.cursors import DecisionCursorStore
 from aifund.reconcile.enrichment import Enricher
 from aifund.reconcile.reconciler import Reconciler
+from aifund.reconcile.virtual import VirtualTracker
 from aifund.risk.manager import RiskManager
 from aifund.risk.position_manager import PositionManager
 from aifund.strategies.base import SetupDetector, TfRoles
@@ -118,6 +119,7 @@ async def main(argv: list[str]) -> int:
         pipeline=pipeline,
         bar_clock=bar_clock,
         position_loop=loop,
+        virtual_tracker=VirtualTracker(broker, feed, factory, clock),
         enricher=Enricher(
             broker,
             feed,

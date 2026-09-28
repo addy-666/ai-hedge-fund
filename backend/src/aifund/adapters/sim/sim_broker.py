@@ -43,6 +43,7 @@ from aifund.domain.market import (
     TradeAction,
 )
 from aifund.domain.values import is_multiple_of
+from aifund.market.fills import exit_on_bar
 from aifund.ports.broker import BrokerError, BrokerUnavailable
 from aifund.ports.system import ClockPort
 
@@ -172,17 +173,9 @@ class SimBroker:
     def _check_exits(
         self, pos: _Pos, o: Decimal, h: Decimal, low: Decimal, spread: Decimal, when: datetime
     ) -> None:
-        if pos.side is Side.BUY:  # exits sell at the bid
-            if pos.sl is not None and low <= pos.sl:
-                self._close(pos, pos.volume, o if o <= pos.sl else pos.sl, DealReason.SL, when, "sl")
-            elif pos.tp is not None and h >= pos.tp:
-                self._close(pos, pos.volume, pos.tp, DealReason.TP, when, "tp")
-        else:  # exits buy at the ask
-            ask_o, ask_h, ask_l = o + spread, h + spread, low + spread
-            if pos.sl is not None and ask_h >= pos.sl:
-                self._close(pos, pos.volume, ask_o if ask_o >= pos.sl else pos.sl, DealReason.SL, when, "sl")
-            elif pos.tp is not None and ask_l <= pos.tp:
-                self._close(pos, pos.volume, pos.tp, DealReason.TP, when, "tp")
+        fill = exit_on_bar(pos.side, pos.sl, pos.tp, open_=o, high=h, low=low, spread=spread)
+        if fill is not None:
+            self._close(pos, pos.volume, fill.price, fill.reason, when, fill.reason.value.lower())
 
     # ------------------------------------------------------------------ money
 

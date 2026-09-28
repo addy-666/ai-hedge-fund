@@ -18,14 +18,24 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from aifund.adapters.clock import FakeClock
 from aifund.adapters.sim.sim_broker import SimBroker
-from aifund.domain.enums import DealEntry, IntentKind, IntentStatus, Side, TradeStatus
+from aifund.domain.enums import (
+    CloseReason,
+    DealEntry,
+    IntentKind,
+    IntentStatus,
+    ReasonCode,
+    Side,
+    TradeStatus,
+)
 from aifund.domain.market import Deal
+from aifund.domain.trade import gets_virtual_trade
 from aifund.engine.pipeline import DecisionPipeline
 from aifund.engine.position_loop import PositionLoop
 from aifund.market.bar_clock import BarClock
-from aifund.persistence.tables import DecisionRow, OrderIntentRow, TradeRow
+from aifund.persistence.tables import DecisionRow, OrderIntentRow, TradeRow, VirtualTradeRow
 from aifund.reconcile.enrichment import Enricher
 from aifund.reconcile.reconciler import Reconciler, ReconcileReport
+from aifund.reconcile.virtual import VirtualTracker
 
 
 @dataclass
@@ -47,6 +57,8 @@ class ReplayReport:
     enriched: int | None = None  # closed trades with MAE/MFE etc. (None: no enricher in this run)
     mean_mae_r: Decimal | None = None
     mean_mfe_r: Decimal | None = None
+    virtual: Counter[str] | None = None  # virtual trades by status (None: no tracker in this run)
+    virtual_mean_r: Decimal | None = None
     violations: list[str] = field(default_factory=list)
 
     def render(self) -> str:
@@ -74,6 +86,13 @@ class ReplayReport:
                 if self.enriched is None
                 else f"{self.enriched} trades; mean MAE {self.mean_mae_r}R, mean MFE {self.mean_mfe_r}R"
             ),
+            "virtual: "
+            + (
+                "no tracker"
+                if self.virtual is None
+                else (", ".join(f"{k}={v}" for k, v in self.virtual.most_common()) or "none")
+                + (f"; mean R of finished {self.virtual_mean_r}" if self.virtual_mean_r is not None else "")
+            ),
             f"invariant violations: {len(self.violations)}",
         ]
         lines += [f"  ! {v}" for v in self.violations[:20]]
@@ -94,6 +113,7 @@ async def run_replay(
     position_loop: PositionLoop | None = None,
     reconciler: Reconciler | None = None,
     enricher: Enricher | None = None,
+    virtual_tracker: VirtualTracker | None = None,
     progress: Callable[[str], None] = lambda _msg: None,
 ) -> ReplayReport:
     report = ReplayReport(start=clock.now(), end=end)
@@ -114,6 +134,9 @@ async def run_replay(
         if enricher is not None:
             for message in (await enricher.run_once()).errors:
                 report.violations.append(f"enricher error: {message}")
+        if virtual_tracker is not None:
+            for message in (await virtual_tracker.run_once()).errors:
+                report.violations.append(f"virtual tracker error: {message}")
         await _check_step(report, broker, factory, magic, max_positions_per_symbol)
         if clock.now().date() != last_day:
             last_day = clock.now().date()
@@ -137,7 +160,37 @@ async def run_replay(
         _check_ledger(report, factory, mine, closed, open_ids)
     if enricher is not None:
         _check_enrichment(report, factory, clock.now() - timedelta(minutes=1))
+    if virtual_tracker is not None:
+        _check_virtual(report, factory)
     return report
+
+
+def _check_virtual(report: ReplayReport, factory: sessionmaker[Session]) -> None:
+    """Virtual trades exist only for qualifying blocked signals, and every finished one is consistent."""
+    with factory() as s:
+        rows = s.scalars(select(VirtualTradeRow)).all()
+        decisions = {d.id: d for d in s.scalars(select(DecisionRow)).all()}
+    report.virtual = Counter(v.status.value for v in rows)
+    finished = []
+    for v in rows:
+        d = decisions[v.decision_id]
+        reason = ReasonCode(d.reason_code) if d.reason_code else None
+        if not gets_virtual_trade(d.outcome, reason) or v.blocked_by != d.reason_code:
+            report.violations.append(f"virtual trade {v.id} for a {d.outcome} / {d.reason_code} decision")
+        if v.r_multiple is None:
+            continue
+        finished.append(v.r_multiple)
+        rr = (v.tp_distance / v.sl_distance).quantize(Decimal("0.0001"))
+        ok = {
+            CloseReason.SL: v.r_multiple <= Decimal("-1"),
+            CloseReason.TP: v.r_multiple == rr,
+        }.get(v.exit_reason, Decimal("-1") <= v.r_multiple <= rr)  # type: ignore[arg-type]
+        if not ok:
+            report.violations.append(f"virtual {v.id}: {v.exit_reason} at {v.r_multiple}R (RR {rr})")
+        if v.mae_r is None or v.mfe_r is None or not v.mae_r <= v.r_multiple <= v.mfe_r:
+            report.violations.append(f"virtual {v.id}: R {v.r_multiple} outside [{v.mae_r}, {v.mfe_r}]")
+    if finished:
+        report.virtual_mean_r = (sum(finished, Decimal(0)) / len(finished)).quantize(Decimal("0.01"))
 
 
 def _check_enrichment(report: ReplayReport, factory: sessionmaker[Session], settled_before: datetime) -> None:

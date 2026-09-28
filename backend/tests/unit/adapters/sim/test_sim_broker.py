@@ -262,6 +262,22 @@ async def test_stops_level_is_enforced() -> None:
     assert (await broker.order_check(buy(sl="2344.00", tp="2356.00"))).retcode_name == "OK"
 
 
+async def test_feed_bars_range_is_inclusive_and_never_the_future() -> None:
+    bars = [m1(i, "2350", "2351", "2349", "2350") for i in range(10)]
+    clock = FakeClock(T0 + timedelta(minutes=6, seconds=30))  # bars 0..5 have closed; 6 is forming
+    feed = ReplayFeed({(SYM, Timeframe.M1): bars}, {SYM: SPEC}, clock)
+    got = await feed.bars_range(SYM, Timeframe.M1, T0 + timedelta(minutes=2), T0 + timedelta(minutes=4))
+    assert [b.time.minute for b in got] == [2, 3, 4]  # open times in [start, end], both ends included
+    future = await feed.bars_range(SYM, Timeframe.M1, T0 + timedelta(minutes=4), T0 + timedelta(minutes=9))
+    assert [b.time.minute for b in future] == [4, 5]  # 6 is still forming: never returned
+    assert (
+        await feed.bars_range(
+            SYM, Timeframe.M1, T0 + timedelta(minutes=2, seconds=1), T0 + timedelta(minutes=2, seconds=59)
+        )
+        == []
+    )
+
+
 async def test_stale_quote_means_market_closed() -> None:
     broker, clock = world([])
     clock.set(T0 + timedelta(hours=2))  # no bars since 10:01 (weekend / feed stall)
