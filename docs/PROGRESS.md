@@ -71,6 +71,7 @@ Updated by the coding agent at the end of every task.
 | 2026-09-28 | Explicit MT5 account required | Prototype traded whatever account the terminal was logged into when MT5_LOGIN was empty (audit Q87) | 02 |
 | 2026-09-28 | Tests derive expected values by hand, never from memory | A remembered "published" RSI value was wrong; hand derivation caught three real bugs (ADX warm-up, percentile ties, z-score noise) | — |
 | 2026-09-28 | `market` is its own layer below `risk`/`rules`/`strategies` | Detectors read market features; siblings in one import-linter layer may not import each other | 01 |
+| 2026-09-28 | Spread gates set from measured data (operator decision: Vantage spreads are the best available) | BTC fixed ~$16.94 spread: `max_spread_to_atr` 0.10 → 0.30 (blocks quietest ~7% of M15 bars instead of 56%) plus a 2,500-point blow-out cap; gold unchanged (never trips); NAS100 added provisionally. At 0.30 a quiet-market BTC trade can start ≈ −0.2R in spread | config example, AGENTS.md |
 | 2026-09-28 | Executable intents only via `domain._issuance`, import-restricted to `aifund.risk`; copies are never executable | Structural guarantee that LLM output cannot reach the broker without the Risk Manager | AGENTS.md |
 
 ## Operational measurements (filled during P4.7, P5.8, soak)

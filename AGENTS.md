@@ -27,6 +27,7 @@ cd backend && uv run alembic revision --autogenerate -m "<change>"   # then revi
 cd backend && uv run python scripts/mt5_smoke.py   # Windows + MT5 terminal only: READ-ONLY checks on a demo account
 cd backend && uv run python scripts/export_history.py --months 15  # Windows: bars -> <repo>/data/history (Parquet)
 cd backend && uv run python scripts/replay.py --from 2026-06-15 --to 2026-09-27   # full stack on exported history (SimBroker)
+cd backend && uv run python scripts/spread_report.py   # spread vs ATR per symbol: evidence for the spread gates
 ```
 
 Not yet available (the phase that adds each is in brackets; update this list when it lands):

@@ -32,7 +32,7 @@ def fake() -> FakeMT5:
     offset = timedelta(hours=3).total_seconds()
     fake = FakeMT5(
         tick_advance_ms=700,
-        symbols={n: make_symbol(n) for n in ("XAUUSD", "BTCUSD")},
+        symbols={n: make_symbol(n) for n in ("XAUUSD", "BTCUSD", "NAS100")},
     )
     for i, name in enumerate(fake.symbols):
         msc = int((now + offset - 2 - i) * 1000)

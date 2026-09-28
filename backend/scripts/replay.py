@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import sys
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -62,7 +63,13 @@ async def main(argv: list[str]) -> int:
     )
     cfg = load_trading_config(config_path).config
     wanted = {s.strip() for s in args.symbols.split(",") if s.strip()}
-    symbols = [s for s in cfg.symbols if not wanted or s.broker in wanted]
+    available = set(json.loads((Path(args.history) / "specs.json").read_text()))
+    symbols = [s for s in cfg.symbols if (not wanted or s.broker in wanted) and s.broker in available]
+    skipped = [
+        s.broker for s in cfg.symbols if s.broker not in available and (not wanted or s.broker in wanted)
+    ]
+    if skipped:
+        print(f"no exported history for {skipped}: skipped (export them on Windows to include them)")
     cfg = cfg.model_copy(update={"symbols": symbols})
     context = [Timeframe(tf.strip()) for tf in args.context.split(",")]
     profile = ProfileConfig(trigger_tf=Timeframe.M15, setup_tf=Timeframe.H1, context_tfs=context)
