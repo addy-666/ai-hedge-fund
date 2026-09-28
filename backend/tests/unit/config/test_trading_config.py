@@ -97,7 +97,13 @@ def test_placeholder_models_are_allowed_in_sim(base: dict[str, Any]) -> None:
         ("llm.base_url", "http://api.deepseek.com", "should match pattern"),
         ("learning.min_matches_holdout", 50, "min_matches_holdout must be <= min_matches_total"),
         ("learning.review_after_days", 200, "review_after_days must be <= expire_after_days"),
-        ("position_management.flatten_friday_utc", "8pm", "HH:MM"),
+        ("position_management.flatten_friday_utc", "20:30", "Extra inputs"),  # replaced by session calendars
+        ("position_management.flatten_before_close_minutes", 0, "greater than or equal to 1"),
+        ("symbols.0.session", "nope", "undefined session"),
+        ("symbols.0.session", None, "set a session calendar"),  # gold does not trade weekends
+        ("sessions.us_cfd.timezone", "Mars/Olympus", "unknown timezone"),
+        ("sessions.us_cfd.daily_open", "16:00", "daily_open must be after daily_close"),
+        ("sessions.us_cfd.early_closes", {"2026-06-19": "1pm"}, "HH:MM"),
     ],
 )
 def test_invalid_values_are_rejected(

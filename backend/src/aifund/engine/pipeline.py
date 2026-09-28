@@ -33,6 +33,7 @@ from aifund.execution.executor import ExecutionResult, Executor
 from aifund.market.bar_clock import BarClosed
 from aifund.market.feature_registry import tf_prefix
 from aifund.market.features import PortfolioContext, SnapshotError, build_snapshot
+from aifund.market.sessions import calendars
 from aifund.persistence.db import unit_of_work
 from aifund.persistence.repositories.decisions import DecisionRepository
 from aifund.persistence.repositories.intents import IntentRepository
@@ -90,6 +91,7 @@ class DecisionPipeline:
         profile_override: dict[str, ProfileConfig] | None = None,
     ) -> None:
         self._cfg = cfg
+        self._sessions = calendars(cfg.sessions)
         self._broker = broker
         self._market = market
         self._factory = factory
@@ -171,8 +173,16 @@ class DecisionPipeline:
         in_flight = await self._tx(lambda s: len(IntentRepository(s, self._clock).non_terminal(event.symbol)))
         if in_flight:
             self._end(record, DecisionOutcome.SKIPPED, ReasonCode.INTENT_IN_FLIGHT, f"{in_flight} unresolved")
-        if not sym_cfg.trade_weekends and now.weekday() == 5:
-            self._end(record, DecisionOutcome.SKIPPED, ReasonCode.MARKET_CLOSED, "weekend")
+        session = self._sessions.get(sym_cfg.session) if sym_cfg.session else None
+        if not sym_cfg.trade_weekends and session is not None:
+            if not session.is_open(now):
+                self._end(record, DecisionOutcome.SKIPPED, ReasonCode.MARKET_CLOSED, "session closed")
+            pm = self._cfg.position_management
+            close = session.long_close_ahead(now, timedelta(hours=pm.long_close_hours))
+            if close is not None and now >= close - timedelta(minutes=pm.no_entries_before_close_minutes):
+                self._end(
+                    record, DecisionOutcome.SKIPPED, ReasonCode.MARKET_CLOSED, f"shuts {close:%a %H:%M} UTC"
+                )
         tick = await self._market.tick(event.symbol)
         if tick is None or now - tick.time > MAX_TICK_AGE:
             self._end(record, DecisionOutcome.SKIPPED, ReasonCode.STALE_TICK, "no fresh quote")

@@ -86,7 +86,8 @@ In order; first failure wins:
 
 1. Engine state is `RUNNING` and mode permits orders (`PAPER` routes to SimBroker).
 2. Symbol not locked by a non-terminal intent (`INTENT_IN_FLIGHT`) and not in an `UNKNOWN` resolution.
-3. Market open: last tick age < 60 s; weekend rule (`trade_weekends`); broker `trade_mode` allows trading.
+3. Market open: last tick age < 60 s; for symbols that do not trade weekends, the session calendar says open
+   and no long closure starts within `no_entries_before_close_minutes`; broker `trade_mode` allows trading.
 4. Spread: `spread_points ≤ max_spread_points` and `spread_price / ATR(trigger) ≤ max_spread_to_atr`.
 5. News blackout: no HIGH-impact event for the symbol's currencies within [−before, +after] minutes.
 6. Loss limits not breached (daily / weekly / drawdown) — normally already reflected in engine state.
@@ -397,7 +398,11 @@ Every 5 s over engine-owned open positions:
 - **Break-even** (if `break_even_at_r`): when price ≥ entry + R × sl_dist, move SL to entry + costs.
 - **Trailing** (if `trailing.mode == atr`): SL = max(SL, close − k × ATR) on closed trigger bars only.
 - **Time stop**: close after `time_stop_bars` trigger bars (`close_reason = TIME_STOP`).
-- **Friday flatten**: non-weekend symbols closed at `flatten_friday_utc`.
+- **Pre-close flatten**: non-weekend symbols are closed `flatten_before_close_minutes` before any close that
+  keeps the market shut for `long_close_hours` or more, per the symbol's session calendar (weekends,
+  Fridays and holidays that close early). Only in that window: once the market is shut nothing is retried.
+  A fixed Friday time missed early closes: on 2026-06-19 (Juneteenth, close 17:00 UTC) a NAS100 position
+  stayed open over the weekend in replay. Unlisted early closes cannot be anticipated: keep the calendar current.
 - **HALTED/FLATTENING** behaviour per engine state table.
 - Modifications respect `freeze_level` (no modification when price is within freeze distance of SL/TP).
 - Every modification is an `order_intents` row (kind `MODIFY_SLTP`) for auditability.

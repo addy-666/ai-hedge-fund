@@ -13,6 +13,7 @@ from aifund.config.trading_config import TradingConfig
 from aifund.domain.values import to_decimal
 from aifund.execution.executor import ExecutionResult, Executor
 from aifund.market import indicators as ind
+from aifund.market.sessions import calendars
 from aifund.persistence.db import unit_of_work
 from aifund.persistence.repositories.intents import IntentRepository
 from aifund.ports.broker import BrokerError, BrokerPort, MarketDataPort
@@ -48,6 +49,7 @@ class PositionLoop:
         self._factory = factory
         self._clock = clock
         self._symbols = {s.broker: s for s in cfg.symbols}
+        self._sessions = calendars(cfg.sessions)
 
     def _facts_sync(self, position_ids: list[int], symbols: set[str]) -> tuple[dict[int, Decimal], set[str]]:
         with unit_of_work(self._factory) as s:
@@ -99,6 +101,7 @@ class PositionLoop:
                         planned_sl_distance=planned.get(pos.position_id),
                         atr=atr,
                         last_closed_close=last_close,
+                        session=self._sessions.get(sym_cfg.session) if sym_cfg.session else None,
                     ),
                     now,
                 )
