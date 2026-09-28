@@ -24,6 +24,7 @@ cd backend && uv run pytest -q
 cd backend && uv run ruff check . && uv run ruff format --check . && uv run mypy && uv run lint-imports
 cd backend && uv run alembic upgrade head          # DATABASE_URL, default <repo>/data/aifund.db
 cd backend && uv run alembic revision --autogenerate -m "<change>"   # then review the generated file
+cd backend && uv run python scripts/mt5_smoke.py   # Windows + MT5 terminal only: READ-ONLY checks on a demo account
 ```
 
 Not yet available (the phase that adds each is in brackets; update this list when it lands):

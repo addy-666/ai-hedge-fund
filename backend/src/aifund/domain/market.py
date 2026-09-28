@@ -112,11 +112,16 @@ class AccountInfo(BaseModel):
 
 
 class Position(BaseModel):
-    """An open broker position. ``ticket`` is MT5's position identifier."""
+    """An open broker position.
+
+    ``ticket`` is what close/modify requests target; ``position_id`` is the identifier every deal of this
+    position carries (``Deal.position_id``). On MT5 they are usually equal but not guaranteed to be.
+    """
 
     model_config = _FROZEN
 
     ticket: int = Field(gt=0)
+    position_id: int = Field(gt=0)
     symbol: str
     side: Side
     volume: Decimal = Field(gt=0)

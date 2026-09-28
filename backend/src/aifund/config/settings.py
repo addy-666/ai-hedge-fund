@@ -59,6 +59,7 @@ class Settings(BaseSettings):
     MT5_PASSWORD: SecretStr | None = None
     MT5_SERVER: str | None = None
     MT5_PATH: Path | None = None
+    MT5_PORTABLE: bool = False  # true when the terminal was installed with /portable
 
     # --- Alerts
     TELEGRAM_BOT_TOKEN: SecretStr | None = None
