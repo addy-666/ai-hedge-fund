@@ -178,7 +178,8 @@ spread), `sl`, `tp`, `status` OPEN/CLOSED/EXPIRED, `exit_time`, `exit_price`, `e
 stateDiagram-v2
     [*] --> PENDING: row inserted (idempotency key reserved)
     PENDING --> CHECK_FAILED: order_check rejects
-    PENDING --> SENT: order_send called
+    PENDING --> SENT: persisted BEFORE order_send is called
+    PENDING --> REJECTED: crash before sending (recovery)
     SENT --> FILLED: retcode DONE / DONE_PARTIAL, position_id resolved
     SENT --> REJECTED: definitive reject retcode
     SENT --> RETRYING: retryable retcode (REQUOTE, PRICE_CHANGED, PRICE_OFF)

@@ -5,7 +5,7 @@ Updated by the coding agent at the end of every task.
 ## Current position
 
 - Phase: 2 — Risk & execution (deterministic baseline strategy)
-- Next task: 2.7 Executor
+- Next task: 2.8 Baseline pipeline
 - Rollout level: none (pre-L0). No code path places orders yet (SimBroker can, but nothing calls it).
 - Tests: 343 passing + 1 Windows-only (MQL5 constant cross-check against the real MetaTrader5 package).
 - Windows run 2026-09-28 (VantageMarkets-Demo, hedging, 1:500, server UTC+3): smoke checks passed; history
@@ -51,6 +51,8 @@ Updated by the coding agent at the end of every task.
 | 2026-09-28 | 2.5 Guards | Pure duplicate layers (idempotency, in-flight, foreign, same direction, per-symbol cap, cooldown, daily cap) and reversal rules (mode, extra confidence, min hold, daily cap, flip-flop lock); the guard only decides, the executor closes-and-verifies | Per-symbol asyncio lock lives in the pipeline (2.8) | — |
 
 | 2026-09-28 | 2.6 Risk Manager | Sole issuer of executable intents: loss limits → threshold → guards → price drift → ATR stops → broker-calculated sizing → exposure → intent; reversals issue only a close intent (own idempotency key); broker errors fail closed | Notional per lot = broker margin × account leverage | — |
+
+| 2026-09-28 | 2.7 Executor | Persist-before-act state machine (SENT committed before order_send), filling selection, order_check, bounded retries for requote-type codes only, PAUSE codes, UNKNOWN resolution by comment then structural match, startup recovery; crash at each of 5 stages → zero duplicates, zero lost trades | PENDING→REJECTED and RETRYING→REJECTED on recovery (a crash between retries would otherwise have crashed recovery itself — found in review); post-fill SL repair/adjust belongs to the position manager (2.9), which issues MODIFY_SLTP intents | — |
 
 ## Decisions log
 
