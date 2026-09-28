@@ -1,0 +1,20 @@
+{
+ "format_version": 1,
+ "server": "VantageMarkets-Demo",
+ "currency": "USD",
+ "trade_mode": "DEMO",
+ "server_offset_minutes": 180,
+ "balance": "9999.64",
+ "note": "manual trades: close, partial, SL, TP, swap",
+ "deals": [
+  {"ticket": 1680204234, "order": 0, "time": 1790599379, "time_msc": 1790599379936, "type": 2, "entry": 0, "magic": 0, "position_id": 0, "reason": 0, "volume": 0.0, "price": 0.0, "commission": 0.0, "swap": 0.0, "profit": 10000.0, "fee": 0.0, "symbol": "", "comment": "demo"},
+  {"ticket": 1681695592, "order": 2104553667, "time": 1790633628, "time_msc": 1790633628566, "type": 0, "entry": 0, "magic": 0, "position_id": 2104553667, "reason": 0, "volume": 0.01, "price": 4132.79, "commission": 0.0, "swap": 0.0, "profit": 0.0, "fee": 0.0, "symbol": "XAUUSD", "comment": ""},
+  {"ticket": 1681696202, "order": 2104554614, "time": 1790633644, "time_msc": 1790633644498, "type": 1, "entry": 1, "magic": 0, "position_id": 2104553667, "reason": 0, "volume": 0.01, "price": 4131.67, "commission": 0.0, "swap": 0.0, "profit": -1.12, "fee": 0.0, "symbol": "XAUUSD", "comment": ""},
+  {"ticket": 1681696451, "order": 2104555070, "time": 1790633653, "time_msc": 1790633653043, "type": 0, "entry": 0, "magic": 0, "position_id": 2104555070, "reason": 0, "volume": 0.02, "price": 4132.16, "commission": 0.0, "swap": 0.0, "profit": 0.0, "fee": 0.0, "symbol": "XAUUSD", "comment": ""},
+  {"ticket": 1681696580, "order": 2104555382, "time": 1790633656, "time_msc": 1790633656456, "type": 0, "entry": 0, "magic": 0, "position_id": 2104555382, "reason": 0, "volume": 0.01, "price": 83729.74, "commission": 0.0, "swap": 0.0, "profit": 0.0, "fee": 0.0, "symbol": "BTCUSD", "comment": ""},
+  {"ticket": 1681697792, "order": 2104557298, "time": 1790633747, "time_msc": 1790633747185, "type": 1, "entry": 1, "magic": 0, "position_id": 2104555070, "reason": 0, "volume": 0.01, "price": 4132.35, "commission": 0.0, "swap": 0.0, "profit": 0.19, "fee": 0.0, "symbol": "XAUUSD", "comment": ""},
+  {"ticket": 1681698207, "order": 2104557865, "time": 1790633758, "time_msc": 1790633758930, "type": 1, "entry": 1, "magic": 0, "position_id": 2104555070, "reason": 0, "volume": 0.01, "price": 4133.15, "commission": 0.0, "swap": 0.0, "profit": 0.99, "fee": 0.0, "symbol": "XAUUSD", "comment": ""},
+  {"ticket": 1681699372, "order": 2104559337, "time": 1790633769, "time_msc": 1790633769100, "type": 0, "entry": 0, "magic": 0, "position_id": 2104559337, "reason": 0, "volume": 0.01, "price": 83725.62, "commission": 0.0, "swap": 0.0, "profit": 0.0, "fee": 0.0, "symbol": "BTCUSD", "comment": ""},
+  {"ticket": 1681703124, "order": 2104565419, "time": 1790633905, "time_msc": 1790633905267, "type": 1, "entry": 1, "magic": 0, "position_id": 2104559337, "reason": 4, "volume": 0.01, "price": 83683.71, "commission": 0.0, "swap": 0.0, "profit": -0.42, "fee": 0.0, "symbol": "BTCUSD", "comment": "[sl 83683.71]"}
+ ]
+}
