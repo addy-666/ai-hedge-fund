@@ -379,7 +379,17 @@ position_management:
   break_even_at_r: null         # e.g. 1.0 to move SL to entry+costs at +1R
   trailing: {mode: off}         # off | atr (k)
   time_stop_bars: 48            # close if still open after N trigger bars
-  flatten_friday_utc: "20:30"   # non-weekend symbols only
+  flatten_before_close_minutes: 30     # non-weekend symbols: flatten before any close that keeps the
+  no_entries_before_close_minutes: 60  #   market shut >= long_close_hours (weekends, early-close Fridays,
+  long_close_hours: 24                 #   holidays); no new entries in the last hour before it
+
+sessions:                       # broker session calendars (the MT5 Python API cannot read sessions)
+  us_cfd:                       # symbols reference one with `session: us_cfd`
+    timezone: America/New_York  # local time: DST handled
+    daily_close: "17:00"        # trading day D: daily_open on D-1 -> daily_close on D; Sun -> Fri
+    daily_open: "18:00"
+    early_closes: {2026-06-19: "13:00"}   # from the broker's holiday notices; keep current
+    closed_days: [2026-12-25]
 
 llm:
   provider: deepseek

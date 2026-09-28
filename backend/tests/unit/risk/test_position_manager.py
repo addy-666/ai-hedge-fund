@@ -2,19 +2,26 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal as D
 
 import pytest
 
-from aifund.config.trading_config import PositionManagementConfig, StopsConfig, TrailingConfig
+from aifund.config.trading_config import PositionManagementConfig, SessionConfig, StopsConfig, TrailingConfig
 from aifund.domain.enums import CloseReason, IntentKind, Side, Timeframe
 from aifund.domain.market import Position, Tick
+from aifund.market.sessions import SessionCalendar
 from aifund.risk.position_manager import ActionKind, PositionFacts, PositionManager
 from tests.unit.risk.test_stops import XAU
 
 MON = datetime(2026, 9, 28, 10, 0, tzinfo=UTC)  # Monday
-FRI_LATE = datetime(2026, 10, 2, 20, 45, tzinfo=UTC)  # Friday after 20:30
+FRI_LATE = datetime(2026, 10, 2, 20, 45, tzinfo=UTC)  # Friday, 15 min before the 21:00 UTC weekend close
+US_CFD = SessionCalendar.from_config(
+    SessionConfig(
+        early_closes={date(2026, 6, 19): "13:00", date(2026, 12, 24): "13:00"},  # 17:00 / 18:00 UTC
+        closed_days=[date(2026, 12, 25)],
+    )
+)
 MAGIC = 26092801
 
 
@@ -54,6 +61,7 @@ def facts(p: Position | None = None, t: Tick | None = None, **over: object) -> P
         trade_weekends=False,
         planned_sl_distance=D("11.93"),
         atr=D("9.67"),
+        session=US_CFD,
     )
     base.update(over)
     return PositionFacts(**base)  # type: ignore[arg-type]
@@ -72,7 +80,7 @@ def test_friday_flatten_only_for_non_weekend_symbols() -> None:
     action = manager().plan(facts(p, t), FRI_LATE)
     assert action is not None
     assert (action.kind, action.intent.kind, action.intent.side) == (
-        ActionKind.FRIDAY_FLATTEN,
+        ActionKind.PRE_CLOSE_FLATTEN,
         IntentKind.FLATTEN,
         Side.SELL,
     )
@@ -80,6 +88,35 @@ def test_friday_flatten_only_for_non_weekend_symbols() -> None:
     assert action.intent.close_reason is CloseReason.FLATTEN
     assert manager().plan(facts(p, t, trade_weekends=True), FRI_LATE) is None  # BTC keeps its position
     assert manager().plan(facts(p, t), FRI_LATE.replace(hour=20, minute=29)) is None
+
+
+def at(when: datetime, **over: object) -> PositionFacts:
+    return facts(pos(now=when), tick(now=when), **over)
+
+
+@pytest.mark.parametrize(
+    ("when", "flatten"),
+    [
+        (datetime(2026, 6, 19, 16, 29, tzinfo=UTC), False),  # Juneteenth: early close 17:00 UTC
+        (datetime(2026, 6, 19, 16, 30, tzinfo=UTC), True),
+        (datetime(2026, 6, 19, 16, 59, tzinfo=UTC), True),
+        (datetime(2026, 6, 19, 17, 5, tzinfo=UTC), False),  # already shut: nothing to retry until it reopens
+        (datetime(2026, 6, 19, 20, 45, tzinfo=UTC), False),  # the old fixed 20:30 rule fired here, too late
+        (datetime(2026, 12, 24, 17, 40, tzinfo=UTC), True),  # Christmas Eve 13:00 New York, Friday closed
+        (datetime(2026, 12, 4, 21, 20, tzinfo=UTC), False),  # winter Friday closes 22:00 UTC
+        (datetime(2026, 12, 4, 21, 30, tzinfo=UTC), True),
+        (datetime(2026, 9, 30, 20, 45, tzinfo=UTC), False),  # a Wednesday evening break is not a long close
+    ],
+)
+def test_flatten_before_every_long_closure(when: datetime, flatten: bool) -> None:
+    action = manager().plan(at(when), when)
+    assert (action is not None and action.kind is ActionKind.PRE_CLOSE_FLATTEN) is flatten
+
+
+def test_no_calendar_or_disabled_means_no_flatten() -> None:
+    assert manager().plan(at(FRI_LATE, session=None), FRI_LATE) is None
+    assert manager(flatten_before_close_minutes=None).plan(at(FRI_LATE), FRI_LATE) is None
+    assert manager(flatten_before_close_minutes=10).plan(at(FRI_LATE), FRI_LATE) is None  # 15 min to go
 
 
 def test_time_stop() -> None:

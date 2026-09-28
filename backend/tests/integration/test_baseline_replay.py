@@ -22,7 +22,7 @@ from aifund.adapters.sim.sim_broker import SimBroker, SimConfig
 from aifund.config.loader import load_trading_config
 from aifund.config.trading_config import ProfileConfig, SymbolConfig
 from aifund.domain.decision import FeatureSnapshot, SetupCandidate
-from aifund.domain.enums import DecisionOutcome, Direction, Timeframe
+from aifund.domain.enums import DecisionOutcome, Direction, ReasonCode, Timeframe
 from aifund.engine.equity import EquityTracker
 from aifund.engine.pipeline import DecisionPipeline
 from aifund.engine.position_loop import PositionLoop
@@ -119,7 +119,10 @@ async def test_baseline_stack_replay_holds_every_invariant(
     assert report.fills >= 3
     assert report.closed_trades >= 2
     assert report.outcomes[DecisionOutcome.ORDERED.value] >= 3
-    assert report.outcomes[DecisionOutcome.NO_SETUP.value] >= 100  # 3 of 4 bars per hour have no setup
+    # 3 of 4 bars per hour have no setup; the session calendar skips the two 21:00-22:00 UTC daily breaks
+    # (8 bars), which also breaks the stub's LONG,LONG,SHORT,SHORT rhythm and sets off the flip-flop lock
+    assert report.outcomes[DecisionOutcome.NO_SETUP.value] >= 50
+    assert report.reasons[ReasonCode.MARKET_CLOSED.value] == 8
     assert report.outcomes[DecisionOutcome.RISK_REJECTED.value] >= 1  # guards fired
     assert report.max_positions_per_symbol == 1
     assert report.ledger_closed == report.closed_trades  # every closed position is a CLOSED trade

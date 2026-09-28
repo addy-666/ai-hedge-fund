@@ -7,8 +7,10 @@ default in an unattended trading process. The engine refuses to start on any val
 from __future__ import annotations
 
 import re
+from datetime import date
 from decimal import Decimal
 from typing import Annotated, Literal, Self
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -71,6 +73,58 @@ class SymbolConfig(_Strict):
     max_spread_points: int | None = Field(default=None, gt=0)
     max_spread_to_atr: Decimal = Field(gt=0, le=1)
     trade_weekends: bool = False
+    session: str | None = None
+    """Name of a ``sessions`` calendar. Required unless the symbol trades weekends: the position manager
+    flattens before every long closure (weekend, holiday early close) that calendar knows about."""
+
+
+# ---------------------------------------------------------------- market sessions
+
+
+class SessionConfig(_Strict):
+    """A broker trading-session calendar, in the exchange's local time so DST is handled.
+
+    The MT5 Python API cannot read a symbol's sessions, so the calendar is configuration: the weekly
+    schedule plus holiday early closes and closed days copied from the broker's holiday notices. Trading day
+    D runs from ``daily_open`` on the previous calendar day to ``daily_close`` on D (Monday's starts Sunday).
+    An unlisted early close cannot be anticipated: when unsure, list it (flattening early is the safe side).
+    """
+
+    timezone: str = "America/New_York"
+    daily_close: str = "17:00"
+    daily_open: str = "18:00"
+    early_closes: dict[date, str] = Field(default_factory=dict)
+    closed_days: list[date] = Field(default_factory=list)
+
+    _hhmm = field_validator("daily_close", "daily_open")(_check_hhmm)
+
+    @field_validator("timezone")
+    @classmethod
+    def _known_timezone(cls, value: str) -> str:
+        try:
+            ZoneInfo(value)
+        except (ZoneInfoNotFoundError, ValueError) as exc:
+            raise ValueError(f"unknown timezone {value!r}") from exc
+        return value
+
+    @field_validator("early_closes")
+    @classmethod
+    def _early_hhmm(cls, value: dict[date, str]) -> dict[date, str]:
+        for day, hhmm in value.items():
+            if not _HHMM.match(hhmm):
+                raise ValueError(f"early close {day}: expected HH:MM (24h), got {hhmm!r}")
+        return value
+
+    @model_validator(mode="after")
+    def _consistent(self) -> Self:
+        both = sorted(set(self.early_closes) & set(self.closed_days))
+        if both:
+            raise ValueError(f"days listed as both early close and closed: {both}")
+        if self.daily_open <= self.daily_close:
+            raise ValueError(
+                "daily_open must be after daily_close (the next trading day starts that evening)"
+            )
+        return self
 
 
 class ProfileConfig(_Strict):
@@ -226,9 +280,11 @@ class PositionManagementConfig(_Strict):
     break_even_at_r: Decimal | None = Field(default=None, gt=0, le=10)
     trailing: TrailingConfig = TrailingConfig()
     time_stop_bars: int | None = Field(default=48, ge=1, le=10_000)
-    flatten_friday_utc: str | None = "20:30"
-
-    _hhmm = field_validator("flatten_friday_utc")(_check_hhmm)
+    # symbols that do not trade weekends: flatten this long before any close that keeps the market shut for
+    # at least ``long_close_hours`` (weekends, and Fridays or holidays that close early); None disables
+    flatten_before_close_minutes: int | None = Field(default=30, ge=1, le=720)
+    no_entries_before_close_minutes: int = Field(default=60, ge=0, le=1440)
+    long_close_hours: int = Field(default=24, ge=2, le=240)
 
 
 # ---------------------------------------------------------------- llm / learning / alerts
@@ -300,6 +356,7 @@ class TradingConfig(_Strict):
     profiles: dict[str, ProfileConfig] = Field(min_length=1)
     risk: RiskConfig = RiskConfig()
     position_management: PositionManagementConfig = PositionManagementConfig()
+    sessions: dict[str, SessionConfig] = Field(default_factory=dict)
     llm: LLMConfig
     learning: LearningConfig = LearningConfig()
     alerts: AlertsConfig = AlertsConfig()
@@ -315,6 +372,11 @@ class TradingConfig(_Strict):
         unknown = sorted({s.profile for s in self.symbols} - self.profiles.keys())
         if unknown:
             raise ValueError(f"symbols reference undefined profiles: {unknown}")
+        for s in self.symbols:
+            if s.session is None and not s.trade_weekends:
+                raise ValueError(f"symbol {s.canonical}: set a session calendar (it does not trade weekends)")
+            if s.session is not None and s.session not in self.sessions:
+                raise ValueError(f"symbol {s.canonical}: undefined session {s.session!r}")
         if not (self.strategy.analyst_enabled or self.strategy.baseline_enabled):
             raise ValueError("strategy: enable analyst_enabled and/or baseline_enabled")
         if self.strategy.analyst_enabled and self.engine.mode is not Mode.SIM:

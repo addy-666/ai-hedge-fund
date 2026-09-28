@@ -141,7 +141,7 @@ LLM-backed. **Anything touching money is deterministic.**
 | **Portfolio Manager** | Deterministic | Proposals, critique, rule results, calibration | `FinalDecision` (direction, final confidence) or HOLD | 4 / 8 |
 | **Risk Manager** | Deterministic, **veto power** | `FinalDecision`, account, positions, limits, symbol spec | `OrderIntent` (volume, SL, TP, risk money) or `Rejection(reason)` | 2 |
 | **Execution Agent** | Deterministic | `OrderIntent` | Fill / rejection / UNKNOWN, persisted | 2 |
-| **Position Manager** | Deterministic | Open positions, bars | SL modifications, time-stops, weekend flatten | 2 |
+| **Position Manager** | Deterministic | Open positions, bars | SL modifications, time-stops, pre-close flatten (session calendar) | 2 |
 | **Reconciler** | Deterministic | Broker positions + deal history, DB trades | Closed-trade records, orphan alerts | 3 |
 | **Trade Reviewer** | LLM | One closed trade with its full context | Mistake-taxonomy tags, thesis verdict, lesson text | 7 |
 | **Pattern Miner** | Deterministic (statistics) | Closed + virtual trades with entry features | Ranked loss clusters with effect sizes and CIs | 7 |
@@ -161,7 +161,7 @@ LLM-backed. **Anything touching money is deterministic.**
 | `CommandPoller` | 1 s | Executes pending `commands` |
 | `BarCloseWatcher` | 2 s | Detects a newly closed bar on each symbol's trigger TF → schedules `DecisionPipeline` |
 | `DecisionPipeline` | On trigger-TF bar close, per symbol | Full pipeline (see `03_TRADING_CORE.md` §3) |
-| `PositionManager` | 5 s | Break-even / trailing (if enabled), time-stops, Friday flatten, missing-SL repair |
+| `PositionManager` | 5 s | Break-even / trailing (if enabled), time-stops, pre-close flatten, missing-SL repair |
 | `Reconciler` | 30 s + on startup + after every execution | Align broker vs DB, close trades, detect orphans |
 | `EquitySnapshotter` | 60 s | Balance, equity, margin, open risk → `equity_snapshots`; drives loss limits |
 | `VirtualTradeTracker` | 60 s | Advances virtual trades for blocked/rejected signals |
