@@ -5,7 +5,7 @@ Updated by the coding agent at the end of every task.
 ## Current position
 
 - Phase: 2 — Risk & execution (deterministic baseline strategy)
-- Next task: 2.5 Guards
+- Next task: 2.6 Risk Manager
 - Rollout level: none (pre-L0). No code path places orders yet (SimBroker can, but nothing calls it).
 - Tests: 343 passing + 1 Windows-only (MQL5 constant cross-check against the real MetaTrader5 package).
 - Windows run 2026-09-28 (VantageMarkets-Demo, hedging, 1:500, server UTC+3): smoke checks passed; history
@@ -47,6 +47,8 @@ Updated by the coding agent at the end of every task.
 | 2026-09-28 | 2.3 Sizing | Pure Decimal sizing from broker loss-per-lot; confidence/volatility/drawdown/rule factors only scale down; floor to step; reject instead of upsizing to min lot; margin cap; full worksheet | Margin breach rejects (no downsizing to fit) | — |
 
 | 2026-09-28 | 2.4 Limits & exposure | Daily/weekly loss and drawdown breaches (most severe first); max positions, portfolio heat, bucket heat, notional leverage; UTC trading-day/week boundaries | Trading week starts at the Sunday boundary | — |
+
+| 2026-09-28 | 2.5 Guards | Pure duplicate layers (idempotency, in-flight, foreign, same direction, per-symbol cap, cooldown, daily cap) and reversal rules (mode, extra confidence, min hold, daily cap, flip-flop lock); the guard only decides, the executor closes-and-verifies | Per-symbol asyncio lock lives in the pipeline (2.8) | — |
 
 ## Decisions log
 
