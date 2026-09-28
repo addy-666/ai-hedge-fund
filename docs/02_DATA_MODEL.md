@@ -178,7 +178,8 @@ spread), `sl`, `tp`, `status` OPEN/CLOSED/EXPIRED, `exit_time`, `exit_price`, `e
 stateDiagram-v2
     [*] --> PENDING: row inserted (idempotency key reserved)
     PENDING --> CHECK_FAILED: order_check rejects
-    PENDING --> SENT: order_send called
+    PENDING --> SENT: persisted BEFORE order_send is called
+    PENDING --> REJECTED: crash before sending (recovery)
     SENT --> FILLED: retcode DONE / DONE_PARTIAL, position_id resolved
     SENT --> REJECTED: definitive reject retcode
     SENT --> RETRYING: retryable retcode (REQUOTE, PRICE_CHANGED, PRICE_OFF)
@@ -259,6 +260,7 @@ The authoritative list is `backend/src/aifund/market/feature_registry.py`; this 
 | Volume | `rel_tick_volume20` (tick volume / mean of the previous 20 bars) |
 | Structure | `dist_swing_high_atr`, `dist_swing_low_atr` (last *confirmed* 5-bar fractal), `bars_since_swing_break` |
 | Candle | `body_to_range`, `upper_wick_to_range`, `lower_wick_to_range`, `candle_dir` (BULL/BEAR/DOJI) |
+| v2 (2026-09-28) | `close` (price level — not scale-free, avoid in rules), `ema50_above_ema200`, `low_dist_ema50_atr`, `high_dist_ema50_atr`, `stoch_k`, `stoch_d` (Slow Stochastics 14,3,3), `stoch_cross_up`, `stoch_cross_down` |
 | Context (`ctx.`) | `session` (UTC: ASIA 23–07, LONDON 07–12, OVERLAP 12–16, NY 16–21, OFF 21–23), `day_of_week`, `minutes_to_next_high_impact_news`, `minutes_since_last_high_impact_news` (null until Phase 8), `spread_to_atr`, `regime`, `htf_trend_score` (Σ ±1 EMA stacks over setup + context TFs), `dist_pdh_atr`, `dist_pdl_atr` (previous closed D1 bar), `open_positions_count`, `symbol_open_risk_pct`, `portfolio_heat_pct`, `consecutive_losses_symbol`, `drawdown_pct` (portfolio fields filled by the pipeline) |
 | Proposal (`prop.`) | `direction`, `setup_tag`, `llm_confidence`, `sl_atr_multiple`, `rr_target`, `htf_alignment` (`ctx.htf_trend_score` × ±1 for LONG/SHORT) — filled at rule evaluation |
 

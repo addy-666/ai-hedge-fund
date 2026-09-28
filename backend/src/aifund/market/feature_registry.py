@@ -16,7 +16,7 @@ from enum import StrEnum
 
 from aifund.domain.enums import Direction, EmaStack, Regime, Timeframe
 
-FEATURE_SET_VERSION = 1
+FEATURE_SET_VERSION = 2  # v2 (2026-09-28): close, ema50_above_ema200, *_dist_ema50_atr, stochastics
 
 
 class FeatureType(StrEnum):
@@ -75,7 +75,26 @@ TF_FEATURES: tuple[tuple[str, FeatureType, str, str, tuple[str, ...] | None], ..
     ("upper_wick_to_range", _F, "0-1", "(high - max(open, close)) / range", None),
     ("lower_wick_to_range", _F, "0-1", "(min(open, close) - low) / range", None),
     ("candle_dir", _C, "", "BULL / BEAR, or DOJI when body < 10% of range", _CANDLE),
+    # --- feature set v2
+    ("close", _F, "price", "last close (a price level: not scale-free, avoid in learned rules)", None),
+    ("ema50_above_ema200", _B, "", "EMA50 > EMA200", None),
+    ("low_dist_ema50_atr", _F, "ATR", "(last bar low - EMA50) / ATR14", None),
+    ("high_dist_ema50_atr", _F, "ATR", "(last bar high - EMA50) / ATR14", None),
+    ("stoch_k", _F, "0-100", "Slow Stochastics(14,3,3) %K", None),
+    ("stoch_d", _F, "0-100", "Slow Stochastics(14,3,3) %D", None),
+    ("stoch_cross_up", _B, "", "%K crossed above %D on the last bar", None),
+    ("stoch_cross_down", _B, "", "%K crossed below %D on the last bar", None),
 )
+_V2 = {
+    "close",
+    "ema50_above_ema200",
+    "low_dist_ema50_atr",
+    "high_dist_ema50_atr",
+    "stoch_k",
+    "stoch_d",
+    "stoch_cross_up",
+    "stoch_cross_down",
+}
 
 CTX_FEATURES: tuple[FeatureSpec, ...] = (
     FeatureSpec(
@@ -181,7 +200,15 @@ def tf_prefix(tf: Timeframe) -> str:
 def tf_feature_specs(tf: Timeframe) -> tuple[FeatureSpec, ...]:
     p = tf_prefix(tf)
     return tuple(
-        FeatureSpec(f"{p}.{base}", dtype, unit, f"{tf.value}: {desc}", FeatureSource.BARS, cats)
+        FeatureSpec(
+            f"{p}.{base}",
+            dtype,
+            unit,
+            f"{tf.value}: {desc}",
+            FeatureSource.BARS,
+            cats,
+            since_version=2 if base in _V2 else 1,
+        )
         for base, dtype, unit, desc, cats in TF_FEATURES
     )
 

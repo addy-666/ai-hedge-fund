@@ -106,7 +106,8 @@ layers = [
     "aifund.api",
     "aifund.engine",
     "aifund.agents | aifund.execution | aifund.reconcile | aifund.vault",
-    "aifund.risk | aifund.rules | aifund.strategies | aifund.market",
+    "aifund.risk | aifund.rules | aifund.strategies",
+    "aifund.market",
     "aifund.ports",
     "aifund.domain",
 ]
@@ -142,6 +143,7 @@ source_modules = [
     "aifund.config", "aifund.persistence", "aifund.adapters",
 ]
 forbidden_modules = ["aifund.domain._issuance"]
+allow_indirect_imports = true  # calling the Risk Manager is the intended path; importing _issuance is not
 
 [[tool.importlinter.contracts]]
 name = "Only the MT5 adapter imports MetaTrader5"

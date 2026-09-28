@@ -88,6 +88,19 @@ def test_uptrend_features_match_hand_derived_values() -> None:
     assert f["m15.dist_swing_high_atr"] is None
     assert f["m15.dist_swing_low_atr"] is None
     assert f["m15.bars_since_swing_break"] is None
+    # feature set v2
+    close = float(linear(Timeframe.M15)[-1].close)
+    assert f["m15.close"] == close
+    assert f["m15.ema50_above_ema200"] is True
+    ema50 = close - 0.1 * 49 / 2
+    assert f["m15.low_dist_ema50_atr"] == pytest.approx((close - 0.15 - ema50) / atr)
+    assert f["m15.high_dist_ema50_atr"] == pytest.approx((close + 0.1 - ema50) / atr)
+    # stochastics: highest high (last) = close + 0.1 ; lowest low (13 bars back) = close - 1.3 - 0.15
+    raw_k = 100 * (close - (close - 1.45)) / (close + 0.1 - (close - 1.45))
+    assert f["m15.stoch_k"] == pytest.approx(raw_k)
+    assert f["m15.stoch_d"] == pytest.approx(raw_k)
+    assert f["m15.stoch_cross_up"] is False
+    assert f["m15.stoch_cross_down"] is False
     # context
     assert f["ctx.session"] == "LONDON"
     assert f["ctx.day_of_week"] == 0

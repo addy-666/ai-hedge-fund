@@ -207,3 +207,31 @@ def nr7(high: Arr, low: Arr) -> NDArray[np.bool_]:
         prev_min = np.lib.stride_tricks.sliding_window_view(rng[:-1], 6).min(axis=1)
         out[6:] = rng[6:] < prev_min
     return out
+
+
+def slow_stochastic(
+    high: Arr, low: Arr, close: Arr, k: int = 14, smooth: int = 3, d: int = 3
+) -> tuple[Arr, Arr]:
+    """Slow Stochastics (k, smooth, d): raw %K = 100·(close − lowest low_k)/(highest high_k − lowest low_k);
+    slow %K = SMA(raw %K, smooth); %D = SMA(slow %K, d). A zero-range window gives raw %K = 50."""
+    high, low, close = _as_float(high), _as_float(low), _as_float(close)
+    raw = _nan(len(close))
+    if len(close) >= k:
+        hh = np.lib.stride_tricks.sliding_window_view(high, k).max(axis=1)
+        ll = np.lib.stride_tricks.sliding_window_view(low, k).min(axis=1)
+        rng = hh - ll
+        with np.errstate(divide="ignore", invalid="ignore"):
+            raw[k - 1 :] = np.where(rng > 0, 100.0 * (close[k - 1 :] - ll) / rng, 50.0)
+    slow_k = _sma_skip_nan(raw, smooth)
+    return slow_k, _sma_skip_nan(slow_k, d)
+
+
+def _sma_skip_nan(x: Arr, n: int) -> Arr:
+    """SMA over the valid (non-leading-NaN) part of ``x``."""
+    out = _nan(len(x))
+    valid = np.flatnonzero(~np.isnan(x))
+    if len(valid) == 0:
+        return out
+    start = int(valid[0])
+    out[start:] = sma(x[start:], n)
+    return out

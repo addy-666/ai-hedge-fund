@@ -117,6 +117,19 @@ def test_macd_histogram_of_a_constant_is_zero_once_defined() -> None:
     close_to(hist[33:], [0.0] * 27)
 
 
+def test_slow_stochastic_by_hand() -> None:
+    high = np.array([10.0, 12, 11, 13, 12])
+    low = np.array([8.0, 9, 9, 10, 11])
+    close = np.array([9.0, 11, 10, 12, 11.5])
+    # k=2: raw%K[1] = 100*(11-8)/(12-8) = 75 ; [2] = 100*(10-9)/(12-9) = 33.33 ; [3] = 100*(12-9)/(13-9) = 75
+    #      [4] = 100*(11.5-10)/(13-10) = 50 ; slow %K = SMA2 ; %D = SMA2 of slow %K
+    k, d = ind.slow_stochastic(high, low, close, k=2, smooth=2, d=2)
+    close_to(k, [NAN, NAN, (75 + 100 / 3) / 2, (100 / 3 + 75) / 2, (75 + 50) / 2])
+    close_to(d, [NAN, NAN, NAN, (75 + 100 / 3) / 2, ((100 / 3 + 75) / 2 + 62.5) / 2])
+    flat_k, _ = ind.slow_stochastic(np.full(5, 1.0), np.full(5, 1.0), np.full(5, 1.0), k=2, smooth=1, d=1)
+    assert flat_k[-1] == 50.0
+
+
 def test_confirmed_swings_only_appear_after_confirmation() -> None:
     high = np.array([1.0, 2, 5, 3, 2, 2, 6, 4, 3])
     low = np.array([0.5, 1, 3, 1, 0.2, 1, 4, 2, 1])
@@ -169,6 +182,8 @@ INDICATORS: dict[str, Callable[[np.ndarray, np.ndarray, np.ndarray], np.ndarray]
     "swing_high": lambda h, low, c: ind.confirmed_swings(h, low)[0],
     "swing_low": lambda h, low, c: ind.confirmed_swings(h, low)[1],
     "nr7": lambda h, low, c: ind.nr7(h, low).astype(float),
+    "stoch_k": lambda h, low, c: ind.slow_stochastic(h, low, c)[0],
+    "stoch_d": lambda h, low, c: ind.slow_stochastic(h, low, c)[1],
 }
 
 

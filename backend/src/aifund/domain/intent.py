@@ -128,7 +128,8 @@ class Rejection(BaseModel):
 
 # docs/02 §2.1 — the only legal OrderIntent status transitions.
 INTENT_TRANSITIONS: dict[IntentStatus, frozenset[IntentStatus]] = {
-    IntentStatus.PENDING: frozenset({IntentStatus.CHECK_FAILED, IntentStatus.SENT}),
+    # PENDING -> REJECTED: abandoned by a crash before order_send (SENT is persisted before sending)
+    IntentStatus.PENDING: frozenset({IntentStatus.CHECK_FAILED, IntentStatus.SENT, IntentStatus.REJECTED}),
     IntentStatus.SENT: frozenset(
         {IntentStatus.FILLED, IntentStatus.REJECTED, IntentStatus.RETRYING, IntentStatus.UNKNOWN}
     ),

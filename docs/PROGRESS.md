@@ -4,9 +4,9 @@ Updated by the coding agent at the end of every task.
 
 ## Current position
 
-- Phase: 2 — Risk & execution (deterministic baseline strategy)
-- Next task: 2.1 Setup detector `mtf_trend_pullback`
-- Rollout level: none (pre-L0). No code path places orders yet (SimBroker can, but nothing calls it).
+- Phase: 3 — Reconciliation & ledger
+- Next task: 3.1 Reconciler
+- Rollout level: L0 (SIM). The full stack trades the SimBroker in replay; nothing is wired to MT5 order sending outside tests yet.
 - Tests: 343 passing + 1 Windows-only (MQL5 constant cross-check against the real MetaTrader5 package).
 - Windows run 2026-09-28 (VantageMarkets-Demo, hedging, 1:500, server UTC+3): smoke checks passed; history
   exported. Replay of the real export builds valid snapshots for XAUUSD/EURUSD/BTCUSD.
@@ -40,6 +40,24 @@ Updated by the coding agent at the end of every task.
 | 2026-09-28 | 1.5 Features | Registry (single source of names), validated snapshot builder, idempotent persistence | Mid-rank percentiles and a z-score noise floor (both bugs found while hand-deriving expected values); PDH/PDL moved to ctx; `ctx.htf_trend_score` + `prop.htf_alignment` | — |
 | 2026-09-28 | 1.7 Bar clock | One event per closed bar, grace, no retroactive trading after downtime, stale-feed reporting, cursor from decisions table | — | Engine wiring in Phase 5 |
 
+| 2026-09-28 | 2.1 mtf_trend_pullback | Detector faithful to the vault note (rules mapped to D1/H4 → H1 → M15), playbook card with book claims marked UNVALIDATED, feature set v2 (stochastics, EMA50 value-zone distances, close) | Engulfing approximated by a strong body; stochastic threshold 30 (note's code) not 20 (note's text) | On real Vantage data it fires ~0.5/week (XAUUSD) and ~1.5/week (BTCUSD): too few trades for statistical evaluation from a few months of replay |
+
+| 2026-09-28 | 2.2 Stops | ATR-clamped SL from invalidation, RR-banded TP, tick rounding, distances re-derived from rounded levels; property tests | TP rounds away when rounding toward entry would break rr_min (edge case caught by a hand test) | — |
+
+| 2026-09-28 | 2.3 Sizing | Pure Decimal sizing from broker loss-per-lot; confidence/volatility/drawdown/rule factors only scale down; floor to step; reject instead of upsizing to min lot; margin cap; full worksheet | Margin breach rejects (no downsizing to fit) | — |
+
+| 2026-09-28 | 2.4 Limits & exposure | Daily/weekly loss and drawdown breaches (most severe first); max positions, portfolio heat, bucket heat, notional leverage; UTC trading-day/week boundaries | Trading week starts at the Sunday boundary | — |
+
+| 2026-09-28 | 2.5 Guards | Pure duplicate layers (idempotency, in-flight, foreign, same direction, per-symbol cap, cooldown, daily cap) and reversal rules (mode, extra confidence, min hold, daily cap, flip-flop lock); the guard only decides, the executor closes-and-verifies | Per-symbol asyncio lock lives in the pipeline (2.8) | — |
+
+| 2026-09-28 | 2.6 Risk Manager | Sole issuer of executable intents: loss limits → threshold → guards → price drift → ATR stops → broker-calculated sizing → exposure → intent; reversals issue only a close intent (own idempotency key); broker errors fail closed | Notional per lot = broker margin × account leverage | — |
+
+| 2026-09-28 | 2.7 Executor | Persist-before-act state machine (SENT committed before order_send), filling selection, order_check, bounded retries for requote-type codes only, PAUSE codes, UNKNOWN resolution by comment then structural match, startup recovery; crash at each of 5 stages → zero duplicates, zero lost trades | PENDING→REJECTED and RETRYING→REJECTED on recovery (a crash between retries would otherwise have crashed recovery itself — found in review); post-fill SL repair/adjust belongs to the position manager (2.9), which issues MODIFY_SLTP intents | — |
+
+| 2026-09-28 | 2.8 Baseline pipeline | Pre-flight → snapshot → detector → deterministic decision (confidence 70) → Risk Manager → executor; one decision row per bar written at the start and completed at the end; per-symbol lock; replay harness with per-step invariants; scenario test (synthetic, all guards fire) and `scripts/replay.py` | Decision row inserted first (intents reference it; a crash leaves its stage); indirect imports of `_issuance` allowed (calling the Risk Manager is the intended path) | Real-data replay (Vantage, 2026-06-15 → 09-27): 16,833 bar events, 0 invariant violations, 13 trades (3 TP / 9 SL / 1 open), −1.25% — far too few trades to judge edge. M1 export coverage starts 17 Jun (XAU) / 21 Jul (BTC). BTC's fixed ~$17 spread exceeds 10% of M15 ATR in ~56% of bars. |
+
+| 2026-09-28 | 2.9 Position manager | Friday flatten → time stop → missing-SL repair (close if already crossed) → slippage re-alignment → break-even → ATR trail; tighten-only, stop/freeze-level aware, per-minute idempotent intents; engine loop; hooked into replay | Lives in `risk/` (only the risk layer issues intents) | Real replay: 14 trades, 1 time stop, 1 Friday flatten, 0 violations, −0.95% |
+
 ## Decisions log
 
 | Date | Decision | Reason | Docs updated |
@@ -52,6 +70,8 @@ Updated by the coding agent at the end of every task.
 | 2026-09-28 | Notional-leverage cap independent of broker margin | High-leverage accounts make margin checks meaningless (audit Q100c) | 02, 03 |
 | 2026-09-28 | Explicit MT5 account required | Prototype traded whatever account the terminal was logged into when MT5_LOGIN was empty (audit Q87) | 02 |
 | 2026-09-28 | Tests derive expected values by hand, never from memory | A remembered "published" RSI value was wrong; hand derivation caught three real bugs (ADX warm-up, percentile ties, z-score noise) | — |
+| 2026-09-28 | `market` is its own layer below `risk`/`rules`/`strategies` | Detectors read market features; siblings in one import-linter layer may not import each other | 01 |
+| 2026-09-28 | Spread gates set from measured data (operator decision: Vantage spreads are the best available) | BTC fixed ~$16.94 spread: `max_spread_to_atr` 0.10 → 0.30 (blocks quietest ~7% of M15 bars instead of 56%) plus a 2,500-point blow-out cap; gold unchanged (never trips); NAS100 added provisionally. At 0.30 a quiet-market BTC trade can start ≈ −0.2R in spread | config example, AGENTS.md |
 | 2026-09-28 | Executable intents only via `domain._issuance`, import-restricted to `aifund.risk`; copies are never executable | Structural guarantee that LLM output cannot reach the broker without the Risk Manager | AGENTS.md |
 
 ## Operational measurements (filled during P4.7, P5.8, soak)

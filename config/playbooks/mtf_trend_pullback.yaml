@@ -1,0 +1,29 @@
+# Playbook card — curated from the TRADING BRAIN vault. Grounds the deterministic detector
+# (backend/src/aifund/strategies/mtf_trend_pullback.py) and, from Phase 4, the analyst prompt.
+id: mtf_trend_pullback
+setup_tag: mtf_trend_pullback
+version: 1
+source: "[[high_probability_multi_timeframe_trend_pullback]]"   # Link, High Probability Trading
+summary: >
+  Buy pullbacks to the EMA50 value zone in an established higher-timeframe uptrend (short rallies in
+  downtrends), timed by a stochastic hook out of oversold with a confirmation candle.
+timeframe_roles: {trend_filter: highest context TF, setup: setup TF, trigger: trigger TF}
+long_rules:
+  - "Trend filter: EMA50 > EMA200 and close > EMA50 on the trend-filter TF"
+  - "Setup: setup-TF bar low reaches the EMA50 value zone (<= 0.25 ATR above it); close not > 0.5 ATR below EMA50"
+  - "Invalidation: setup-TF close below EMA200 cancels the setup"
+  - "Trigger: Slow Stochastics(14,3,3) %K crosses above %D with %K < 30"
+  - "Confirmation: bullish hammer (lower wick >= 50% of range) or strong bullish body (>= 60%)"
+short_rules: "Mirror image of the long rules."
+stop: "Setup-bar low (high for shorts) minus 0.5 x setup-TF ATR"
+target: "Last confirmed setup-TF swing high (low for shorts), when beyond entry"
+approximations:
+  - "Engulfing confirmation is approximated by a strong body (the snapshot has no previous candle)."
+  - "The note's text says stochastic < 20, its reference code uses < 30; the detector defaults to 30."
+  - "Scale-out of 50% at target 1 and trailing the runner are not implemented (single target)."
+claimed_performance:
+  win_rate: "60-68%"
+  profit_factor: "2.2-3.0"
+  status: UNVALIDATED   # book claims; measured by the Phase 2 replay backtest on real broker data
+validation_status: research
+automation_potential: high

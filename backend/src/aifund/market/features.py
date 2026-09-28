@@ -116,6 +116,7 @@ def tf_features(bars: list[Bar]) -> dict[str, FeatureValue]:
     v = np.array([float(b.tick_volume) for b in bars])
 
     e20, e50, e200 = ind.ema(c, 20), ind.ema(c, 50), ind.ema(c, 200)
+    stoch_k, stoch_d = ind.slow_stochastic(h, lo, c)
     atr = ind.atr(h, lo, c, 14)
     rsi = ind.rsi(c, 14)
     sh, sl = ind.confirmed_swings(h, lo)
@@ -158,7 +159,23 @@ def tf_features(bars: list[Bar]) -> dict[str, FeatureValue]:
         "upper_wick_to_range": _ratio(float(h[-1] - max(o[-1], c[-1])), rng),
         "lower_wick_to_range": _ratio(float(min(o[-1], c[-1]) - lo[-1]), rng),
         "candle_dir": candle,
+        "close": close,
+        "ema50_above_ema200": None if math.isnan(e200[-1]) else bool(e50[-1] > e200[-1]),
+        "low_dist_ema50_atr": _ratio(float(lo[-1] - e50[-1]), a),
+        "high_dist_ema50_atr": _ratio(float(h[-1] - e50[-1]), a),
+        "stoch_k": _clean(stoch_k[-1]),
+        "stoch_d": _clean(stoch_d[-1]),
+        "stoch_cross_up": _cross(stoch_k, stoch_d, up=True),
+        "stoch_cross_down": _cross(stoch_k, stoch_d, up=False),
     }
+
+
+def _cross(fast: np.ndarray, slow: np.ndarray, *, up: bool) -> bool | None:
+    if len(fast) < 2 or np.isnan(fast[-2:]).any() or np.isnan(slow[-2:]).any():
+        return None
+    if up:
+        return bool(fast[-2] <= slow[-2] and fast[-1] > slow[-1])
+    return bool(fast[-2] >= slow[-2] and fast[-1] < slow[-1])
 
 
 def build_snapshot(

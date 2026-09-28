@@ -47,7 +47,7 @@ def test_example_config_loads_with_exact_decimals() -> None:
     assert cfg.risk.limits.max_notional_leverage == Decimal("10")
     assert cfg.risk.guards.reversal_mode is ReversalMode.CLOSE_ONLY
     assert cfg.profiles["intraday_m15"].trigger_tf is Timeframe.M15
-    assert cfg.symbol("XAUUSD").broker == "XAUUSDm"
+    assert cfg.symbol("XAUUSD").broker == "XAUUSD"
     assert len(loaded.sha256) == 64
 
 
@@ -86,7 +86,7 @@ def test_placeholder_models_are_allowed_in_sim(base: dict[str, Any]) -> None:
         ("risk.guards.reversal_mode", "flip", "ignore"),
         ("symbols.0.profile", "does_not_exist", "undefined profiles"),
         ("symbols.1.canonical", "XAUUSD", "duplicate canonical"),
-        ("symbols.1.broker", "XAUUSDm", "duplicate broker"),
+        ("symbols.1.broker", "XAUUSD", "duplicate broker"),
         ("symbols.0.max_spread_to_atr", 0, "greater than 0"),
         ("symbols.0.asset_class", "stocks", None),
         ("profiles.intraday_m15.setup_tf", "M5", "setup_tf must be a higher timeframe"),

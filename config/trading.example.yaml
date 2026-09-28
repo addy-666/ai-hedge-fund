@@ -3,7 +3,7 @@
 # validation error. Secrets never go here — they belong in .env.
 
 engine:
-  account_label: exness-demo-1
+  account_label: vantage-demo-1
   mode: SIM                     # SIM | PAPER | DEMO | LIVE
   allow_live: false             # must be true for LIVE (re-auth in dashboard)
   magic: 26092801
@@ -17,30 +17,37 @@ strategy:
   analyst_enabled: true         # false = deterministic baseline only (LLM outage fallback)
   baseline_enabled: false       # deterministic mtf_trend_pullback without LLM (Phase 2)
 
-symbols:
+symbols:                        # canonical -> broker symbol (Vantage uses no suffix; Exness appends "m")
   - canonical: XAUUSD
-    broker: XAUUSDm
+    broker: XAUUSD
     asset_class: metal
     profile: intraday_m15
     correlation_bucket: USD_INVERSE
+    # Gold never trips its gates on Vantage: spread 21-28 points, spread/ATR p99 0.048 (spread_report.py).
     max_spread_points: 250
     max_spread_to_atr: 0.15
     trade_weekends: false
-  - canonical: EURUSD
-    broker: EURUSDm
-    asset_class: fx
-    profile: intraday_m15
-    correlation_bucket: USD_INVERSE
-    max_spread_points: 20
-    max_spread_to_atr: 0.10
-    trade_weekends: false
   - canonical: BTCUSD
-    broker: BTCUSDm
+    broker: BTCUSD
     asset_class: crypto
     profile: intraday_m15
     correlation_bucket: CRYPTO
-    max_spread_to_atr: 0.10
+    # Vantage BTC spread is a fixed ~1,694 points ($16.94). Gates set from scripts/spread_report.py
+    # (2026-06..09 export): spread/ATR p50 0.11, p90 0.26, p99 0.60. At 0.30 the gate blocks only the
+    # quietest ~7% of M15 bars (a 0.10 gate blocked 56%). The points cap (~1.5x normal) catches blow-outs.
+    max_spread_points: 2500
+    max_spread_to_atr: 0.30
     trade_weekends: true
+  - canonical: NAS100
+    broker: NAS100          # CONFIRM the exact name in MT5 Market Watch (Vantage: NAS100); smoke test checks it
+    asset_class: index
+    profile: intraday_m15
+    correlation_bucket: US_EQUITY
+    # PROVISIONAL until NAS100 history is exported: re-run scripts/spread_report.py and set from p90-p99.
+    max_spread_to_atr: 0.20
+    trade_weekends: false
+  # EURUSD dropped 2026-09-28: on the Vantage demo its spread is ~26% of an M15 ATR (1.4 vs ~4.9 pips),
+  # far above max_spread_to_atr. Revisit with a raw-spread account or on H1.
 
 profiles:
   intraday_m15:
