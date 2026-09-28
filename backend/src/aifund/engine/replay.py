@@ -19,6 +19,7 @@ from aifund.adapters.clock import FakeClock
 from aifund.adapters.sim.sim_broker import SimBroker
 from aifund.domain.enums import DealEntry, IntentKind, IntentStatus
 from aifund.engine.pipeline import DecisionPipeline
+from aifund.engine.position_loop import PositionLoop
 from aifund.market.bar_clock import BarClock
 from aifund.persistence.tables import DecisionRow, OrderIntentRow
 
@@ -36,6 +37,7 @@ class ReplayReport:
     net_pnl: Decimal = Decimal(0)
     exit_reasons: Counter[str] = field(default_factory=Counter)
     max_positions_per_symbol: int = 0
+    position_actions: Counter[str] = field(default_factory=Counter)
     violations: list[str] = field(default_factory=list)
 
     def render(self) -> str:
@@ -47,6 +49,8 @@ class ReplayReport:
             f"fills: {self.fills}  closed trades: {self.closed_trades}  wins: {self.wins}  "
             f"net P&L: {self.net_pnl}",
             "exits:     " + ", ".join(f"{k}={v}" for k, v in self.exit_reasons.most_common()),
+            "position mgmt: "
+            + (", ".join(f"{k}={v}" for k, v in self.position_actions.most_common()) or "none"),
             f"max engine positions on one symbol at any time: {self.max_positions_per_symbol}",
             f"invariant violations: {len(self.violations)}",
         ]
@@ -65,6 +69,7 @@ async def run_replay(
     end: datetime,
     step: timedelta = timedelta(seconds=60),
     max_positions_per_symbol: int = 1,
+    position_loop: PositionLoop | None = None,
     progress: Callable[[str], None] = lambda _msg: None,
 ) -> ReplayReport:
     report = ReplayReport(start=clock.now(), end=end)
@@ -77,6 +82,9 @@ async def run_replay(
             report.outcomes[record.outcome.value] += 1
             if record.reason is not None:
                 report.reasons[record.reason.value] += 1
+        if position_loop is not None:
+            for kind, _result in (await position_loop.run_once()).actions:
+                report.position_actions[kind.value] += 1
         await _check_step(report, broker, factory, magic, max_positions_per_symbol)
         if clock.now().date() != last_day:
             last_day = clock.now().date()

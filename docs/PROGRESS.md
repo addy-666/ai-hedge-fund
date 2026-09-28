@@ -4,9 +4,9 @@ Updated by the coding agent at the end of every task.
 
 ## Current position
 
-- Phase: 2 — Risk & execution (deterministic baseline strategy)
-- Next task: 2.9 Position manager
-- Rollout level: none (pre-L0). No code path places orders yet (SimBroker can, but nothing calls it).
+- Phase: 3 — Reconciliation & ledger
+- Next task: 3.1 Reconciler
+- Rollout level: L0 (SIM). The full stack trades the SimBroker in replay; nothing is wired to MT5 order sending outside tests yet.
 - Tests: 343 passing + 1 Windows-only (MQL5 constant cross-check against the real MetaTrader5 package).
 - Windows run 2026-09-28 (VantageMarkets-Demo, hedging, 1:500, server UTC+3): smoke checks passed; history
   exported. Replay of the real export builds valid snapshots for XAUUSD/EURUSD/BTCUSD.
@@ -55,6 +55,8 @@ Updated by the coding agent at the end of every task.
 | 2026-09-28 | 2.7 Executor | Persist-before-act state machine (SENT committed before order_send), filling selection, order_check, bounded retries for requote-type codes only, PAUSE codes, UNKNOWN resolution by comment then structural match, startup recovery; crash at each of 5 stages → zero duplicates, zero lost trades | PENDING→REJECTED and RETRYING→REJECTED on recovery (a crash between retries would otherwise have crashed recovery itself — found in review); post-fill SL repair/adjust belongs to the position manager (2.9), which issues MODIFY_SLTP intents | — |
 
 | 2026-09-28 | 2.8 Baseline pipeline | Pre-flight → snapshot → detector → deterministic decision (confidence 70) → Risk Manager → executor; one decision row per bar written at the start and completed at the end; per-symbol lock; replay harness with per-step invariants; scenario test (synthetic, all guards fire) and `scripts/replay.py` | Decision row inserted first (intents reference it; a crash leaves its stage); indirect imports of `_issuance` allowed (calling the Risk Manager is the intended path) | Real-data replay (Vantage, 2026-06-15 → 09-27): 16,833 bar events, 0 invariant violations, 13 trades (3 TP / 9 SL / 1 open), −1.25% — far too few trades to judge edge. M1 export coverage starts 17 Jun (XAU) / 21 Jul (BTC). BTC's fixed ~$17 spread exceeds 10% of M15 ATR in ~56% of bars. |
+
+| 2026-09-28 | 2.9 Position manager | Friday flatten → time stop → missing-SL repair (close if already crossed) → slippage re-alignment → break-even → ATR trail; tighten-only, stop/freeze-level aware, per-minute idempotent intents; engine loop; hooked into replay | Lives in `risk/` (only the risk layer issues intents) | Real replay: 14 trades, 1 time stop, 1 Friday flatten, 0 violations, −0.95% |
 
 ## Decisions log
 

@@ -24,12 +24,14 @@ from aifund.domain.decision import FeatureSnapshot, SetupCandidate
 from aifund.domain.enums import DecisionOutcome, Direction, Timeframe
 from aifund.engine.equity import EquityTracker
 from aifund.engine.pipeline import DecisionPipeline
+from aifund.engine.position_loop import PositionLoop
 from aifund.engine.replay import run_replay
 from aifund.execution.executor import Executor
 from aifund.market.bar_clock import BarClock
 from aifund.persistence.repositories.cursors import DecisionCursorStore
 from aifund.persistence.tables import DecisionRow, OrderIntentRow
 from aifund.risk.manager import RiskManager
+from aifund.risk.position_manager import PositionManager
 from aifund.strategies.base import TfRoles
 from tests.fakes.synthetic import aggregate, random_walk_m1
 from tests.unit.risk.test_stops import XAU
@@ -90,10 +92,15 @@ async def test_baseline_stack_replay_holds_every_invariant(
         profile_override={"intraday_m15": profile},
     )  # fmt: skip
     bar_clock = BarClock(feed, clock, [("XAUUSD", Timeframe.M15)], DecisionCursorStore(factory))
+    manager = PositionManager(cfg.position_management, cfg.risk.stops, magic=cfg.engine.magic, account=1)
+    loop = PositionLoop(
+        cfg, manager, broker=broker, market=feed, executor=executor, factory=factory, clock=clock
+    )
     end = START + timedelta(days=WARMUP_DAYS + REPLAY_DAYS)
     report = await run_replay(
         pipeline=pipeline,
         bar_clock=bar_clock,
+        position_loop=loop,
         broker=broker,
         clock=clock,
         factory=factory,
