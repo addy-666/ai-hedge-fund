@@ -41,13 +41,25 @@ class EngineConfig(_Strict):
     mode: Mode = Mode.SIM
     allow_live: bool = False
     magic: int = Field(gt=0, lt=2**63)
-    trading_day_boundary_utc: str = "21:00"
+    # the trading day (daily/weekly loss limits, day P&L) rolls at this LOCAL time: 17:00 New York is the
+    # FX/metals rollover and the broker's server midnight; it moves with DST (21:00 UTC summer, 22:00 winter)
+    trading_day_boundary: str = "17:00"
+    trading_day_timezone: str = "America/New_York"
     timezone_display: str = "UTC"
     auto_resume_after_crash: bool = False
     bar_close_grace_s: int = Field(default=3, ge=0, le=60)
     max_deviation_points: int = Field(default=20, ge=0, le=1000)
 
-    _hhmm = field_validator("trading_day_boundary_utc")(_check_hhmm)
+    _hhmm = field_validator("trading_day_boundary")(_check_hhmm)
+
+    @field_validator("trading_day_timezone")
+    @classmethod
+    def _known_day_timezone(cls, value: str) -> str:
+        try:
+            ZoneInfo(value)
+        except (ZoneInfoNotFoundError, ValueError) as exc:
+            raise ValueError(f"unknown timezone {value!r}") from exc
+        return value
 
     @model_validator(mode="after")
     def _live_requires_allow_live(self) -> Self:

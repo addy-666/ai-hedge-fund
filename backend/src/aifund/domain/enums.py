@@ -326,3 +326,4 @@ class EventType(StrEnum):
     TRADE_PARTIAL_CLOSE = "trade.partial_close"
     TRADE_CLOSED = "trade.closed"
     TRADE_VANISHED = "trade.vanished"
+    RISK_LIMIT_BREACH = "risk.limit_breach"

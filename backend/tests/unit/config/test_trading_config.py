@@ -64,7 +64,9 @@ def test_placeholder_models_are_allowed_in_sim(base: dict[str, Any]) -> None:
         ("engine.mode", "LIVE", "allow_live"),
         ("engine.mode", "DEMO", "placeholder"),
         ("engine.magic", 0, "greater than 0"),
-        ("engine.trading_day_boundary_utc", "25:00", "HH:MM"),
+        ("engine.trading_day_boundary", "25:00", "HH:MM"),
+        ("engine.trading_day_timezone", "Mars/Olympus", "unknown timezone"),
+        ("engine.trading_day_boundary_utc", "21:00", "Extra inputs"),  # replaced by boundary + timezone
         ("risk.stops.k_sl_min", 2.0, "k_sl_min <= k_sl_default <= k_sl_max"),
         ("risk.stops.k_sl_max", 1.2, "k_sl_min <= k_sl_default <= k_sl_max"),
         ("risk.stops.rr_min", 2.5, "rr_min <= rr_default <= rr_max"),

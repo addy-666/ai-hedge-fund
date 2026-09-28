@@ -98,32 +98,49 @@ def test_leverage_matters_at_high_broker_leverage() -> None:
 
 
 # ---------------------------------------------------------------- trading day / week
+# The broker's day rolls at 17:00 New York (server midnight at UTC+3/+2): 21:00 UTC in summer, 22:00 UTC in
+# winter. New York moved to EDT on 2026-03-08 and back to EST on 2026-11-01, both Sundays.
+
+NY = "America/New_York"
+
+
+def utc(*args: int) -> datetime:
+    return datetime(*args, tzinfo=UTC)
 
 
 @pytest.mark.parametrize(
     ("moment", "day_start"),
     [
-        (datetime(2026, 9, 28, 20, 59, tzinfo=UTC), datetime(2026, 9, 27, 21, 0, tzinfo=UTC)),
-        (datetime(2026, 9, 28, 21, 0, tzinfo=UTC), datetime(2026, 9, 28, 21, 0, tzinfo=UTC)),
-        (datetime(2026, 9, 28, 23, 30, tzinfo=UTC), datetime(2026, 9, 28, 21, 0, tzinfo=UTC)),
+        (utc(2026, 9, 28, 20, 59), utc(2026, 9, 27, 21, 0)),  # summer: 16:59 EDT -> yesterday 17:00
+        (utc(2026, 9, 28, 21, 0), utc(2026, 9, 28, 21, 0)),
+        (utc(2026, 9, 28, 23, 30), utc(2026, 9, 28, 21, 0)),
         # 00:30 IST on the 29th is 19:00 UTC on the 28th -> still the day that started 27th 21:00 UTC
         (datetime(2026, 9, 29, 0, 30, tzinfo=timezone(timedelta(hours=5, minutes=30))),
-         datetime(2026, 9, 27, 21, 0, tzinfo=UTC)),
+         utc(2026, 9, 27, 21, 0)),
+        (utc(2026, 12, 2, 21, 30), utc(2026, 12, 1, 22, 0)),  # winter: 16:30 EST -> yesterday 22:00 UTC
+        (utc(2026, 12, 2, 22, 0), utc(2026, 12, 2, 22, 0)),
+        # spring forward: Sat 17:00 EST = 22:00 UTC, Sun 17:00 EDT = 21:00 UTC (a 23-hour trading day)
+        (utc(2026, 3, 8, 20, 30), utc(2026, 3, 7, 22, 0)),
+        (utc(2026, 3, 8, 21, 30), utc(2026, 3, 8, 21, 0)),
+        # fall back: Sat 17:00 EDT = 21:00 UTC, Sun 17:00 EST = 22:00 UTC (a 25-hour trading day)
+        (utc(2026, 11, 1, 21, 30), utc(2026, 10, 31, 21, 0)),
+        (utc(2026, 11, 1, 22, 0), utc(2026, 11, 1, 22, 0)),
     ],
 )  # fmt: skip
 def test_trading_day_start(moment: datetime, day_start: datetime) -> None:
-    assert trading_day_start(moment, "21:00") == day_start  # non-UTC input is converted, not trusted
+    assert trading_day_start(moment, "17:00", NY) == day_start  # non-UTC input is converted, not trusted
 
 
 def test_naive_moments_are_rejected() -> None:
     with pytest.raises(ValueError, match="timezone-aware"):
-        trading_day_start(datetime(2026, 9, 28, 12, 0), "21:00")
+        trading_day_start(datetime(2026, 9, 28, 12, 0), "17:00", NY)
 
 
 def test_trading_week_starts_on_sunday_at_the_boundary() -> None:
-    wednesday = datetime(2026, 9, 30, 12, 0, tzinfo=UTC)
-    assert trading_week_start(wednesday, "21:00") == datetime(2026, 9, 27, 21, 0, tzinfo=UTC)  # Sunday
-    sunday_evening = datetime(2026, 9, 27, 22, 0, tzinfo=UTC)
-    assert trading_week_start(sunday_evening, "21:00") == datetime(2026, 9, 27, 21, 0, tzinfo=UTC)
-    sunday_before_open = datetime(2026, 9, 27, 20, 0, tzinfo=UTC)
-    assert trading_week_start(sunday_before_open, "21:00") == datetime(2026, 9, 20, 21, 0, tzinfo=UTC)
+    assert trading_week_start(utc(2026, 9, 30, 12, 0), "17:00", NY) == utc(2026, 9, 27, 21, 0)  # Sunday
+    assert trading_week_start(utc(2026, 9, 27, 22, 0), "17:00", NY) == utc(2026, 9, 27, 21, 0)
+    assert trading_week_start(utc(2026, 9, 27, 20, 0), "17:00", NY) == utc(2026, 9, 20, 21, 0)
+    # across the fall-back weekend: the week opens Sunday 17:00 EST = 22:00 UTC (a fixed 21:00 UTC was wrong)
+    assert trading_week_start(utc(2026, 11, 4, 12, 0), "17:00", NY) == utc(2026, 11, 1, 22, 0)
+    assert trading_week_start(utc(2026, 11, 1, 21, 30), "17:00", NY) == utc(2026, 10, 25, 21, 0)  # before it
+    assert trading_week_start(utc(2026, 3, 11, 12, 0), "17:00", NY) == utc(2026, 3, 8, 21, 0)  # spring

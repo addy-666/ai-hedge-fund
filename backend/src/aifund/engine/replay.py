@@ -29,10 +29,17 @@ from aifund.domain.enums import (
 )
 from aifund.domain.market import Deal
 from aifund.domain.trade import gets_virtual_trade
+from aifund.engine.equity import EquitySnapshotter
 from aifund.engine.pipeline import DecisionPipeline
 from aifund.engine.position_loop import PositionLoop
 from aifund.market.bar_clock import BarClock
-from aifund.persistence.tables import DecisionRow, OrderIntentRow, TradeRow, VirtualTradeRow
+from aifund.persistence.tables import (
+    DecisionRow,
+    EquitySnapshotRow,
+    OrderIntentRow,
+    TradeRow,
+    VirtualTradeRow,
+)
 from aifund.reconcile.enrichment import Enricher
 from aifund.reconcile.reconciler import Reconciler, ReconcileReport
 from aifund.reconcile.virtual import VirtualTracker
@@ -59,6 +66,11 @@ class ReplayReport:
     mean_mfe_r: Decimal | None = None
     virtual: Counter[str] | None = None  # virtual trades by status (None: no tracker in this run)
     virtual_mean_r: Decimal | None = None
+    snapshots: int = 0
+    final_equity: Decimal | None = None
+    max_drawdown_pct: Decimal = Decimal(0)
+    worst_day_pnl: Decimal = Decimal(0)
+    breaches: Counter[str] = field(default_factory=Counter)
     violations: list[str] = field(default_factory=list)
 
     def render(self) -> str:
@@ -93,6 +105,14 @@ class ReplayReport:
                 else (", ".join(f"{k}={v}" for k, v in self.virtual.most_common()) or "none")
                 + (f"; mean R of finished {self.virtual_mean_r}" if self.virtual_mean_r is not None else "")
             ),
+            "equity: "
+            + (
+                "no snapshotter"
+                if self.final_equity is None
+                else f"{self.snapshots} snapshots; final {self.final_equity}, max drawdown "
+                f"{self.max_drawdown_pct}%, worst day {self.worst_day_pnl}; limit breaches "
+                + (", ".join(f"{k}={v}" for k, v in self.breaches.most_common()) or "none")
+            ),
             f"invariant violations: {len(self.violations)}",
         ]
         lines += [f"  ! {v}" for v in self.violations[:20]]
@@ -114,10 +134,15 @@ async def run_replay(
     reconciler: Reconciler | None = None,
     enricher: Enricher | None = None,
     virtual_tracker: VirtualTracker | None = None,
+    equity_snapshotter: EquitySnapshotter | None = None,
+    snapshot_every: timedelta = timedelta(seconds=60),
     progress: Callable[[str], None] = lambda _msg: None,
 ) -> ReplayReport:
     report = ReplayReport(start=clock.now(), end=end)
     last_day = None
+    next_snapshot = clock.now()
+    if equity_snapshotter is not None:
+        await equity_snapshotter.start()
     while clock.now() < end:
         await clock.sleep(step.total_seconds())
         for event in (await bar_clock.poll()).events:
@@ -137,6 +162,12 @@ async def run_replay(
         if virtual_tracker is not None:
             for message in (await virtual_tracker.run_once()).errors:
                 report.violations.append(f"virtual tracker error: {message}")
+        if equity_snapshotter is not None and clock.now() >= next_snapshot:
+            next_snapshot = clock.now() + snapshot_every
+            snap = await equity_snapshotter.run_once()
+            report.violations += [f"snapshotter error: {m}" for m in snap.errors]
+            if snap.alerted and snap.breach is not None:
+                report.breaches[snap.breach.kind.value] += 1
         await _check_step(report, broker, factory, magic, max_positions_per_symbol)
         if clock.now().date() != last_day:
             last_day = clock.now().date()
@@ -162,7 +193,25 @@ async def run_replay(
         _check_enrichment(report, factory, clock.now() - timedelta(minutes=1))
     if virtual_tracker is not None:
         _check_virtual(report, factory)
+    if equity_snapshotter is not None:
+        await _check_equity(report, factory, broker)
     return report
+
+
+async def _check_equity(report: ReplayReport, factory: sessionmaker[Session], broker: SimBroker) -> None:
+    """The equity curve: one snapshot per step, the last one matching the broker, drawdown and day P&L."""
+    with factory() as s:
+        rows = s.scalars(select(EquitySnapshotRow).order_by(EquitySnapshotRow.id)).all()
+    report.snapshots = len(rows)
+    if not rows:
+        report.violations.append("no equity snapshots")
+        return
+    report.final_equity = rows[-1].equity
+    report.max_drawdown_pct = max(r.drawdown_pct for r in rows)
+    report.worst_day_pnl = min(r.day_pnl for r in rows)
+    account = await broker.account_info()
+    if rows[-1].balance != account.balance:
+        report.violations.append(f"last snapshot balance {rows[-1].balance} != broker {account.balance}")
 
 
 def _check_virtual(report: ReplayReport, factory: sessionmaker[Session]) -> None:

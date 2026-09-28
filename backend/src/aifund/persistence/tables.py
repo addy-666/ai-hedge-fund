@@ -103,6 +103,9 @@ class EngineStateRow(Base):
     mode: Mapped[Mode] = mapped_column(_enum(Mode))
     halt_reason: Mapped[str | None] = mapped_column(String(500))
     day_start_equity: Mapped[Decimal | None]
+    day_start_at: Mapped[datetime | None]  # the trading day day_start_equity belongs to
+    week_start_equity: Mapped[Decimal | None]
+    week_start_at: Mapped[datetime | None]
     peak_equity: Mapped[Decimal | None]
     config_version_id: Mapped[str | None] = mapped_column(ForeignKey("config_versions.id"))
     rulebook_version: Mapped[int] = mapped_column(Integer, default=0)

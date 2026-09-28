@@ -27,8 +27,9 @@ source of truth for the physical schema):
 | state | enum | STOPPED / STARTING / RUNNING / PAUSED / HALTED / FLATTENING |
 | mode | enum | SIM / PAPER / DEMO / LIVE |
 | halt_reason | str null | |
-| day_start_equity | Numeric | reset at configured trading-day boundary |
-| peak_equity | Numeric | for drawdown |
+| day_start_equity, day_start_at | Numeric, ts | equity at the start of the trading day (17:00 New York, DST-aware) and which day it belongs to |
+| week_start_equity, week_start_at | Numeric, ts | the same for the trading week (Sunday 17:00 New York) |
+| peak_equity | Numeric | for drawdown; never resets. All three survive restarts (task 3.5) |
 | config_version_id | FK config_versions | active config |
 | rulebook_version | int | active rulebook |
 | updated_at | ts | |
@@ -138,8 +139,9 @@ would have planned), `expires_at` + `expire_reason` (TIME_STOP or FLATTEN), `sta
 PENDING/OPEN/CLOSED/EXPIRED/NO_ENTRY, `exit_time`, `exit_price`, `exit_reason`, `r_multiple`, `mae_r`, `mfe_r`,
 `blocked_by` (rule id / guard reason), `snapshot_id`. The blocking reason is the decision's `reason_code`.
 
-**`equity_snapshots`**: `ts`, `balance`, `equity`, `margin`, `free_margin`, `open_risk_money`, `open_notional`,
-`open_positions`, `day_pnl`, `drawdown_pct`.
+**`equity_snapshots`** (every 60 s): `ts`, `balance`, `equity`, `margin`, `free_margin`, `open_risk_money` (Σ planned
+risk of open engine positions; orphans count 0), `open_notional` (Σ broker margin × leverage), `open_positions`,
+`day_pnl` (equity − day-start equity), `drawdown_pct` (from the peak).
 
 ### 1.4 Learning
 
@@ -299,7 +301,8 @@ engine:
   mode: DEMO                    # SIM | PAPER | DEMO | LIVE (re-auth)
   allow_live: false             # (re-auth) must be true for LIVE
   magic: 26092801
-  trading_day_boundary_utc: "21:00"   # align with broker rollover
+  trading_day_boundary: "17:00"        # local time of the broker rollover (server midnight)
+  trading_day_timezone: America/New_York   # so the boundary follows DST: 21:00 UTC summer, 22:00 winter
   timezone_display: "Asia/Kolkata"
   auto_resume_after_crash: false
   bar_close_grace_s: 3

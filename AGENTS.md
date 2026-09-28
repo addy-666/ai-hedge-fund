@@ -26,7 +26,7 @@ cd backend && uv run alembic upgrade head          # DATABASE_URL, default <repo
 cd backend && uv run alembic revision --autogenerate -m "<change>"   # then review the generated file
 cd backend && uv run python scripts/mt5_smoke.py   # Windows + MT5 terminal only: READ-ONLY checks on a demo account
 cd backend && uv run python scripts/export_history.py --months 15  # Windows: bars -> <repo>/data/history (Parquet)
-cd backend && uv run python scripts/replay.py --from 2026-06-15 --to 2026-09-27   # full stack on exported history (SimBroker)
+cd backend && uv run python scripts/replay.py --from 2026-06-15 --to 2026-09-27   # full stack on exported history (SimBroker); --snapshot-minutes 1 for engine cadence
 cd backend && uv run python scripts/spread_report.py   # spread vs ATR per symbol: evidence for the spread gates
 cd backend && uv run python scripts/capture_deals.py  # Windows, DEMO: record deal history -> tests/fixtures/mt5_deals (READ-ONLY)
 ```
