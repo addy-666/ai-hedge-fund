@@ -306,3 +306,13 @@ class ReasonCode(StrEnum):
     UNKNOWN_NOT_EXECUTED = "UNKNOWN_NOT_EXECUTED"
     TIMEOUT = "TIMEOUT"
     INTERNAL_ERROR = "INTERNAL_ERROR"
+
+
+class EventType(StrEnum):
+    """``events.type`` values (the dashboard's live feed, docs/05)."""
+
+    TRADE_OPENED = "trade.opened"
+    TRADE_ORPHAN = "trade.orphan"
+    TRADE_PARTIAL_CLOSE = "trade.partial_close"
+    TRADE_CLOSED = "trade.closed"
+    TRADE_VANISHED = "trade.vanished"

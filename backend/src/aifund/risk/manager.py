@@ -17,7 +17,7 @@ from decimal import Decimal
 from aifund.config.trading_config import RiskConfig
 from aifund.domain._issuance import issue_order_intent
 from aifund.domain.decision import FinalDecision
-from aifund.domain.enums import Direction, IntentKind, ReasonCode, Timeframe
+from aifund.domain.enums import CloseReason, Direction, IntentKind, ReasonCode, Timeframe
 from aifund.domain.ids import new_id
 from aifund.domain.intent import OrderIntent, Rejection, intent_comment, make_idempotency_key
 from aifund.domain.market import AccountInfo, Position, SymbolSpec, Tick
@@ -216,6 +216,7 @@ class RiskManager:
             ),
             decision_id=req.decision.decision_id,
             kind=IntentKind.REVERSE_CLOSE,
+            close_reason=CloseReason.REVERSAL,
             symbol=req.spec.symbol,
             side=pos.side.opposite,
             volume=pos.volume,

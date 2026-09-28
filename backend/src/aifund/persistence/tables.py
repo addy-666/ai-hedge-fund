@@ -28,6 +28,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from aifund.domain.enums import (
+    CloseReason,
     CommandStatus,
     DealEntry,
     DealReason,
@@ -255,6 +256,7 @@ class OrderIntentRow(Base):
     comment: Mapped[str] = mapped_column(String(31))
     magic: Mapped[int] = mapped_column(BigInteger)
     position_ticket: Mapped[int | None] = mapped_column(BigInteger)
+    close_reason: Mapped[CloseReason | None] = mapped_column(_enum(CloseReason))
     status: Mapped[IntentStatus] = mapped_column(_enum(IntentStatus))
     retcode: Mapped[int | None]
     retcode_name: Mapped[str | None] = mapped_column(String(64))
@@ -297,7 +299,7 @@ class TradeRow(Base):
     initial_risk_money: Mapped[Decimal | None]
     close_time: Mapped[datetime | None]
     close_price_vwap: Mapped[Decimal | None]
-    close_reason: Mapped[str | None] = mapped_column(String(24))
+    close_reason: Mapped[CloseReason | None] = mapped_column(_enum(CloseReason))
     gross_profit: Mapped[Decimal | None]
     commission: Mapped[Decimal | None]
     swap: Mapped[Decimal | None]

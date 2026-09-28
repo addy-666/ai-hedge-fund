@@ -22,6 +22,7 @@ from alembic import command
 from alembic.config import Config
 
 from aifund.adapters.clock import FakeClock
+from aifund.adapters.notify.null import NullNotifier
 from aifund.adapters.sim.replay_feed import ReplayFeed
 from aifund.adapters.sim.sim_broker import SimBroker, SimConfig
 from aifund.config.loader import load_trading_config
@@ -36,6 +37,7 @@ from aifund.execution.executor import Executor
 from aifund.market.bar_clock import BarClock
 from aifund.persistence.db import make_engine, make_session_factory
 from aifund.persistence.repositories.cursors import DecisionCursorStore
+from aifund.reconcile.reconciler import Reconciler
 from aifund.risk.manager import RiskManager
 from aifund.risk.position_manager import PositionManager
 from aifund.strategies.base import SetupDetector, TfRoles
@@ -115,6 +117,9 @@ async def main(argv: list[str]) -> int:
         pipeline=pipeline,
         bar_clock=bar_clock,
         position_loop=loop,
+        reconciler=Reconciler(
+            broker, factory, clock, NullNotifier(), account_id="replay", magic=cfg.engine.magic
+        ),
         broker=broker,
         clock=clock,
         factory=factory,
@@ -123,7 +128,7 @@ async def main(argv: list[str]) -> int:
         progress=lambda m: print(m, flush=True),
     )
     print(report.render())
-    print(f"decisions and intents: {db_path}")
+    print(f"decisions, intents, trades and deals: {db_path}")
     return 1 if report.violations else 0
 
 

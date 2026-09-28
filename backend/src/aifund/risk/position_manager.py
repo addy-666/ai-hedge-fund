@@ -21,7 +21,7 @@ from enum import StrEnum
 
 from aifund.config.trading_config import PositionManagementConfig, StopsConfig
 from aifund.domain._issuance import issue_order_intent
-from aifund.domain.enums import Direction, IntentKind, Side, Timeframe
+from aifund.domain.enums import CloseReason, Direction, IntentKind, Side, Timeframe
 from aifund.domain.ids import new_id
 from aifund.domain.intent import OrderIntent, intent_comment, make_idempotency_key
 from aifund.domain.market import Position, SymbolSpec, Tick
@@ -36,6 +36,13 @@ class ActionKind(StrEnum):
     REALIGN_SL = "REALIGN_SL"
     BREAK_EVEN = "BREAK_EVEN"
     TRAIL = "TRAIL"
+
+
+_CLOSE_REASON = {
+    ActionKind.FRIDAY_FLATTEN: CloseReason.FLATTEN,
+    ActionKind.TIME_STOP: CloseReason.TIME_STOP,
+    ActionKind.STOP_BREACHED: CloseReason.ENGINE,
+}
 
 
 @dataclass(frozen=True)
@@ -183,6 +190,7 @@ class PositionManager:
             idempotency_key=self._key(f, now, kind),
             decision_id=None,
             kind=ik,
+            close_reason=_CLOSE_REASON[kind],
             symbol=pos.symbol,
             side=pos.side.opposite,
             volume=pos.volume,

@@ -15,6 +15,8 @@ Model (deliberately conservative, documented so results are not over-trusted):
   (REQUOTE), unsupported filling (INVALID_FILL), unknown position (POSITION_CLOSED).
 - Fault injection for resilience tests: LOST_ACK (executes, caller gets None), DROPPED (nothing happens,
   caller gets None), RejectWith(retcode), and disconnection (every call raises BrokerUnavailable).
+- Outside actions for reconciliation tests: ``close_externally`` (a person closing by hand, or a broker
+  stop-out) and ``hide_deals`` (a position gone before its closing deals reach the history).
 
 All state changes happen lazily: every port method first walks the price path up to ``clock.now()``.
 """
@@ -109,12 +111,33 @@ class SimBroker:
         self._faults: deque[Fault | RejectWith] = deque()
         self.connected = True
         self.sent: list[OrderRequest] = []
+        self._hidden_deals: set[int] = set()  # positions whose deals the history does not show yet
 
     # ------------------------------------------------------------------ test hooks
 
     def inject(self, *faults: Fault | RejectWith) -> None:
         """Queue faults consumed by the next order_send calls, in order."""
         self._faults.extend(faults)
+
+    def close_externally(
+        self, position_id: int, *, reason: DealReason = DealReason.CLIENT, volume: Decimal | None = None
+    ) -> Deal:
+        """Close (part of) a position at the current quote the way a person or the broker would.
+
+        MT5 books such a deal with magic 0 and reason CLIENT / MOBILE / WEB, or SO for a stop-out.
+        """
+        self._walk()
+        pos = self._positions[position_id]
+        tick = self.feed.tick_at(pos.symbol, self.clock.now())
+        if tick is None:
+            raise BrokerError(f"no quote for {pos.symbol}")
+        return self._close(
+            pos, volume or pos.volume, self._exit_price(pos, tick), reason, self.clock.now(), "", magic=0
+        )
+
+    def hide_deals(self, position_id: int, hidden: bool = True) -> None:
+        """Make the history lag: deals of this position are not returned until un-hidden."""
+        (self._hidden_deals.add if hidden else self._hidden_deals.discard)(position_id)
 
     def _new_id(self) -> int:
         self._next_id += 1
@@ -202,7 +225,7 @@ class SimBroker:
 
     def _record(
         self, pos: _Pos, side: Side, entry: DealEntry, reason: DealReason, volume: Decimal, price: Decimal,
-        profit: Decimal, when: datetime, comment: str, order: int,
+        profit: Decimal, when: datetime, comment: str, order: int, magic: int | None = None,
     ) -> Deal:  # fmt: skip
         commission = self._commission(volume)
         deal = Deal(
@@ -215,7 +238,7 @@ class SimBroker:
             side=side,
             entry=entry,
             reason=reason,
-            magic=pos.magic,
+            magic=pos.magic if magic is None else magic,
             volume=volume,
             price=price,
             profit=profit,
@@ -228,11 +251,11 @@ class SimBroker:
 
     def _close(
         self, pos: _Pos, volume: Decimal, price: Decimal, reason: DealReason, when: datetime, comment: str,
-        order: int = 0,
+        order: int = 0, magic: int | None = None,
     ) -> Deal:  # fmt: skip
         profit = self._profit(pos.side, pos.symbol, volume, pos.price_open, price)
         deal = self._record(
-            pos, pos.side.opposite, DealEntry.OUT, reason, volume, price, profit, when, comment, order
+            pos, pos.side.opposite, DealEntry.OUT, reason, volume, price, profit, when, comment, order, magic
         )
         pos.volume -= volume
         if pos.volume <= 0:
@@ -349,6 +372,8 @@ class SimBroker:
 
     async def deals_for_position(self, position_id: int) -> list[Deal]:
         self._guard()
+        if position_id in self._hidden_deals:
+            return []
         return [d for d in self._deals if d.position_id == position_id]
 
     async def deals_between(self, start: datetime, end: datetime) -> list[Deal]:

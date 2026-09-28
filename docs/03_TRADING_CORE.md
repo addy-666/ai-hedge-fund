@@ -409,25 +409,32 @@ Every 5 s over engine-owned open positions:
 ### 14.1 Algorithm (every 30 s, on startup, after every execution)
 
 ```text
-broker_positions = positions_get() filtered to magic == engine magic (and all symbols configured)
-db_open          = trades where status in (OPEN, ORPHAN_OPEN)
+db_open      = trades where status in (OPEN, ORPHAN_OPEN)                 # read the DB FIRST (see below)
+unseen_fills = FILLED OPEN intents with a position_id and no trade row
+busy_symbols = symbols with a non-terminal intent (PENDING/SENT/RETRYING/UNKNOWN)
+broker_positions = positions_get() filtered to magic == engine magic (every symbol)
 
 for pos in broker_positions:
-    trade = db_open.get(position_id=pos.identifier)
-    if trade is None:
-        if an UNKNOWN/SENT intent matches (comment code) → resolve it (FILLED) and create Trade
-        else → create Trade ORPHAN_OPEN, ensure SL, alert "orphan position"
-    else:
-        update current_sl/tp, volume_open_now (detect partial closes), floating P&L
+    if trade = db_open.get(pos.position_id):
+        update current_sl/tp, volume_open_now; a decrease is a partial close → mirror its deals
+    elif pos.position_id in unseen_fills → create Trade OPEN (provenance from the intent and its decision)
+    elif pos.symbol in busy_symbols → defer: the executor is settling that fill (it resolves UNKNOWNs)
+    else → create Trade ORPHAN_OPEN, alert "orphan position" (the position manager repairs a missing SL)
 
-for trade in db_open not in broker_positions:
-    deals = history_deals_get(position=trade.position_id)          # position-scoped query, no date windows
-    if deals has OUT/OUT_BY/INOUT deals covering the full volume:
-        upsert all deals into `deals`
-        close_trade(trade, deals)
+for trade in db_open not in broker_positions, and unseen_fills not in broker_positions:
+    deals = history_deals_get(position=position_id)                # position-scoped query, no date windows
+    if OUT/OUT_BY/INOUT deals cover the full volume:
+        in one transaction: (create the trade from the intent + entry deal if it was never seen open),
+        upsert all deals into `deals`, close_trade(trade, deals)
     else:
-        retry next cycle; after 5 min → alert "position vanished without closing deals"
+        retry next cycle; after 5 min → one alert "position vanished without closing deals"
 ```
+
+Reading the DB before asking the broker makes the race safe: a fill that lands in between appears as a
+position whose symbol still has an in-flight intent (deferred), never as a false orphan. Only the executor
+moves an intent's state, so the reconciler never resolves intents itself. `unseen_fills` covers a position
+that hit SL/TP between two cycles or while the engine was down. Floating P&L is not stored on trades (it is
+on `equity_snapshots`, task 3.5).
 
 ### 14.2 P&L aggregation (`reconcile/pnl.py`)
 
@@ -441,10 +448,12 @@ close_price_vwap = Σ(out.price × out.volume) / Σ out.volume
 close_time = max(out.time)
 close_reason from the last OUT deal's reason:
     DEAL_REASON_SL → SL, DEAL_REASON_TP → TP, DEAL_REASON_SO → STOP_OUT,
-    DEAL_REASON_EXPERT → our intent kind (ENGINE / REVERSAL / TIME_STOP / FLATTEN / OPERATOR),
-    DEAL_REASON_CLIENT / MOBILE / WEB → MANUAL_EXTERNAL
-r_multiple = net_pnl / initial_risk_money
-outcome    = WIN if r ≥ +0.1, LOSS if r ≤ −0.1, else BREAKEVEN
+    DEAL_REASON_EXPERT → the close_reason our closing intent recorded (TIME_STOP / FLATTEN / REVERSAL /
+                         OPERATOR / ENGINE; if unset: REVERSE_CLOSE → REVERSAL, FLATTEN → FLATTEN,
+                         CLOSE → ENGINE); an EXPERT deal no intent of ours explains → MANUAL_EXTERNAL
+    DEAL_REASON_CLIENT / MOBILE / WEB and anything else → MANUAL_EXTERNAL
+r_multiple = net_pnl / initial_risk_money      (4 dp; null for orphans: no known risk)
+outcome    = WIN if r ≥ +0.1, LOSS if r ≤ −0.1, else BREAKEVEN   (null when r is null)
 ```
 
 (The prototype used only the last exit deal's `profit` and its sign — ignoring commission/swap/partials.)

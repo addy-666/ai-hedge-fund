@@ -96,6 +96,7 @@ Unique: (`symbol`, `trigger_tf`, `bar_time`, `feature_set_version`).
 | risk_money, risk_pct | |
 | comment | `AF:<8-char intent code>` (MT5 comments are ≤ 31 chars; brokers may truncate/replace, so never rely on it alone) |
 | magic | |
+| close_reason | closing kinds only: why the engine closes (TIME_STOP / FLATTEN / REVERSAL / OPERATOR / ENGINE); the reconciler's close reason for DEAL_REASON_EXPERT exits |
 | status | see state machine §2.1 |
 | retcode, retcode_name, broker_comment | last result |
 | order_ticket, deal_ticket, position_id | resolved identifiers |
@@ -116,7 +117,7 @@ Unique: (`symbol`, `trigger_tf`, `bar_time`, `feature_set_version`).
 | initial_risk_money | money lost if initial SL hit (incl. est. commission) — denominator of R |
 | close_time, close_price_vwap, close_reason | SL / TP / STOP_OUT / ENGINE / OPERATOR / MANUAL_EXTERNAL / REVERSAL / TIME_STOP / FLATTEN |
 | gross_profit, commission, swap, fee, net_pnl | Σ over all deals of the position |
-| r_multiple | net_pnl / initial_risk_money |
+| r_multiple | net_pnl / initial_risk_money (null for orphans) |
 | mae_r, mfe_r | max adverse / favourable excursion in R (from M1 bars) |
 | bars_held, holding_minutes | |
 | outcome | WIN (R ≥ +0.1) / LOSS (R ≤ −0.1) / BREAKEVEN |

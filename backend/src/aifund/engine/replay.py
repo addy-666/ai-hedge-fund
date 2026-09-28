@@ -1,7 +1,8 @@
 """Replay harness: drive the bar clock and the decision pipeline over simulated time on the SimBroker.
 
-It proves the PLUMBING (no duplicates, no orphans, one decision per bar, fills and SL/TP exits recorded)
-and reports what the strategy did. It does not prove an edge: see docs/00 §3.
+It proves the PLUMBING (no duplicates, no orphans, one decision per bar, fills and SL/TP exits recorded,
+and — with a reconciler — a trade ledger that matches the broker's deals to the cent) and reports what the
+strategy did. It does not prove an edge: see docs/00 §3.
 """
 
 from __future__ import annotations
@@ -17,11 +18,13 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from aifund.adapters.clock import FakeClock
 from aifund.adapters.sim.sim_broker import SimBroker
-from aifund.domain.enums import DealEntry, IntentKind, IntentStatus
+from aifund.domain.enums import DealEntry, IntentKind, IntentStatus, TradeStatus
+from aifund.domain.market import Deal
 from aifund.engine.pipeline import DecisionPipeline
 from aifund.engine.position_loop import PositionLoop
 from aifund.market.bar_clock import BarClock
-from aifund.persistence.tables import DecisionRow, OrderIntentRow
+from aifund.persistence.tables import DecisionRow, OrderIntentRow, TradeRow
+from aifund.reconcile.reconciler import Reconciler, ReconcileReport
 
 
 @dataclass
@@ -38,6 +41,8 @@ class ReplayReport:
     exit_reasons: Counter[str] = field(default_factory=Counter)
     max_positions_per_symbol: int = 0
     position_actions: Counter[str] = field(default_factory=Counter)
+    ledger_closed: int | None = None  # trades the reconciler closed (None: no reconciler in this run)
+    close_reasons: Counter[str] = field(default_factory=Counter)
     violations: list[str] = field(default_factory=list)
 
     def render(self) -> str:
@@ -52,6 +57,13 @@ class ReplayReport:
             "position mgmt: "
             + (", ".join(f"{k}={v}" for k, v in self.position_actions.most_common()) or "none"),
             f"max engine positions on one symbol at any time: {self.max_positions_per_symbol}",
+            "ledger: "
+            + (
+                "no reconciler"
+                if self.ledger_closed is None
+                else f"{self.ledger_closed} closed trades; "
+                + (", ".join(f"{k}={v}" for k, v in self.close_reasons.most_common()) or "none")
+            ),
             f"invariant violations: {len(self.violations)}",
         ]
         lines += [f"  ! {v}" for v in self.violations[:20]]
@@ -70,6 +82,7 @@ async def run_replay(
     step: timedelta = timedelta(seconds=60),
     max_positions_per_symbol: int = 1,
     position_loop: PositionLoop | None = None,
+    reconciler: Reconciler | None = None,
     progress: Callable[[str], None] = lambda _msg: None,
 ) -> ReplayReport:
     report = ReplayReport(start=clock.now(), end=end)
@@ -85,6 +98,8 @@ async def run_replay(
         if position_loop is not None:
             for kind, _result in (await position_loop.run_once()).actions:
                 report.position_actions[kind.value] += 1
+        if reconciler is not None:
+            _record_reconcile(report, await reconciler.run_once())
         await _check_step(report, broker, factory, magic, max_positions_per_symbol)
         if clock.now().date() != last_day:
             last_day = clock.now().date()
@@ -104,7 +119,44 @@ async def run_replay(
     report.wins = len([p for p in closed.values() if p > 0])
     report.net_pnl = sum(closed.values(), Decimal(0))
     _check_final(report, factory)
+    if reconciler is not None:
+        _check_ledger(report, factory, mine, closed, open_ids)
     return report
+
+
+def _record_reconcile(report: ReplayReport, result: ReconcileReport) -> None:
+    for position_id in result.orphans:
+        report.violations.append(f"reconciler found orphan position {position_id}")
+    for message in result.errors:
+        report.violations.append(f"reconciler error: {message}")
+    for _position_id, reason in result.closed:
+        report.close_reasons[reason.value] += 1
+
+
+def _check_ledger(
+    report: ReplayReport,
+    factory: sessionmaker[Session],
+    deals: list[Deal],
+    closed: dict[int, Decimal],
+    open_ids: set[int],
+) -> None:
+    """The trade ledger must agree with the broker: one trade per position, net P&L to the cent."""
+    with factory() as s:
+        trades = {t.position_id: t for t in s.scalars(select(TradeRow)).all()}
+    report.ledger_closed = len([t for t in trades.values() if t.status is TradeStatus.CLOSED])
+    for position_id, net in closed.items():
+        t = trades.get(position_id)
+        if t is None or t.status is not TradeStatus.CLOSED:
+            report.violations.append(f"position {position_id} closed at the broker but not in the ledger")
+        elif t.net_pnl != net:
+            report.violations.append(f"position {position_id}: ledger net {t.net_pnl} != deals {net}")
+    for position_id in open_ids:
+        t = trades.get(position_id)
+        if t is None or t.status is not TradeStatus.OPEN:
+            report.violations.append(f"open position {position_id} has no OPEN trade")
+    known = {d.position_id for d in deals}
+    for position_id in trades.keys() - known:
+        report.violations.append(f"trade for position {position_id} has no broker deals")
 
 
 async def _check_step(

@@ -12,6 +12,7 @@ from pydantic import ValidationError
 from aifund.domain._issuance import issue_order_intent
 from aifund.domain.decision import TradeProposal
 from aifund.domain.enums import (
+    CloseReason,
     DealEntry,
     Direction,
     IntentKind,
@@ -20,7 +21,7 @@ from aifund.domain.enums import (
     Timeframe,
 )
 from aifund.domain.ids import new_id
-from aifund.domain.intent import OrderIntent, intent_comment, make_idempotency_key
+from aifund.domain.intent import OrderIntent, engine_close_reason, intent_comment, make_idempotency_key
 from aifund.domain.market import Bar, Tick
 
 T0 = datetime(2026, 9, 28, 10, 15, tzinfo=UTC)
@@ -248,6 +249,32 @@ def test_close_intents_require_a_target_position() -> None:
     with pytest.raises(ValidationError, match="position_ticket"):
         OrderIntent(**fields)
     assert OrderIntent(**{**fields, "position_ticket": 555}).position_ticket == 555
+
+
+def test_close_reason_only_on_closing_intents() -> None:
+    close = _intent_fields(
+        kind=IntentKind.CLOSE, sl=None, tp=None, sl_distance=None, tp_distance=None, risk_money=Decimal(0),
+        position_ticket=555, close_reason=CloseReason.TIME_STOP,
+    )  # fmt: skip
+    assert OrderIntent(**close).close_reason is CloseReason.TIME_STOP
+    with pytest.raises(ValidationError, match="close_reason must be None"):
+        OrderIntent(**_intent_fields(close_reason=CloseReason.ENGINE))  # an OPEN closes nothing
+    with pytest.raises(ValidationError, match="close_reason must be None"):
+        OrderIntent(**{**close, "kind": IntentKind.MODIFY_SLTP})
+
+
+@pytest.mark.parametrize(
+    ("kind", "recorded", "expected"),
+    [
+        (IntentKind.CLOSE, None, CloseReason.ENGINE),
+        (IntentKind.REVERSE_CLOSE, None, CloseReason.REVERSAL),
+        (IntentKind.FLATTEN, None, CloseReason.FLATTEN),
+        (IntentKind.CLOSE, CloseReason.TIME_STOP, CloseReason.TIME_STOP),
+        (IntentKind.FLATTEN, CloseReason.OPERATOR, CloseReason.OPERATOR),
+    ],
+)
+def test_engine_close_reason(kind: IntentKind, recorded: CloseReason | None, expected: CloseReason) -> None:
+    assert engine_close_reason(kind, recorded) is expected
 
 
 def test_intent_is_immutable() -> None:
