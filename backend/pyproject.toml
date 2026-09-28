@@ -11,6 +11,7 @@ dependencies = [
     "alembic>=1.13,<2",
     "structlog>=24.1",
     "python-ulid>=2.7,<4",
+    "pyarrow>=17",
 ]
 
 [project.optional-dependencies]
@@ -79,7 +80,7 @@ module = [
 strict = true
 
 [[tool.mypy.overrides]]
-module = ["MetaTrader5", "MetaTrader5.*"]
+module = ["MetaTrader5", "MetaTrader5.*", "pyarrow", "pyarrow.*"]
 ignore_missing_imports = true
 
 # ---------------------------------------------------------------- pytest
