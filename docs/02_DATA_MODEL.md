@@ -249,16 +249,22 @@ FeatureSpec(
 TF roles are configured per symbol profile: `context` (D1/H4), `setup` (H1), `trigger` (M15). Features are
 computed for each TF in the profile. Initial set (`feature_set_version = 1`):
 
-| Group | Features (per TF unless `ctx.`) |
+The authoritative list is `backend/src/aifund/market/feature_registry.py`; this table summarises it.
+
+| Group | Features (per TF, named `<tf>.<name>`, unless `ctx.` / `prop.`) |
 |---|---|
-| Trend | `ema20`, `ema50`, `ema200` (as distance from close in ATR units: `dist_ema200_atr`), `ema50_slope_atr` (5-bar slope / ATR), `ema_stack` (category: BULL/BEAR/MIXED), `adx14`, `close_above_ema200` (bool) |
-| Momentum | `rsi14`, `rsi14_slope3`, `macd_hist_z` (z-score over 100 bars) |
-| Volatility | `atr14`, `atr14_pct_rank100` (percentile of ATR over last 100 bars), `bb_width_pct_rank100`, `range_to_atr` (last bar range / ATR), `nr7` (bool) |
-| Volume | `rel_tick_volume20` (tick volume / 20-bar mean) |
-| Structure | `dist_swing_high_atr`, `dist_swing_low_atr` (fractal swings, 5-bar), `dist_pdh_atr`, `dist_pdl_atr` (previous day high/low), `bars_since_swing_break` |
-| Candle | `body_to_range`, `upper_wick_to_range`, `lower_wick_to_range`, `candle_dir` (category) |
-| Context (`ctx.`) | `session` (ASIA/LONDON/NY/OVERLAP/OFF), `day_of_week`, `minutes_to_next_high_impact_news`, `minutes_since_last_high_impact_news`, `spread_to_atr` (trigger TF), `regime` (category), `htf_alignment` (−2..+2: context+setup trend vs proposed direction), `open_positions_count`, `symbol_open_risk_pct`, `portfolio_heat_pct`, `consecutive_losses_symbol`, `drawdown_pct` |
-| Proposal (`prop.`) | `direction`, `setup_tag`, `llm_confidence`, `sl_atr_multiple`, `rr_target` — known at decision time, so rule-usable |
+| Trend | `dist_ema20_atr`, `dist_ema50_atr`, `dist_ema200_atr` (close − EMA, in ATR), `ema50_slope_atr` (5-bar slope / ATR), `ema_stack` (BULL/BEAR/MIXED), `adx14`, `close_above_ema200` |
+| Momentum | `rsi14`, `rsi14_slope3`, `macd_hist_z` (z-score over 100 bars; variation below 1e-9 × price counts as flat) |
+| Volatility | `atr14`, `atr14_pct_rank100`, `bb_width_pct_rank100` (mid-rank percentiles: ties count half, so a flat history ranks 0.5), `range_to_atr`, `nr7` |
+| Volume | `rel_tick_volume20` (tick volume / mean of the previous 20 bars) |
+| Structure | `dist_swing_high_atr`, `dist_swing_low_atr` (last *confirmed* 5-bar fractal), `bars_since_swing_break` |
+| Candle | `body_to_range`, `upper_wick_to_range`, `lower_wick_to_range`, `candle_dir` (BULL/BEAR/DOJI) |
+| Context (`ctx.`) | `session` (UTC: ASIA 23–07, LONDON 07–12, OVERLAP 12–16, NY 16–21, OFF 21–23), `day_of_week`, `minutes_to_next_high_impact_news`, `minutes_since_last_high_impact_news` (null until Phase 8), `spread_to_atr`, `regime`, `htf_trend_score` (Σ ±1 EMA stacks over setup + context TFs), `dist_pdh_atr`, `dist_pdl_atr` (previous closed D1 bar), `open_positions_count`, `symbol_open_risk_pct`, `portfolio_heat_pct`, `consecutive_losses_symbol`, `drawdown_pct` (portfolio fields filled by the pipeline) |
+| Proposal (`prop.`) | `direction`, `setup_tag`, `llm_confidence`, `sl_atr_multiple`, `rr_target`, `htf_alignment` (`ctx.htf_trend_score` × ±1 for LONG/SHORT) — filled at rule evaluation |
+
+Snapshots are refused (decision outcome with reason code, no LLM call) on `INSUFFICIENT_BARS`, `FORMING_BAR`
+(a bar not closed at decision time — an upstream lookahead bug) or `STALE_DATA` (unordered/duplicate bars,
+gaps > 5 days, or a trigger bar that closed more than two trigger periods ago). Warm-up NaNs become `null`.
 
 Post-trade fields (`mae_r`, reviewer tags, outcome) are **not** in the registry with
 `available_at_entry=True` and therefore can never appear in a rule condition — this prevents lookahead leakage.

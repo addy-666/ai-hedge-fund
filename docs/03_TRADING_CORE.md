@@ -111,7 +111,8 @@ feature `ctx.minutes_to_next_high_impact_news` is null.
 - Compute features from the registry (`02_DATA_MODEL.md` §3) in a thread pool. Indicator definitions:
   - EMA: standard `α = 2/(n+1)`, seeded with SMA of first n.
   - RSI / ATR / ADX: **Wilder** smoothing (`α = 1/n`). ATR uses true range with previous close.
-  - Percentile rank: fraction of the last 100 values ≤ current value.
+  - Percentile rank: mid-rank of the current value among the last 100 (below + ½ × equal, with a
+    1e-9 relative tie tolerance), so flat histories rank 0.5 rather than 1.0.
   - Swings: 5-bar fractals (2 left, 2 right) — the most recent confirmed swing only (no lookahead: a fractal is
     confirmed 2 bars after its pivot).
 - Persist the snapshot before calling the LLM. The snapshot is immutable afterwards.

@@ -276,6 +276,7 @@ class ReasonCode(StrEnum):
     # data
     STALE_DATA = "STALE_DATA"
     INSUFFICIENT_BARS = "INSUFFICIENT_BARS"
+    FORMING_BAR = "FORMING_BAR"  # a bar that had not closed at decision time reached the feature builder
     # analyst
     LLM_INVALID_OUTPUT = "LLM_INVALID_OUTPUT"
     LLM_ERROR = "LLM_ERROR"

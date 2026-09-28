@@ -92,10 +92,23 @@ def test_bollinger_width_by_hand() -> None:
 
 
 def test_percentile_rank_and_zscore_by_hand() -> None:
-    close_to(ind.percentile_rank(np.array([3.0, 1, 2, 2]), 3), [NAN, NAN, 2 / 3, 1])
+    # window [3,1,2], current 2: one below, one equal -> (1 + .5)/3 ; window [1,2,2]: (1 + 1)/3
+    close_to(ind.percentile_rank(np.array([3.0, 1, 2, 2]), 3), [NAN, NAN, 0.5, 2 / 3])
+    close_to(
+        ind.percentile_rank(np.full(5, 7.0), 3), [NAN, NAN, 0.5, 0.5, 0.5]
+    )  # flat history is not extreme
     # window [1,2,3]: mean 2, sigma sqrt(2/3) -> z(3) = 1/sqrt(2/3)
     close_to(ind.zscore(np.array([1.0, 2, 3]), 3), [NAN, NAN, 1 / math.sqrt(2 / 3)])
     close_to(ind.zscore(np.array([4.0, 4, 4]), 3), [NAN, NAN, 0])
+
+
+def test_zscore_and_rank_ignore_float_noise_on_flat_series() -> None:
+    noise = 100 + np.array(
+        [0, 1e-12, -1e-12, 2e-12, -2e-12] * 20
+    )  # representable, but far below 1e-9 x price
+    assert ind.zscore(noise, 50, min_std=1e-9 * 100)[-1] == 0.0
+    assert abs(ind.zscore(noise, 50)[-1]) > 0.5  # without the floor, noise becomes a "signal"
+    assert ind.percentile_rank(noise, 50)[-1] == 0.5
 
 
 def test_macd_histogram_of_a_constant_is_zero_once_defined() -> None:

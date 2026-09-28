@@ -140,7 +140,9 @@ def macd_histogram(close: Arr, fast: int = 12, slow: int = 26, signal: int = 9) 
     return line - ema(line, signal)
 
 
-def zscore(x: Arr, window: int) -> Arr:
+def zscore(x: Arr, window: int, min_std: float = 0.0) -> Arr:
+    """(x - mean) / std over a rolling window. A window whose std is <= ``min_std`` counts as flat (z = 0):
+    floating-point noise on a theoretically constant series must not be amplified into a large z."""
     x = _as_float(x)
     out = _nan(len(x))
     if len(x) < window:
@@ -149,20 +151,28 @@ def zscore(x: Arr, window: int) -> Arr:
     mean = windows.mean(axis=1)
     std = windows.std(axis=1, ddof=0)
     with np.errstate(divide="ignore", invalid="ignore"):
-        out[window - 1 :] = np.where(std > 0, (x[window - 1 :] - mean) / std, 0.0)
+        out[window - 1 :] = np.where(std > min_std, (x[window - 1 :] - mean) / std, 0.0)
     out[window - 1 :] = np.where(np.isnan(windows).any(axis=1), np.nan, out[window - 1 :])
     return out
 
 
-def percentile_rank(x: Arr, window: int = 100) -> Arr:
-    """Fraction of the last ``window`` values (including the current one) that are <= the current value."""
+def percentile_rank(x: Arr, window: int = 100, rtol: float = 1e-9) -> Arr:
+    """Mid-rank percentile of the current value within the last ``window`` values (including itself):
+    (count below + half the count equal) / window, in (0, 1].
+
+    Ties count half, so a constant series ranks 0.5 — with a plain "<=" rank a flat ATR history would
+    rank 1.0 and be misread as extreme volatility.
+    """
     x = _as_float(x)
     out = _nan(len(x))
     if len(x) < window:
         return out
     windows = np.lib.stride_tricks.sliding_window_view(x, window)
-    current = x[window - 1 :]
-    ranks = (windows <= current[:, None]).sum(axis=1) / window
+    current = x[window - 1 :, None]
+    tol = rtol * np.abs(current)  # values this close count as ties (float noise on a flat series)
+    below = (windows < current - tol).sum(axis=1)
+    equal = (np.abs(windows - current) <= tol).sum(axis=1)
+    ranks = (below + 0.5 * equal) / window
     out[window - 1 :] = np.where(np.isnan(windows).any(axis=1), np.nan, ranks)
     return out
 
