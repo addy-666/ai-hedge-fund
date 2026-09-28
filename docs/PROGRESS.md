@@ -5,7 +5,7 @@ Updated by the coding agent at the end of every task.
 ## Current position
 
 - Phase: 2 — Risk & execution (deterministic baseline strategy)
-- Next task: 2.1 Setup detector `mtf_trend_pullback`
+- Next task: 2.2 Stops
 - Rollout level: none (pre-L0). No code path places orders yet (SimBroker can, but nothing calls it).
 - Tests: 343 passing + 1 Windows-only (MQL5 constant cross-check against the real MetaTrader5 package).
 - Windows run 2026-09-28 (VantageMarkets-Demo, hedging, 1:500, server UTC+3): smoke checks passed; history
@@ -40,6 +40,8 @@ Updated by the coding agent at the end of every task.
 | 2026-09-28 | 1.5 Features | Registry (single source of names), validated snapshot builder, idempotent persistence | Mid-rank percentiles and a z-score noise floor (both bugs found while hand-deriving expected values); PDH/PDL moved to ctx; `ctx.htf_trend_score` + `prop.htf_alignment` | — |
 | 2026-09-28 | 1.7 Bar clock | One event per closed bar, grace, no retroactive trading after downtime, stale-feed reporting, cursor from decisions table | — | Engine wiring in Phase 5 |
 
+| 2026-09-28 | 2.1 mtf_trend_pullback | Detector faithful to the vault note (rules mapped to D1/H4 → H1 → M15), playbook card with book claims marked UNVALIDATED, feature set v2 (stochastics, EMA50 value-zone distances, close) | Engulfing approximated by a strong body; stochastic threshold 30 (note's code) not 20 (note's text) | On real Vantage data it fires ~0.5/week (XAUUSD) and ~1.5/week (BTCUSD): too few trades for statistical evaluation from a few months of replay |
+
 ## Decisions log
 
 | Date | Decision | Reason | Docs updated |
@@ -52,6 +54,7 @@ Updated by the coding agent at the end of every task.
 | 2026-09-28 | Notional-leverage cap independent of broker margin | High-leverage accounts make margin checks meaningless (audit Q100c) | 02, 03 |
 | 2026-09-28 | Explicit MT5 account required | Prototype traded whatever account the terminal was logged into when MT5_LOGIN was empty (audit Q87) | 02 |
 | 2026-09-28 | Tests derive expected values by hand, never from memory | A remembered "published" RSI value was wrong; hand derivation caught three real bugs (ADX warm-up, percentile ties, z-score noise) | — |
+| 2026-09-28 | `market` is its own layer below `risk`/`rules`/`strategies` | Detectors read market features; siblings in one import-linter layer may not import each other | 01 |
 | 2026-09-28 | Executable intents only via `domain._issuance`, import-restricted to `aifund.risk`; copies are never executable | Structural guarantee that LLM output cannot reach the broker without the Risk Manager | AGENTS.md |
 
 ## Operational measurements (filled during P4.7, P5.8, soak)

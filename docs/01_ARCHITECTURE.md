@@ -388,6 +388,6 @@ ai-hedge-fund/
 ```
 
 Dependency rule (enforced with `import-linter` in CI):
-`domain` ← `market`, `risk`, `rules`, `strategies` ← `agents`, `execution`, `reconcile` ← `engine` ← `api`.
+`domain` ← `ports` ← `market` ← `risk`, `rules`, `strategies` ← `agents`, `execution`, `reconcile` ← `engine` ← `api`.
 `adapters` implement `ports`; only `engine/main.py` and `api/app.py` wire concrete adapters. `domain`, `risk`
 and `rules` import nothing with I/O.

@@ -106,7 +106,8 @@ layers = [
     "aifund.api",
     "aifund.engine",
     "aifund.agents | aifund.execution | aifund.reconcile | aifund.vault",
-    "aifund.risk | aifund.rules | aifund.strategies | aifund.market",
+    "aifund.risk | aifund.rules | aifund.strategies",
+    "aifund.market",
     "aifund.ports",
     "aifund.domain",
 ]
