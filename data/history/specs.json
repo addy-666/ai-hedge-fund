@@ -1,0 +1,53 @@
+{
+  "BTCUSD": {
+    "symbol": "BTCUSD",
+    "digits": 2,
+    "point": "0.01",
+    "tick_size": "0.01",
+    "tick_value": "0.01",
+    "contract_size": "1.0",
+    "volume_min": "0.01",
+    "volume_max": "100.0",
+    "volume_step": "0.01",
+    "stops_level_points": 0,
+    "freeze_level_points": 0,
+    "filling_mode_flags": 2,
+    "currency_profit": "USD",
+    "currency_margin": "BTC",
+    "trade_allowed": true
+  },
+  "NAS100.r": {
+    "symbol": "NAS100.r",
+    "digits": 2,
+    "point": "0.01",
+    "tick_size": "0.01",
+    "tick_value": "0.01",
+    "contract_size": "1.0",
+    "volume_min": "0.1",
+    "volume_max": "500.0",
+    "volume_step": "0.1",
+    "stops_level_points": 50,
+    "freeze_level_points": 0,
+    "filling_mode_flags": 2,
+    "currency_profit": "USD",
+    "currency_margin": "USD",
+    "trade_allowed": true
+  },
+  "XAUUSD": {
+    "symbol": "XAUUSD",
+    "digits": 2,
+    "point": "0.01",
+    "tick_size": "0.01",
+    "tick_value": "1.0",
+    "contract_size": "100.0",
+    "volume_min": "0.01",
+    "volume_max": "100.0",
+    "volume_step": "0.01",
+    "stops_level_points": 20,
+    "freeze_level_points": 0,
+    "filling_mode_flags": 2,
+    "currency_profit": "USD",
+    "currency_margin": "USD",
+    "trade_allowed": true
+  }
+}
