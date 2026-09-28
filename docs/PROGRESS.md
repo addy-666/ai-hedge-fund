@@ -5,7 +5,7 @@ Updated by the coding agent at the end of every task.
 ## Current position
 
 - Phase: 2 — Risk & execution (deterministic baseline strategy)
-- Next task: 2.2 Stops
+- Next task: 2.3 Sizing
 - Rollout level: none (pre-L0). No code path places orders yet (SimBroker can, but nothing calls it).
 - Tests: 343 passing + 1 Windows-only (MQL5 constant cross-check against the real MetaTrader5 package).
 - Windows run 2026-09-28 (VantageMarkets-Demo, hedging, 1:500, server UTC+3): smoke checks passed; history
@@ -41,6 +41,8 @@ Updated by the coding agent at the end of every task.
 | 2026-09-28 | 1.7 Bar clock | One event per closed bar, grace, no retroactive trading after downtime, stale-feed reporting, cursor from decisions table | — | Engine wiring in Phase 5 |
 
 | 2026-09-28 | 2.1 mtf_trend_pullback | Detector faithful to the vault note (rules mapped to D1/H4 → H1 → M15), playbook card with book claims marked UNVALIDATED, feature set v2 (stochastics, EMA50 value-zone distances, close) | Engulfing approximated by a strong body; stochastic threshold 30 (note's code) not 20 (note's text) | On real Vantage data it fires ~0.5/week (XAUUSD) and ~1.5/week (BTCUSD): too few trades for statistical evaluation from a few months of replay |
+
+| 2026-09-28 | 2.2 Stops | ATR-clamped SL from invalidation, RR-banded TP, tick rounding, distances re-derived from rounded levels; property tests | TP rounds away when rounding toward entry would break rr_min (edge case caught by a hand test) | — |
 
 ## Decisions log
 

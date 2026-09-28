@@ -280,7 +280,8 @@ tp_dist = rr × sl_dist
 
 SL = entry_ref − sl_dist  (LONG) | entry_ref + sl_dist (SHORT)
 TP = entry_ref + tp_dist  (LONG) | entry_ref − tp_dist (SHORT)
-round SL/TP to tick_size (SL rounded AWAY from entry, TP rounded TOWARD entry)
+round SL/TP to tick_size (SL rounded AWAY from entry, TP rounded TOWARD entry unless that breaks
+rr_min, then away); if the target's RR is inside [rr_min, rr_max] the target price is used exactly
 ```
 
 `sl_atr_multiple = sl_dist / ATR` and `rr` are recorded in the decision and are rule-usable features
