@@ -37,13 +37,14 @@ from aifund.domain.market import (
     SymbolSpec,
     Tick,
 )
+from aifund.ports.broker import BrokerError, BrokerUnavailable
 from aifund.ports.system import ClockPort
 
 T = TypeVar("T")
 RES_S_OK = 1  # MetaTrader5.last_error() success code
 
 
-class GatewayError(Exception):
+class GatewayError(BrokerError):
     """The terminal returned an error or an unusable result."""
 
 
@@ -51,7 +52,7 @@ class GatewayTimeout(GatewayError):
     """A terminal call did not complete within its timeout."""
 
 
-class GatewayDisconnected(GatewayError):
+class GatewayDisconnected(GatewayError, BrokerUnavailable):
     """The terminal is not connected to the broker (or the IPC link is down)."""
 
 
