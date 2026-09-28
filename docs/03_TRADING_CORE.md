@@ -458,6 +458,10 @@ outcome    = WIN if r ≥ +0.1, LOSS if r ≤ −0.1, else BREAKEVEN   (null whe
 
 (The prototype used only the last exit deal's `profit` and its sign — ignoring commission/swap/partials.)
 
+Verified against MT5's own ledger (task 3.2): over an account's whole history, Σ per-position `net_pnl` + Σ
+balance/credit/fee deals equals the account balance to the cent (`adapters/mt5/deal_history.py`, fixtures in
+`backend/tests/fixtures/mt5_deals/`, recorded with `scripts/capture_deals.py`).
+
 ### 14.3 Enrichment (`reconcile/enrichment.py`, async after close)
 
 - Fetch M1 bars from open to close; compute MAE and MFE in price and in R, `bars_held`, `holding_minutes`.

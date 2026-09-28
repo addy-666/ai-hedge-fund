@@ -1,0 +1,23 @@
+{
+ "format_version": 1,
+ "server": "Example-Demo",
+ "currency": "USD",
+ "trade_mode": "DEMO",
+ "server_offset_minutes": 180,
+ "balance": "10006.20",
+ "note": "SYNTHETIC, hand-derived (not recorded from a terminal): documents the format and exercises every path. Real recordings from scripts/capture_deals.py sit next to it.",
+ "deals": [
+  {"ticket": 1, "order": 0, "time": 1790150400, "time_msc": 1790150400123, "type": 2, "entry": 0, "magic": 0, "position_id": 0, "reason": 0, "volume": 0.0, "price": 0.0, "commission": 0.0, "swap": 0.0, "profit": 10000.0, "fee": 0.0, "symbol": "", "comment": "Deposit"},
+  {"ticket": 2, "order": 5002, "time": 1790151000, "time_msc": 1790151000123, "type": 0, "entry": 0, "magic": 0, "position_id": 101, "reason": 0, "volume": 0.01, "price": 4150.28, "commission": -0.07, "swap": 0.0, "profit": 0.0, "fee": 0.0, "symbol": "XAUUSD", "comment": ""},
+  {"ticket": 3, "order": 5003, "time": 1790151900, "time_msc": 1790151900123, "type": 1, "entry": 1, "magic": 0, "position_id": 101, "reason": 0, "volume": 0.01, "price": 4152.1, "commission": -0.07, "swap": 0.0, "profit": 1.82, "fee": 0.0, "symbol": "XAUUSD", "comment": ""},
+  {"ticket": 4, "order": 5004, "time": 1790152200, "time_msc": 1790152200123, "type": 0, "entry": 0, "magic": 0, "position_id": 102, "reason": 0, "volume": 0.02, "price": 4160.0, "commission": -0.14, "swap": 0.0, "profit": 0.0, "fee": 0.0, "symbol": "XAUUSD", "comment": ""},
+  {"ticket": 5, "order": 5005, "time": 1790152800, "time_msc": 1790152800123, "type": 1, "entry": 1, "magic": 0, "position_id": 102, "reason": 0, "volume": 0.01, "price": 4165.55, "commission": -0.07, "swap": 0.0, "profit": 5.55, "fee": 0.0, "symbol": "XAUUSD", "comment": ""},
+  {"ticket": 6, "order": 5006, "time": 1790154600, "time_msc": 1790154600123, "type": 1, "entry": 1, "magic": 0, "position_id": 102, "reason": 4, "volume": 0.01, "price": 4155.0, "commission": -0.07, "swap": 0.0, "profit": -5.0, "fee": 0.0, "symbol": "XAUUSD", "comment": "[sl 4155.00]"},
+  {"ticket": 7, "order": 5007, "time": 1790155200, "time_msc": 1790155200123, "type": 1, "entry": 0, "magic": 0, "position_id": 103, "reason": 0, "volume": 0.01, "price": 112000.0, "commission": 0.0, "swap": 0.0, "profit": 0.0, "fee": 0.0, "symbol": "BTCUSD", "comment": ""},
+  {"ticket": 8, "order": 5008, "time": 1790158800, "time_msc": 1790158800123, "type": 0, "entry": 1, "magic": 0, "position_id": 103, "reason": 5, "volume": 0.01, "price": 111500.0, "commission": 0.0, "swap": 0.0, "profit": 5.0, "fee": 0.0, "symbol": "BTCUSD", "comment": "[tp 111500.00]"},
+  {"ticket": 9, "order": 5009, "time": 1790159400, "time_msc": 1790159400123, "type": 0, "entry": 0, "magic": 0, "position_id": 104, "reason": 0, "volume": 0.1, "price": 24500.0, "commission": 0.0, "swap": 0.0, "profit": 0.0, "fee": 0.0, "symbol": "NAS100.r", "comment": ""},
+  {"ticket": 10, "order": 5010, "time": 1790240400, "time_msc": 1790240400123, "type": 1, "entry": 1, "magic": 0, "position_id": 104, "reason": 0, "volume": 0.1, "price": 24510.5, "commission": 0.0, "swap": -1.23, "profit": 1.05, "fee": 0.0, "symbol": "NAS100.r", "comment": ""},
+  {"ticket": 11, "order": 5011, "time": 1790241000, "time_msc": 1790241000123, "type": 0, "entry": 0, "magic": 0, "position_id": 105, "reason": 0, "volume": 0.01, "price": 4170.0, "commission": -0.07, "swap": 0.0, "profit": 0.0, "fee": 0.0, "symbol": "XAUUSD", "comment": ""},
+  {"ticket": 12, "order": 0, "time": 1790241600, "time_msc": 1790241600123, "type": 4, "entry": 0, "magic": 0, "position_id": 0, "reason": 0, "volume": 0.0, "price": 0.0, "commission": 0.0, "swap": 0.0, "profit": -0.5, "fee": 0.0, "symbol": "", "comment": "Platform fee"}
+ ]
+}
