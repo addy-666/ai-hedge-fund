@@ -1,8 +1,8 @@
-"""Scenario: the whole Phase 2 stack replayed over synthetic data.
+"""Scenario: the whole trading stack replayed over synthetic data.
 
-bar clock → pipeline → risk → executor → SimBroker, with an aggressive stub detector so duplicates,
-reversals, cooldowns and SL/TP exits all occur. The invariants (one position per symbol, no orphans,
-one decision per bar, nothing left mid-send) must hold.
+bar clock → pipeline → risk → executor → SimBroker → reconciler, with an aggressive stub detector so
+duplicates, reversals, cooldowns and SL/TP exits all occur. The invariants (one position per symbol, no
+orphans, one decision per bar, nothing left mid-send, a ledger that matches the broker's deals) must hold.
 """
 
 from __future__ import annotations
@@ -16,6 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from aifund.adapters.clock import FakeClock
+from aifund.adapters.notify.null import NullNotifier
 from aifund.adapters.sim.replay_feed import ReplayFeed
 from aifund.adapters.sim.sim_broker import SimBroker, SimConfig
 from aifund.config.loader import load_trading_config
@@ -30,6 +31,7 @@ from aifund.execution.executor import Executor
 from aifund.market.bar_clock import BarClock
 from aifund.persistence.repositories.cursors import DecisionCursorStore
 from aifund.persistence.tables import DecisionRow, OrderIntentRow
+from aifund.reconcile.reconciler import Reconciler
 from aifund.risk.manager import RiskManager
 from aifund.risk.position_manager import PositionManager
 from aifund.strategies.base import TfRoles
@@ -101,6 +103,9 @@ async def test_baseline_stack_replay_holds_every_invariant(
         pipeline=pipeline,
         bar_clock=bar_clock,
         position_loop=loop,
+        reconciler=Reconciler(
+            broker, factory, clock, NullNotifier(), account_id="acc", magic=cfg.engine.magic
+        ),
         broker=broker,
         clock=clock,
         factory=factory,
@@ -117,6 +122,8 @@ async def test_baseline_stack_replay_holds_every_invariant(
     assert report.outcomes[DecisionOutcome.NO_SETUP.value] >= 100  # 3 of 4 bars per hour have no setup
     assert report.outcomes[DecisionOutcome.RISK_REJECTED.value] >= 1  # guards fired
     assert report.max_positions_per_symbol == 1
+    assert report.ledger_closed == report.closed_trades  # every closed position is a CLOSED trade
+    assert sum(report.close_reasons.values()) == report.closed_trades
     with factory() as s:
         ordered = s.scalars(
             select(DecisionRow.id).where(DecisionRow.outcome == DecisionOutcome.ORDERED)

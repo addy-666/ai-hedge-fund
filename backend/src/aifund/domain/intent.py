@@ -16,11 +16,20 @@ from typing import Any, Self
 
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, model_validator
 
-from aifund.domain.enums import Direction, IntentKind, IntentStatus, ReasonCode, Side, Timeframe
+from aifund.domain.enums import (
+    CloseReason,
+    Direction,
+    IntentKind,
+    IntentStatus,
+    ReasonCode,
+    Side,
+    Timeframe,
+)
 from aifund.domain.values import UtcDatetime
 
 MT5_COMMENT_MAX = 31
 COMMENT_PREFIX = "AF:"
+CLOSING_KINDS = frozenset({IntentKind.CLOSE, IntentKind.REVERSE_CLOSE, IntentKind.FLATTEN})
 
 
 def make_idempotency_key(
@@ -69,6 +78,8 @@ class OrderIntent(BaseModel):
     comment: str = Field(max_length=MT5_COMMENT_MAX)
     position_ticket: int | None = Field(default=None, gt=0)
     """Target position for CLOSE / REVERSE_CLOSE / MODIFY_SLTP / FLATTEN."""
+    close_reason: CloseReason | None = None
+    """Why a closing intent closes (TIME_STOP, FLATTEN, REVERSAL, ...): the reconciler's close reason."""
     created_at: UtcDatetime
 
     _issued: bool = PrivateAttr(default=False)
@@ -92,6 +103,8 @@ class OrderIntent(BaseModel):
                 raise ValueError("tp_distance must equal |tp - price_ref|")
         elif self.position_ticket is None:
             raise ValueError(f"{self.kind} intents require position_ticket")
+        if self.close_reason is not None and self.kind not in CLOSING_KINDS:
+            raise ValueError(f"{self.kind} intents do not close anything: close_reason must be None")
         if not self.comment.startswith(COMMENT_PREFIX):
             raise ValueError(f"comment must start with {COMMENT_PREFIX!r}")
         return self
@@ -143,3 +156,12 @@ INTENT_TRANSITIONS: dict[IntentStatus, frozenset[IntentStatus]] = {
 
 def can_transition(current: IntentStatus, new: IntentStatus) -> bool:
     return new in INTENT_TRANSITIONS[current]
+
+
+def engine_close_reason(kind: IntentKind, close_reason: CloseReason | None) -> CloseReason:
+    """Close reason of a position the engine closed with this intent (docs/03 §14.2, DEAL_REASON_EXPERT)."""
+    if close_reason is not None:
+        return close_reason
+    return {IntentKind.REVERSE_CLOSE: CloseReason.REVERSAL, IntentKind.FLATTEN: CloseReason.FLATTEN}.get(
+        kind, CloseReason.ENGINE
+    )

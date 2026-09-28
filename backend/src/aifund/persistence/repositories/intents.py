@@ -12,8 +12,8 @@ from sqlalchemy.orm import Session
 
 from aifund.domain.enums import IntentKind, IntentStatus
 from aifund.domain.errors import DuplicateIntentError, InvariantViolation
-from aifund.domain.intent import OrderIntent, can_transition
-from aifund.persistence.tables import OrderIntentRow
+from aifund.domain.intent import CLOSING_KINDS, OrderIntent, can_transition
+from aifund.persistence.tables import OrderIntentRow, TradeRow
 from aifund.ports.system import ClockPort
 
 _NON_TERMINAL = [s for s in IntentStatus if not s.is_terminal]
@@ -53,6 +53,7 @@ class IntentRepository:
             comment=intent.comment,
             magic=intent.magic,
             position_ticket=intent.position_ticket,
+            close_reason=intent.close_reason,
             status=IntentStatus.PENDING,
             attempts=0,
             created_at=intent.created_at,
@@ -91,6 +92,32 @@ class IntentRepository:
             )
         ).all()
         return {r.position_id: r for r in rows if r.position_id is not None}
+
+    def filled_opens_without_trade(self) -> Sequence[OrderIntentRow]:
+        """FILLED OPEN intents whose position has no trade row yet (e.g. it closed before a reconcile)."""
+        has_trade = select(TradeRow.position_id).where(TradeRow.position_id == OrderIntentRow.position_id)
+        return self._s.scalars(
+            select(OrderIntentRow)
+            .where(
+                OrderIntentRow.kind == IntentKind.OPEN,
+                OrderIntentRow.status == IntentStatus.FILLED,
+                OrderIntentRow.position_id.is_not(None),
+                ~has_trade.exists(),
+            )
+            .order_by(OrderIntentRow.created_at)
+        ).all()
+
+    def filled_closes(self, position_id: int) -> Sequence[OrderIntentRow]:
+        """FILLED closing intents (CLOSE / REVERSE_CLOSE / FLATTEN) that targeted this position."""
+        return self._s.scalars(
+            select(OrderIntentRow)
+            .where(
+                OrderIntentRow.kind.in_(CLOSING_KINDS),
+                OrderIntentRow.status == IntentStatus.FILLED,
+                OrderIntentRow.position_id == position_id,
+            )
+            .order_by(OrderIntentRow.created_at)
+        ).all()
 
     def count_since(self, symbol: str, kind: IntentKind, since: datetime) -> int:
         """FILLED intents of ``kind`` on ``symbol`` created at or after ``since`` (daily caps)."""

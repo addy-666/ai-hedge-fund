@@ -13,6 +13,7 @@ from aifund.config.trading_config import RiskConfig
 from aifund.domain.decision import FinalDecision
 from aifund.domain.enums import (
     AccountTradeMode,
+    CloseReason,
     Direction,
     IntentKind,
     MarginMode,
@@ -52,7 +53,7 @@ class CalcBroker:
 
 
 ACCOUNT = AccountInfo(
-    login=26179766,
+    login=90000001,
     server="VantageMarkets-Demo",
     trade_mode=AccountTradeMode.DEMO,
     margin_mode=MarginMode.HEDGING,
@@ -114,7 +115,7 @@ async def test_open_intent_end_to_end_by_hand() -> None:
     assert intent.magic == MAGIC
     assert intent.comment.startswith("AF:")
     assert intent.idempotency_key == make_idempotency_key(
-        account=26179766,
+        account=90000001,
         symbol="XAUUSD",
         trigger_tf=Timeframe.M15,
         bar_time=BAR,
@@ -167,8 +168,9 @@ async def test_reversal_issues_only_a_verified_close_intent_with_its_own_key() -
         501,
     )
     assert intent.price_ref == TICK.bid
+    assert intent.close_reason is CloseReason.REVERSAL
     open_key = make_idempotency_key(
-        account=26179766,
+        account=90000001,
         symbol="XAUUSD",
         trigger_tf=Timeframe.M15,
         bar_time=BAR,

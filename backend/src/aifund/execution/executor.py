@@ -28,7 +28,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from aifund.domain.enums import IntentKind, IntentStatus, ReasonCode, Side
 from aifund.domain.errors import DuplicateIntentError, InvariantViolation
-from aifund.domain.intent import OrderIntent
+from aifund.domain.intent import CLOSING_KINDS, OrderIntent
 from aifund.domain.market import OrderRequest, OrderResult, SymbolSpec, TradeAction
 from aifund.execution.filling import choose_filling
 from aifund.execution.retcodes import RetcodeClass, classify
@@ -39,7 +39,6 @@ from aifund.ports.broker import BrokerError, BrokerPort, MarketDataPort
 from aifund.ports.system import ClockPort
 
 T = TypeVar("T")
-CLOSE_KINDS = {IntentKind.CLOSE, IntentKind.REVERSE_CLOSE, IntentKind.FLATTEN}
 
 
 @dataclass(frozen=True)
@@ -127,7 +126,7 @@ class Executor:
             comment=row.comment,
             filling=choose_filling(spec),
         )
-        if kind in CLOSE_KINDS:
+        if kind in CLOSING_KINDS:
             return OrderRequest(**common, position_ticket=row.position_ticket)
         assert row.sl_distance is not None and row.tp_distance is not None  # noqa: PT018 - OPEN invariant
         drift = abs(price - row.price_ref)
@@ -272,7 +271,7 @@ class Executor:
     async def _position_id_for_fill(
         self, row: OrderIntentRow, result: OrderResult, sent_at: datetime
     ) -> int | None:
-        if row.kind in CLOSE_KINDS or row.kind is IntentKind.MODIFY_SLTP:
+        if row.kind in CLOSING_KINDS or row.kind is IntentKind.MODIFY_SLTP:
             return row.position_ticket
         try:
             window_start = sent_at - self._cfg.deal_search_window

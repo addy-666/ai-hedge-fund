@@ -8,7 +8,7 @@ from decimal import Decimal as D
 import pytest
 
 from aifund.config.trading_config import PositionManagementConfig, StopsConfig, TrailingConfig
-from aifund.domain.enums import IntentKind, Side, Timeframe
+from aifund.domain.enums import CloseReason, IntentKind, Side, Timeframe
 from aifund.domain.market import Position, Tick
 from aifund.risk.position_manager import ActionKind, PositionFacts, PositionManager
 from tests.unit.risk.test_stops import XAU
@@ -60,7 +60,7 @@ def facts(p: Position | None = None, t: Tick | None = None, **over: object) -> P
 
 
 def manager(**cfg: object) -> PositionManager:
-    return PositionManager(PositionManagementConfig(**cfg), StopsConfig(), magic=MAGIC, account=26179766)  # type: ignore[arg-type]
+    return PositionManager(PositionManagementConfig(**cfg), StopsConfig(), magic=MAGIC, account=90000001)  # type: ignore[arg-type]
 
 
 def test_healthy_position_needs_nothing() -> None:
@@ -77,6 +77,7 @@ def test_friday_flatten_only_for_non_weekend_symbols() -> None:
         Side.SELL,
     )
     assert action.intent.position_ticket == 77
+    assert action.intent.close_reason is CloseReason.FLATTEN
     assert manager().plan(facts(p, t, trade_weekends=True), FRI_LATE) is None  # BTC keeps its position
     assert manager().plan(facts(p, t), FRI_LATE.replace(hour=20, minute=29)) is None
 
@@ -85,6 +86,7 @@ def test_time_stop() -> None:
     action = manager().plan(facts(pos(age_bars=48)), MON)
     assert action is not None
     assert (action.kind, action.intent.kind) == (ActionKind.TIME_STOP, IntentKind.CLOSE)
+    assert action.intent.close_reason is CloseReason.TIME_STOP
     assert manager(time_stop_bars=None).plan(facts(pos(age_bars=48)), MON) is None
 
 
@@ -106,6 +108,7 @@ def test_missing_sl_already_crossed_closes_instead() -> None:
     action = manager().plan(facts(pos(sl=None), tick(bid="4130.00", ask="4130.28")), MON)
     assert action is not None
     assert (action.kind, action.intent.kind) == (ActionKind.STOP_BREACHED, IntentKind.CLOSE)
+    assert action.intent.close_reason is CloseReason.ENGINE
 
 
 def test_slippage_realignment_only_tightens() -> None:
