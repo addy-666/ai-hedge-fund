@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from aifund.domain.enums import IntentStatus
+from aifund.domain.enums import IntentKind, IntentStatus
 from aifund.domain.errors import DuplicateIntentError, InvariantViolation
 from aifund.domain.intent import OrderIntent, can_transition
 from aifund.persistence.tables import OrderIntentRow
@@ -77,6 +78,32 @@ class IntentRepository:
         if symbol is not None:
             stmt = stmt.where(OrderIntentRow.symbol == symbol)
         return self._s.scalars(stmt.order_by(OrderIntentRow.created_at)).all()
+
+    def filled_opens(self, position_ids: list[int]) -> dict[int, OrderIntentRow]:
+        """FILLED OPEN intents for these broker positions (initial risk for exposure checks)."""
+        if not position_ids:
+            return {}
+        rows = self._s.scalars(
+            select(OrderIntentRow).where(
+                OrderIntentRow.kind == IntentKind.OPEN,
+                OrderIntentRow.status == IntentStatus.FILLED,
+                OrderIntentRow.position_id.in_(position_ids),
+            )
+        ).all()
+        return {r.position_id: r for r in rows if r.position_id is not None}
+
+    def count_since(self, symbol: str, kind: IntentKind, since: datetime) -> int:
+        """FILLED intents of ``kind`` on ``symbol`` created at or after ``since`` (daily caps)."""
+        return len(
+            self._s.scalars(
+                select(OrderIntentRow.id).where(
+                    OrderIntentRow.symbol == symbol,
+                    OrderIntentRow.kind == kind,
+                    OrderIntentRow.status == IntentStatus.FILLED,
+                    OrderIntentRow.created_at >= since,
+                )
+            ).all()
+        )
 
     def transition(self, intent_id: str, new_status: IntentStatus, **fields: Any) -> OrderIntentRow:
         """Move an intent along the state machine; illegal transitions are bugs and raise."""
