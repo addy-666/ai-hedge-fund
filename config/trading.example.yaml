@@ -27,6 +27,7 @@ symbols:                        # canonical -> broker symbol (Vantage uses no su
     max_spread_points: 250
     max_spread_to_atr: 0.15
     trade_weekends: false
+    session: us_cfd
   - canonical: BTCUSD
     broker: BTCUSD
     asset_class: crypto
@@ -50,6 +51,7 @@ symbols:                        # canonical -> broker symbol (Vantage uses no su
     max_spread_points: 400
     max_spread_to_atr: 0.15
     trade_weekends: false
+    session: us_cfd
   # EURUSD dropped 2026-09-28: on the Vantage demo its spread is ~26% of an M15 ATR (1.4 vs ~4.9 pips),
   # far above max_spread_to_atr. Revisit with a raw-spread account or on H1.
 
@@ -111,7 +113,33 @@ position_management:
   break_even_at_r: null
   trailing: {mode: "off"}
   time_stop_bars: 48
-  flatten_friday_utc: "20:30"
+  # symbols that do not trade weekends: flatten this long before any close that keeps the market shut for
+  # long_close_hours or more (the weekend, Fridays and holidays that close early), and open nothing new in
+  # the last no_entries_before_close_minutes before it. Close times come from the symbol's session below.
+  flatten_before_close_minutes: 30
+  no_entries_before_close_minutes: 60
+  long_close_hours: 24
+
+# Trading sessions (the MT5 Python API cannot read them). New York local time, so DST is automatic.
+# Trading day D runs daily_open on D-1 -> daily_close on D; Sunday 18:00 -> Friday 17:00 each week.
+# early_closes / closed_days come from the broker's holiday notices: KEEP THEM CURRENT. An early close that
+# is not listed cannot be anticipated (2026-06-19 kept a NAS100 position over the weekend in replay).
+# When unsure, list it: flattening early is the safe side.
+sessions:
+  us_cfd:                      # Vantage XAUUSD and NAS100.r (both close 17:00 New York)
+    timezone: America/New_York
+    daily_close: "17:00"
+    daily_open: "18:00"
+    early_closes:
+      2026-06-19: "13:00"      # Juneteenth: observed in the export (last bar 16:59 UTC)
+      2026-07-03: "13:00"      # Independence Day observed: observed in the export
+      2026-11-27: "13:00"      # day after Thanksgiving: CONFIRM with Vantage
+      2026-12-24: "13:00"      # Christmas Eve: CONFIRM with Vantage
+      2026-12-31: "13:00"      # New Year's Eve: CONFIRM with Vantage
+    closed_days:
+      - 2026-12-25             # Christmas (a Friday): CONFIRM with Vantage
+      - 2027-01-01             # New Year (a Friday): CONFIRM with Vantage
+      - 2027-03-26             # Good Friday: CONFIRM with Vantage
 
 llm:
   provider: deepseek

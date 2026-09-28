@@ -1,6 +1,6 @@
 """Position manager (docs/03 §13): what, if anything, to do with one open engine position right now.
 
-Priority (first applicable wins): Friday flatten → time stop → missing-SL repair → post-fill stop
+Priority (first applicable wins): pre-close flatten → time stop → missing-SL repair → post-fill stop
 re-alignment → break-even → ATR trailing. Every action is an intent issued here (this module lives in the
 risk layer, the only place intents are issued) and executed by the executor, so each modification is
 recorded like any order.
@@ -15,7 +15,7 @@ minute is a no-op.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, time, timedelta
+from datetime import datetime, timedelta
 from decimal import Decimal
 from enum import StrEnum
 
@@ -26,10 +26,11 @@ from aifund.domain.ids import new_id
 from aifund.domain.intent import OrderIntent, intent_comment, make_idempotency_key
 from aifund.domain.market import Position, SymbolSpec, Tick
 from aifund.domain.values import Rounding, quantize_to_step
+from aifund.market.sessions import SessionCalendar
 
 
 class ActionKind(StrEnum):
-    FRIDAY_FLATTEN = "FRIDAY_FLATTEN"
+    PRE_CLOSE_FLATTEN = "PRE_CLOSE_FLATTEN"  # before a weekend / holiday closure (session calendar)
     TIME_STOP = "TIME_STOP"
     REPAIR_SL = "REPAIR_SL"
     STOP_BREACHED = "STOP_BREACHED"  # SL missing and its planned level already crossed: close
@@ -39,7 +40,7 @@ class ActionKind(StrEnum):
 
 
 _CLOSE_REASON = {
-    ActionKind.FRIDAY_FLATTEN: CloseReason.FLATTEN,
+    ActionKind.PRE_CLOSE_FLATTEN: CloseReason.FLATTEN,
     ActionKind.TIME_STOP: CloseReason.TIME_STOP,
     ActionKind.STOP_BREACHED: CloseReason.ENGINE,
 }
@@ -62,6 +63,7 @@ class PositionFacts:
     planned_sl_distance: Decimal | None  # from the FILLED OPEN intent (None for orphans)
     atr: Decimal | None = None  # trigger-TF ATR on closed bars
     last_closed_close: Decimal | None = None  # trigger-TF close of the last closed bar
+    session: SessionCalendar | None = None  # the symbol's trading-session calendar
 
 
 class PositionManager:
@@ -85,11 +87,19 @@ class PositionManager:
         buy = pos.side is Side.BUY
         exit_price = tick.bid if buy else tick.ask
 
-        # 1. Friday flatten (symbols that do not trade weekends)
-        if not f.trade_weekends and self._cfg.flatten_friday_utc and now.weekday() == 4:
-            hh, mm = (int(x) for x in self._cfg.flatten_friday_utc.split(":"))
-            if now.time() >= time(hh, mm):
-                return self._close(f, now, ActionKind.FRIDAY_FLATTEN, IntentKind.FLATTEN, "weekend flat")
+        # 1. flatten before a long closure: weekends, and Fridays or holidays that close early. Only in the
+        #    window before the close: once the market is shut a close cannot fill, so nothing is retried.
+        lead = self._cfg.flatten_before_close_minutes
+        if not f.trade_weekends and f.session is not None and lead is not None:
+            close = f.session.long_close_ahead(now, timedelta(hours=self._cfg.long_close_hours))
+            if close is not None and now >= close - timedelta(minutes=lead):
+                return self._close(
+                    f,
+                    now,
+                    ActionKind.PRE_CLOSE_FLATTEN,
+                    IntentKind.FLATTEN,
+                    f"market shuts {close:%a %H:%M} UTC",
+                )
 
         # 2. time stop
         if self._cfg.time_stop_bars is not None:
