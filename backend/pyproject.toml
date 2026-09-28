@@ -11,6 +11,9 @@ dependencies = [
     "alembic>=1.13,<2",
     "structlog>=24.1",
     "python-ulid>=2.7,<4",
+    "pyarrow>=17",
+    "numpy>=2.0",
+    "tzdata>=2024.1 ; sys_platform == 'win32'",
 ]
 
 [project.optional-dependencies]
@@ -52,6 +55,7 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S", "DTZ"]
 "alembic/**" = ["E501"]
+"scripts/**" = ["E501"]  # CLI output lines
 
 # ---------------------------------------------------------------- mypy
 [tool.mypy]
@@ -78,7 +82,7 @@ module = [
 strict = true
 
 [[tool.mypy.overrides]]
-module = ["MetaTrader5", "MetaTrader5.*"]
+module = ["MetaTrader5", "MetaTrader5.*", "pyarrow", "pyarrow.*"]
 ignore_missing_imports = true
 
 # ---------------------------------------------------------------- pytest

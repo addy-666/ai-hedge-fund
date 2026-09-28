@@ -22,8 +22,10 @@ position management, reconciliation and trade enrichment.
   - `account_info().trade_mode` matches configured mode (DEMO vs REAL).
   - Every configured symbol: `symbol_select(sym, True)` and a `symbol_info` cached into `symbols`.
 - **Server time → UTC.** MT5 bar/tick/deal times are broker-server wall-clock seconds. Determine the offset at
-  startup and hourly: `offset = round_to_15min(latest_tick.time − utc_now())` using the freshest tick across
-  open markets; persist it; alert if it changes (DST). The gateway converts every timestamp it returns.
+  startup and hourly: `offset = round_to_15min(latest_tick.time − utc_now())`, using only a symbol whose tick
+  time *advanced* between two samples a few seconds apart (a live feed). A stale tick cannot be used: if its
+  age is near a multiple of 15 minutes it would silently shift the offset. Persist the offset; alert if it
+  changes (DST); with no live symbol (weekend) keep the persisted value. The gateway converts every timestamp it returns.
 - **Typed mapping:** return `Bar`, `Tick`, `SymbolSpec`, `Position`, `PendingOrder`, `Deal`, `AccountInfo`,
   `OrderResult` domain objects. Never leak `mt5` namedtuples past the adapter.
 - **Constants:** reference MT5 constants by name from the module (`mt5.TRADE_RETCODE_DONE`, …). Where the
@@ -109,7 +111,8 @@ feature `ctx.minutes_to_next_high_impact_news` is null.
 - Compute features from the registry (`02_DATA_MODEL.md` §3) in a thread pool. Indicator definitions:
   - EMA: standard `α = 2/(n+1)`, seeded with SMA of first n.
   - RSI / ATR / ADX: **Wilder** smoothing (`α = 1/n`). ATR uses true range with previous close.
-  - Percentile rank: fraction of the last 100 values ≤ current value.
+  - Percentile rank: mid-rank of the current value among the last 100 (below + ½ × equal, with a
+    1e-9 relative tie tolerance), so flat histories rank 0.5 rather than 1.0.
   - Swings: 5-bar fractals (2 left, 2 right) — the most recent confirmed swing only (no lookahead: a fractal is
     confirmed 2 bars after its pivot).
 - Persist the snapshot before calling the LLM. The snapshot is immutable afterwards.

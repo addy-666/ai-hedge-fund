@@ -22,6 +22,14 @@ from aifund.domain.market import (
 )
 
 
+class BrokerError(Exception):
+    """The broker (MT5 terminal or SimBroker) returned an error or an unusable result."""
+
+
+class BrokerUnavailable(BrokerError):
+    """The broker is not reachable/connected. Callers pause new exposure; nothing is assumed about orders."""
+
+
 @runtime_checkable
 class MarketDataPort(Protocol):
     async def closed_bars(self, symbol: str, timeframe: Timeframe, count: int) -> list[Bar]:

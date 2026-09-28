@@ -82,6 +82,23 @@ class AssetClass(StrEnum):
     ENERGY = "energy"
 
 
+class Regime(StrEnum):
+    """Market regime of one symbol on its setup timeframe (docs/03 §6, roadmap 1.6)."""
+
+    TREND_UP = "TREND_UP"
+    TREND_DOWN = "TREND_DOWN"
+    RANGE = "RANGE"
+    VOLATILE = "VOLATILE"
+    QUIET = "QUIET"
+    UNKNOWN = "UNKNOWN"
+
+
+class EmaStack(StrEnum):
+    BULL = "BULL"  # ema20 > ema50 > ema200
+    BEAR = "BEAR"  # ema20 < ema50 < ema200
+    MIXED = "MIXED"
+
+
 class AccountTradeMode(StrEnum):
     DEMO = "DEMO"
     CONTEST = "CONTEST"
@@ -259,6 +276,7 @@ class ReasonCode(StrEnum):
     # data
     STALE_DATA = "STALE_DATA"
     INSUFFICIENT_BARS = "INSUFFICIENT_BARS"
+    FORMING_BAR = "FORMING_BAR"  # a bar that had not closed at decision time reached the feature builder
     # analyst
     LLM_INVALID_OUTPUT = "LLM_INVALID_OUTPUT"
     LLM_ERROR = "LLM_ERROR"
