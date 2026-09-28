@@ -39,12 +39,16 @@ symbols:                        # canonical -> broker symbol (Vantage uses no su
     max_spread_to_atr: 0.30
     trade_weekends: true
   - canonical: NAS100
-    broker: NAS100          # CONFIRM the exact name in MT5 Market Watch (Vantage: NAS100); smoke test checks it
+    broker: NAS100.r        # Vantage's name (confirmed in Market Watch)
     asset_class: index
     profile: intraday_m15
     correlation_bucket: US_EQUITY
-    # PROVISIONAL until NAS100 history is exported: re-run scripts/spread_report.py and set from p90-p99.
-    max_spread_to_atr: 0.20
+    # Vantage NAS100 spread is a fixed 180 points (1.80 index points), every hour of the day. Gates set from
+    # scripts/spread_report.py (2026-06..09 export): spread/ATR p50 0.039, p90 0.064, p99 0.083, so 0.15
+    # never blocks a normal bar but does catch a spread near double its worst quiet-market level. The
+    # points cap (~2x normal) catches blow-outs.
+    max_spread_points: 400
+    max_spread_to_atr: 0.15
     trade_weekends: false
   # EURUSD dropped 2026-09-28: on the Vantage demo its spread is ~26% of an M15 ATR (1.4 vs ~4.9 pips),
   # far above max_spread_to_atr. Revisit with a raw-spread account or on H1.
