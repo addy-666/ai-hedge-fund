@@ -91,6 +91,12 @@ class ReplayFeed:
     async def tick(self, symbol: str) -> Tick | None:
         return self.tick_at(symbol, self._clock.now())
 
+    async def bars_range(
+        self, symbol: str, timeframe: Timeframe, start: datetime, end: datetime
+    ) -> list[Bar]:
+        """Closed bars (as of the replay clock: never the future) with open time in [start, end]."""
+        return [b for b in self.closed_until(symbol, timeframe, self._clock.now()) if start <= b.time <= end]
+
     def tick_at(self, symbol: str, moment: datetime) -> Tick | None:
         bars, closes = self._series(symbol, QUOTE_TF)
         idx = bisect.bisect_right(closes, moment)

@@ -169,7 +169,7 @@ async def test_sl_hit(factory: sessionmaker[Session], clock: FakeClock) -> None:
     t = trade(w, pid)
     assert t.status is TradeStatus.CLOSED
     assert t.close_price_vwap == D("4138.35")
-    assert t.close_time == T0 + timedelta(minutes=21)  # the bar that opened at T0+20 closed then
+    assert t.close_time == T0 + timedelta(minutes=20)  # stamped in the minute the stop was touched
     assert t.gross_profit == D("-47.72")  # -11.93 x 100 x 0.04
     assert t.commission == D("-0.28")  # 0.14 in + 0.14 out
     assert t.net_pnl == D("-48.00")

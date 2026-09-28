@@ -460,9 +460,18 @@ outcome    = WIN if r ≥ +0.1, LOSS if r ≤ −0.1, else BREAKEVEN   (null whe
 
 ### 14.3 Enrichment (`reconcile/enrichment.py`, async after close)
 
-- Fetch M1 bars from open to close; compute MAE and MFE in price and in R, `bars_held`, `holding_minutes`.
-- Slippage in points for entry and exit (vs requested).
-- Enqueue the Trade Reviewer (Phase 7), emit `trade.closed` event, send Telegram summary.
+- MAE and MFE in price and in R (R = the INITIAL stop distance; `mae_r` ≤ 0 ≤ `mfe_r`) over the M1 bars of
+  every minute the trade was open **in full**, plus its actual exit fills. BUY on bid prices, SELL on ask
+  (bid + the bar's spread). The entry and exit minutes' bars are left out: they also hold prices from before
+  the fill or after the exit (a stop-out minute can dip far past the stop), so excursions are never
+  overstated. Waits until the closing minute's bar has closed; if M1 history is unavailable it retries for a
+  day, then enriches from the exit fills alone.
+- `bars_held` (whole trigger-TF bars) and `holding_minutes`.
+- Slippage in points, positive = worse: entry from the OPEN intent; exit against the stop/target level for
+  SL/TP exits (the level MT5 writes in the deal comment, `[sl 4155.00]`, else the last known level), or the
+  engine's closing intent (the executor records fill vs requested price for closes too); none for manual exits.
+- Runs once per trade (`enriched_at`) and sends the notifier summary. The `trade.closed` event is emitted by
+  the reconciler; enqueueing the Trade Reviewer arrives with Phase 7.
 
 ### 14.4 Virtual trades (`reconcile/virtual.py`)
 

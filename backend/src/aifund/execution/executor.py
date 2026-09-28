@@ -240,7 +240,7 @@ class Executor:
     ) -> ExecutionResult:
         position_id = await self._position_id_for_fill(row, result, sent_at)
         slippage = None
-        if request.price is not None and result.price > 0 and row.kind is IntentKind.OPEN:
+        if request.price is not None and result.price > 0:  # opens and closes (modifications have no price)
             sign = 1 if row.side is Side.BUY else -1
             slippage = int(sign * (result.price - request.price) / spec.point)
         await self._move(

@@ -5,10 +5,9 @@ Updated by the coding agent at the end of every task.
 ## Current position
 
 - Phase: 3 — Reconciliation & ledger
-- Next task: 3.2 P&L aggregation — remaining part: fixtures of real MT5 deals captured from the demo (the
-  aggregation itself landed with 3.1, which needs it to close trades)
+- Next task: 3.4 Virtual trade tracker (3.2's real demo deal capture still open, see PR #6)
 - Rollout level: L0 (SIM). The full stack trades the SimBroker in replay; nothing is wired to MT5 order sending outside tests yet.
-- Tests: 528 passing + 1 Windows-only (MQL5 constant cross-check against the real MetaTrader5 package).
+- Tests: 555 passing + 1 Windows-only (MQL5 constant cross-check against the real MetaTrader5 package).
 - Windows run 2026-09-28 (VantageMarkets-Demo, hedging, 1:500, server UTC+3): smoke checks passed; history
   exported. Replay of the real export builds valid snapshots for XAUUSD/EURUSD/BTCUSD.
 - Findings from real data: (1) the terminal's first M15 request for EURUSD returned 2024 bars (stale local
@@ -60,6 +59,8 @@ Updated by the coding agent at the end of every task.
 | 2026-09-28 | 2.9 Position manager | Friday flatten → time stop → missing-SL repair (close if already crossed) → slippage re-alignment → break-even → ATR trail; tighten-only, stop/freeze-level aware, per-minute idempotent intents; engine loop; hooked into replay | Lives in `risk/` (only the risk layer issues intents) | Real replay: 14 trades, 1 time stop, 1 Friday flatten, 0 violations, −0.95% |
 
 | 2026-09-29 | 3.1 Reconciler | One trade per engine-magic position: OPEN from its FILLED intent (provenance from the decision), ORPHAN_OPEN with an alert otherwise; SL/TP/volume tracked, partial closes mirror their deals; a gone position closes from its position-scoped deals once exits cover its volume, else one critical "vanished" alert after 5 min; `reconcile/pnl.py` sums every deal (commission, swap, fee, partials; VWAP exit; R to 4 dp); close reasons from DEAL_REASON plus the closing intent's recorded reason; events for opened/orphan/partial/closed/vanished; reconciler in the replay harness with a ledger-vs-deals invariant. Scenarios: SL, TP, manual close, partial then engine close, stop-out, reversal, orphan, engine down (trade never seen open), crash mid-send, vanished, idempotency, broker down | Reads the DB before the broker and DEFERS symbols with an in-flight intent instead of resolving UNKNOWN intents itself (only the executor moves intents); also settles FILLED OPEN intents that never got a trade (the spec's loop missed a position closing between two cycles); closing intents carry `close_reason` (migration 6db010216cae; `trades.close_reason` is now a checked enum) because TIME_STOP and CLOSE share an intent kind; orphans get no R/outcome; P&L aggregation (3.2) built here | Real-data replay (Vantage 2026-06-15 → 09-27): 17 positions → 17 CLOSED trades, net matches deals to the cent, reasons SL 10 / TP 3 / TIME_STOP 3 / FLATTEN 1, 0 violations. Scan deal history for orphans that open AND close while the engine is down (never seen by positions_get) → verify_ledger (3.6). Tests use a placeholder account login since the repo is public |
+
+| 2026-09-29 | 3.3 Enrichment | `reconcile/enrichment.py`: MAE/MFE in price and in R (initial stop distance; mae_r ≤ 0 ≤ mfe_r), bars held, holding minutes, entry/exit slippage; runs once per closed trade (`enriched_at`, migration 7e2eb290adbf), waits for the closing minute's bar, retries a day for missing history; notifier summary; `MarketDataPort.bars_range` (ReplayFeed returns closed bars only); replay invariant: every exit lies within its trade's own excursions | Excursions use only minutes held in FULL plus the exit fills: the stop-out minute of the first test dipped to 4130 while the trade left at its 4138.35 stop, which would have reported -1.70R instead of -1.00R. SimBroker now stamps SL/TP fills in the minute they happen (was the bar's end), as MT5 does; the executor records slippage for closes too | Real replay: 32/32 trades enriched, 0 violations; mean MAE -0.77R / MFE +0.92R; 4 of 19 losers had reached +1R first (7 reached +0.5R) — a break-even rule to test once there are enough trades. Trade Reviewer enqueue deferred to Phase 7 |
 
 ## Decisions log
 

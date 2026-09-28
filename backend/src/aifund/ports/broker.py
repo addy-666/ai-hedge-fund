@@ -40,6 +40,13 @@ class MarketDataPort(Protocol):
         """Latest quote, or None if the symbol has no quote."""
         ...
 
+    async def bars_range(
+        self, symbol: str, timeframe: Timeframe, start: datetime, end: datetime
+    ) -> list[Bar]:
+        """Bars with open time in [start, end] (UTC), oldest first. Callers ask only for the past; the last
+        bar may still be forming if ``end`` is now (the trade enricher asks up to a trade's close)."""
+        ...
+
 
 @runtime_checkable
 class BrokerPort(Protocol):
