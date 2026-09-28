@@ -63,3 +63,47 @@ async def test_snapshot_from_replay_sees_only_closed_bars_and_round_trips(
     with factory() as s:
         back = FeatureSnapshotRepository(s, clock).get(snapshot_id)
     assert back == snap  # floats, bools, None and timestamps survive exactly
+
+
+def test_decision_cursor_store_reads_latest_decision_bar(
+    factory: sessionmaker[Session], clock: FakeClock
+) -> None:
+    from datetime import timedelta
+
+    from aifund.domain.enums import DecisionOutcome
+    from aifund.domain.ids import new_id
+    from aifund.persistence.repositories.cursors import DecisionCursorStore
+    from aifund.persistence.tables import DecisionRow
+
+    store = DecisionCursorStore(factory)
+    assert store.load("X", Timeframe.M15) is None
+    with unit_of_work(factory) as s:
+        for minutes in (0, 30, 15):
+            s.add(
+                DecisionRow(
+                    id=new_id(),
+                    account_id="acc",
+                    symbol="X",
+                    trigger_tf="M15",
+                    bar_time=AS_OF + timedelta(minutes=minutes),
+                    stage_reached="PREFLIGHT",
+                    outcome=DecisionOutcome.SKIPPED,
+                    created_at=AS_OF,
+                )
+            )
+        s.add(
+            DecisionRow(
+                id=new_id(),
+                account_id="acc",
+                symbol="X",
+                trigger_tf="H1",
+                bar_time=AS_OF + timedelta(hours=5),
+                stage_reached="PREFLIGHT",
+                outcome=DecisionOutcome.SKIPPED,
+                created_at=AS_OF,
+            )
+        )
+    loaded = store.load("X", Timeframe.M15)
+    assert loaded == AS_OF + timedelta(minutes=30)
+    assert loaded is not None
+    assert loaded.tzinfo is not None
