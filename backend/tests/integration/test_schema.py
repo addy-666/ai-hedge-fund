@@ -21,7 +21,8 @@ from aifund.persistence.tables import Base, EngineStateRow, EventRow, HeartbeatR
 from .conftest import T0, alembic_config
 
 EXPECTED_TABLES = {
-    "audit_log", "audit_runs", "calibration_models", "commands", "config_versions", "deals", "decisions",
+    "api_sessions", "audit_log", "audit_runs", "bar_cache", "calibration_models", "commands",
+    "config_versions", "deals", "decisions",
     "engine_state", "equity_snapshots", "events", "feature_snapshots", "heartbeats", "llm_calls",
     "order_intents", "rule_evaluations", "rulebook_versions", "rules", "symbols", "trade_reviews", "trades",
     "virtual_trades",

@@ -20,6 +20,7 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Any, NoReturn
 
+import structlog
 from sqlalchemy.orm import Session, sessionmaker
 
 from aifund.agents.analyst import Analyst, AnalystInput, Verdict
@@ -41,10 +42,11 @@ from aifund.domain.enums import (
     IntentKind,
     IntentStatus,
     ReasonCode,
+    Timeframe,
     VirtualArm,
 )
 from aifund.domain.ids import new_id
-from aifund.domain.market import Position, SymbolSpec, Tick
+from aifund.domain.market import Bar, Position, SymbolSpec, Tick
 from aifund.domain.trade import gets_virtual_trade
 from aifund.domain.values import to_decimal
 from aifund.engine.equity import EquityTracker
@@ -55,6 +57,7 @@ from aifund.market.features import PortfolioContext, SnapshotError, build_snapsh
 from aifund.market.news import NewsCalendar
 from aifund.market.sessions import calendars
 from aifund.persistence.db import unit_of_work
+from aifund.persistence.repositories.api import BarCacheRepository
 from aifund.persistence.repositories.decisions import DecisionRepository
 from aifund.persistence.repositories.intents import IntentRepository
 from aifund.persistence.repositories.market import FeatureSnapshotRepository
@@ -67,6 +70,7 @@ from aifund.risk.limits import Exposure, check_loss_limits, drawdown_pct
 from aifund.risk.manager import RiskManager, RiskRequest
 from aifund.strategies.base import SetupDetector, TfRoles
 
+log = structlog.get_logger(__name__)
 BASELINE_CONFIDENCE = 70
 MAX_TICK_AGE = timedelta(seconds=60)
 
@@ -180,6 +184,7 @@ class DecisionPipeline:
         self._locks: defaultdict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
         self._flip_flop_until: dict[str, datetime] = {}
         self._by_broker = {s.broker: s for s in cfg.symbols}
+        self._cached: dict[tuple[str, Timeframe], datetime] = {}
         self._news = news  # the Guardian EA's calendar (5.7b); None = no calendar source
 
     # ------------------------------------------------------------------ helpers
@@ -190,6 +195,23 @@ class DecisionPipeline:
 
     async def _tx(self, fn: Callable[[Session], Any]) -> Any:
         return await asyncio.to_thread(self._tx_sync, fn)
+
+    async def _cache_bars(self, bars: dict[Timeframe, list[Bar]]) -> None:
+        """Keep the dashboard's chart cache current with the bars just read (new ones only; best effort)."""
+        fresh: list[Bar] = []
+        for tf, series in bars.items():
+            if not series:
+                continue
+            key = (series[-1].symbol, tf)
+            last = self._cached.get(key)
+            fresh += [b for b in series if last is None or b.time > last]
+            self._cached[key] = series[-1].time
+        if not fresh:
+            return
+        try:
+            await self._tx(lambda s: BarCacheRepository(s).upsert(fresh))
+        except Exception as exc:
+            log.warning("bar_cache.failed", error=str(exc))
 
     def _deployments(
         self, detectors: Callable[[SymbolConfig, TfRoles], list[SetupDetector]]
@@ -385,6 +407,7 @@ class DecisionPipeline:
         profile = self._profiles[sym_cfg.profile]
         tfs = [roles.trigger, roles.setup, *roles.context]
         bars = {tf: await self._market.closed_bars(event.symbol, tf, profile.bars_per_tf) for tf in tfs}
+        await self._cache_bars(bars)
         positions = await self._broker.positions()
         own = [p for p in positions if p.magic == self._cfg.engine.magic]
         try:
