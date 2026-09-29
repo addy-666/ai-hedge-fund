@@ -1,6 +1,7 @@
 """Engine state machine (docs/01 §9, roadmap 5.1): the one place engine state changes.
 
     STOPPED --START--> STARTING --STARTED--> RUNNING        (or --RESTORED_PAUSED / RESTORED_HALTED / ...)
+    any state --BOOT--> STARTING                            (a new engine process; see restore_trigger)
     RUNNING --PAUSE | ERROR_BUDGET | DISCONNECTED--> PAUSED --RESUME--> RUNNING
     RUNNING | PAUSED --LIMIT_BREACH | GUARDIAN_HALT--> HALTED --REARM--> PAUSED
     RUNNING | PAUSED | HALTED --FLATTEN_ALL--> FLATTENING --FLATTENED--> HALTED
@@ -34,6 +35,7 @@ S = EngineState
 
 
 class Trigger(StrEnum):
+    BOOT = "BOOT"  # the engine process started: whatever was persisted, it is STARTING now
     START = "START"
     STARTED = "STARTED"  # startup checks and reconciliation passed
     START_FAILED = "START_FAILED"
@@ -56,6 +58,7 @@ T = Trigger
 _HALTING = (T.LIMIT_BREACH, T.GUARDIAN_HALT)
 TRANSITIONS: dict[tuple[EngineState, Trigger], EngineState] = {
     (S.STOPPED, T.START): S.STARTING,
+    **{(s, T.BOOT): S.STARTING for s in EngineState},
     (S.STARTING, T.STARTED): S.RUNNING,
     (S.STARTING, T.START_FAILED): S.STOPPED,
     (S.STARTING, T.RESTORED_PAUSED): S.PAUSED,
