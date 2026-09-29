@@ -1,2 +1,4 @@
 # prompt templates are hashed for immutability (AGENTS.md invariant 12): keep LF everywhere
 *.j2 text eol=lf
+# Windows deployment scripts keep CRLF (PowerShell and Task Scheduler expect it)
+*.ps1 text eol=crlf

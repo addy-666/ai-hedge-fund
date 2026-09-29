@@ -107,13 +107,16 @@ def test_the_parameter_hash_follows_the_parameters() -> None:
     )
 
 
-def pipeline(mode: Mode, *, evidence: bool, dry_run: bool = False) -> DecisionPipeline:
+def pipeline(
+    mode: Mode, *, evidence: bool, dry_run: bool = False, strategy: StrategyConfig | None = None
+) -> DecisionPipeline:
     cfg = load_trading_config(PROJECT_ROOT / "config" / "trading.example.yaml").config
     cfg = cfg.model_copy(
         update={
             "engine": cfg.engine.model_copy(update={"mode": mode}),
             "symbols": [s for s in cfg.symbols if s.broker == "XAUUSD"],
-            "strategy": StrategyConfig(analyst_enabled=False, baseline_enabled=True, dry_run=dry_run),
+            "strategy": strategy
+            or StrategyConfig(analyst_enabled=False, baseline_enabled=True, dry_run=dry_run),
         }
     )
     profile = cfg.profiles[cfg.symbols[0].profile]
@@ -126,12 +129,20 @@ def pipeline(mode: Mode, *, evidence: bool, dry_run: bool = False) -> DecisionPi
         cfg, broker=None, market=None, factory=None, clock=None, executor=None, risk=None,  # type: ignore[arg-type]
         detectors=detectors, equity=EquityTracker.for_engine(cfg.engine), account_id="acc",
         evidence=[good] if evidence else [],
+        analyst=object() if cfg.strategy.analyst_enabled else None,  # type: ignore[arg-type]
     )  # fmt: skip
 
 
 def test_the_pipeline_refuses_to_start_without_evidence_outside_sim() -> None:
     pipeline(Mode.SIM, evidence=False)  # replay and research
     pipeline(Mode.PAPER, evidence=False, dry_run=True)  # shadow decisions only
+    pipeline(
+        Mode.DEMO, evidence=False, strategy=StrategyConfig()
+    )  # analyst in shadow, baseline off: no orders
+    with pytest.raises(EvidenceError):
+        pipeline(
+            Mode.DEMO, evidence=False, strategy=StrategyConfig(baseline_enabled=True)
+        )  # the baseline trades
     pipeline(Mode.PAPER, evidence=True)
     with pytest.raises(EvidenceError, match="mtf_trend_pullback v1 on XAUUSD: no evidence record"):
         pipeline(Mode.PAPER, evidence=False)

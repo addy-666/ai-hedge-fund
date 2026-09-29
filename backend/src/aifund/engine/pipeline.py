@@ -148,8 +148,12 @@ class DecisionPipeline:
         self._cfg = cfg
         self._profiles = {**cfg.profiles, **(profile_override or {})}
         # gate E1 (docs/09 §7): outside SIM every detector needs matching, passing research evidence
+        strategy = cfg.strategy
+        sends_orders = not strategy.dry_run and (
+            strategy.baseline_enabled or (strategy.analyst_enabled and strategy.analyst_orders)
+        )  # an analyst in shadow with the baseline off decides, records its shadows, and sends nothing
         require_evidence(
-            self._deployments(detectors), evidence, mode=cfg.engine.mode, dry_run=cfg.strategy.dry_run
+            self._deployments(detectors), evidence, mode=cfg.engine.mode, dry_run=not sends_orders
         )
         # G-LLM (docs/09 §7): outside SIM the analyst's decisions reach the Risk Manager only after sign-off
         require_g_llm(
