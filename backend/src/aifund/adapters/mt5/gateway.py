@@ -381,6 +381,12 @@ class MT5Gateway:
         threshold = max(timedelta(days=4), timedelta(minutes=3 * timeframe.minutes))
         return lag if lag > threshold else None
 
+    async def common_files_dir(self) -> Path | None:
+        """``<commondata_path>/Files/aifund``: where the Guardian EA and the engine exchange files."""
+        term = await self._run(lambda mt5: mt5.terminal_info())
+        root = getattr(term, "commondata_path", None) if term is not None else None
+        return Path(str(root)) / "Files" / "aifund" if root else None
+
     async def max_bars(self) -> int | None:
         """The terminal's "Max bars in chart" (``terminal_info().maxbars``): every copy_rates_* call returns
         at most this many bars per symbol and timeframe, whatever range is asked for."""
