@@ -66,7 +66,7 @@ class SeriesQuality:
         return ", ".join(problems) or "ok"
 
     def row(self) -> str:
-        span = f"{self.first:%Y-%m-%d} → {self.last:%Y-%m-%d}" if self.first and self.last else "-"
+        span = f"{self.first:%Y-%m-%d} -> {self.last:%Y-%m-%d}" if self.first and self.last else "-"
         worst = max((g.missing for g in self.unexpected_gaps), default=None)
         spread = (
             f"{self.spread_p50:g} / {self.spread_p99:g} / {self.spread_max}"

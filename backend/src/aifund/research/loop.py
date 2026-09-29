@@ -315,4 +315,4 @@ class ResearchLoop:
         }
         self.drafts_dir.mkdir(parents=True, exist_ok=True)
         e.card = self.drafts_dir / f"{h.id}.yaml"
-        e.card.write_text(yaml.safe_dump(card, sort_keys=False, allow_unicode=True))
+        e.card.write_text(yaml.safe_dump(card, sort_keys=False, allow_unicode=True), encoding="utf-8")

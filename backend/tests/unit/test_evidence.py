@@ -192,3 +192,9 @@ def test_the_pipeline_refuses_analyst_orders_without_sign_off() -> None:
     with pytest.raises(EvidenceError, match="no sign-off for analyst_v1"):
         build([])
     build([SIGNOFF.model_copy(update={"model": cfg.llm.analyst_model})])
+
+
+def test_sign_off_file_names_are_safe_on_windows(tmp_path: Path) -> None:
+    placeholder = SIGNOFF.model_copy(update={"model": "<set from DeepSeek /models>"})
+    assert placeholder.filename == "g_llm_analyst_v1_set_from_DeepSeek_models.json"
+    assert write_g_llm(tmp_path, placeholder).is_file()

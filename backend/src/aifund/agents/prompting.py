@@ -160,7 +160,7 @@ class PlaybookCard:
 @cache
 def load_playbook(directory: Path, playbook_id: str) -> PlaybookCard:
     """A playbook card (config/playbooks/<id>.yaml): the prompt's description of a setup."""
-    data = yaml.safe_load((directory / f"{playbook_id}.yaml").read_text())
+    data = yaml.safe_load((directory / f"{playbook_id}.yaml").read_text(encoding="utf-8"))
     return PlaybookCard(
         setup_tag=data["setup_tag"],
         summary=" ".join(str(data["summary"]).split()),

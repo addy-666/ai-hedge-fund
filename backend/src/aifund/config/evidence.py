@@ -14,6 +14,7 @@ checks it) read it, and those two layers may not import each other.
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import datetime
@@ -69,7 +70,7 @@ def load_evidence(directory: Path) -> list[EvidenceRecord]:
     records = []
     for path in sorted(p for p in directory.glob("*.json") if not p.name.startswith("g_llm_")):
         try:
-            records.append(EvidenceRecord.model_validate_json(path.read_text()))
+            records.append(EvidenceRecord.model_validate_json(path.read_text(encoding="utf-8")))
         except ValidationError as exc:
             raise EvidenceError(f"{path.name}: invalid evidence record: {exc.errors()[0]['msg']}") from exc
     return records
@@ -78,7 +79,9 @@ def load_evidence(directory: Path) -> list[EvidenceRecord]:
 def write_evidence(directory: Path, record: EvidenceRecord) -> Path:
     directory.mkdir(parents=True, exist_ok=True)
     path = directory / record.filename
-    path.write_text(json.dumps(record.model_dump(mode="json"), indent=2, sort_keys=True) + "\n")
+    path.write_text(
+        json.dumps(record.model_dump(mode="json"), indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
     return path
 
 
@@ -152,7 +155,8 @@ class GLlmSignoff(BaseModel):
 
     @property
     def filename(self) -> str:
-        return f"g_llm_{self.prompt_version}_{self.model.replace('/', '_')}.json"
+        safe = re.sub(r"[^A-Za-z0-9.-]+", "_", f"{self.prompt_version}_{self.model}").strip("_")
+        return f"g_llm_{safe}.json"  # model ids may hold characters Windows forbids in file names
 
 
 def load_g_llm(directory: Path) -> list[GLlmSignoff]:
@@ -161,7 +165,7 @@ def load_g_llm(directory: Path) -> list[GLlmSignoff]:
     out = []
     for path in sorted(directory.glob("g_llm_*.json")):
         try:
-            out.append(GLlmSignoff.model_validate_json(path.read_text()))
+            out.append(GLlmSignoff.model_validate_json(path.read_text(encoding="utf-8")))
         except ValidationError as exc:
             raise EvidenceError(f"{path.name}: invalid G-LLM sign-off: {exc.errors()[0]['msg']}") from exc
     return out
@@ -170,7 +174,9 @@ def load_g_llm(directory: Path) -> list[GLlmSignoff]:
 def write_g_llm(directory: Path, signoff: GLlmSignoff) -> Path:
     directory.mkdir(parents=True, exist_ok=True)
     path = directory / signoff.filename
-    path.write_text(json.dumps(signoff.model_dump(mode="json"), indent=2, sort_keys=True) + "\n")
+    path.write_text(
+        json.dumps(signoff.model_dump(mode="json"), indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
     return path
 
 

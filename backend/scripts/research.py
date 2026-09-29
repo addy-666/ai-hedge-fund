@@ -285,7 +285,7 @@ async def loop_main(args: argparse.Namespace) -> int:
         if not args.file:
             print("dsl needs --file (a JSON list of entry hypotheses)", file=sys.stderr)
             return 2
-        docs = json.loads(Path(args.file).read_text())
+        docs = json.loads(Path(args.file).read_text(encoding="utf-8"))
         hypotheses = [EntryHypothesis.model_validate(d) for d in (docs if isinstance(docs, list) else [docs])]
         print_evaluations(loop.evaluate(hypotheses, Origin.OPERATOR, spend_holdout=args.spend_holdout))
         return 0

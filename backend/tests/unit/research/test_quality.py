@@ -115,7 +115,7 @@ def test_spreads_and_ohlc_sanity() -> None:
     assert (q.bad_ohlc, q.zero_range) == (1, 1)
     assert q.verdict == "CAPPED, BAD OHLC"
     row = q.row()
-    assert row.startswith("| XAUUSD | H1 | 100 | 2026-03-02 → 2026-03-06 | yes | 0 (0.0 h) | 20 / ")
+    assert row.startswith("| XAUUSD | H1 | 100 | 2026-03-02 -> 2026-03-06 | yes | 0 (0.0 h) | 20 / ")
     assert row.count("|") == HEADER.splitlines()[0].count("|")
 
 
