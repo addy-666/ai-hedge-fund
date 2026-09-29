@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
@@ -67,7 +67,7 @@ def load_evidence(directory: Path) -> list[EvidenceRecord]:
     if not directory.is_dir():
         return []
     records = []
-    for path in sorted(directory.glob("*.json")):
+    for path in sorted(p for p in directory.glob("*.json") if not p.name.startswith("g_llm_")):
         try:
             records.append(EvidenceRecord.model_validate_json(path.read_text()))
         except ValidationError as exc:
@@ -130,3 +130,58 @@ def require_evidence(
     problems = [p for d in deployments if (p := problem(d, records)) is not None]
     if problems:
         raise EvidenceError(f"gate E1 refuses to start in {mode.value}:\n- " + "\n- ".join(problems))
+
+
+# ---------------------------------------------------------------- G-LLM (the analyst must beat the baseline)
+
+
+class GLlmSignoff(BaseModel):
+    """Operator sign-off that the analyst beat the baseline net of its cost (docs/09 §7 G-LLM), for one
+    prompt version and model. Written by ``scripts/uplift_report.py --sign-off`` only when the gate passed."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    gate: Literal["G_LLM_PASSED"] = "G_LLM_PASSED"
+    prompt_version: str = Field(min_length=1)  # e.g. analyst_v1
+    model: str = Field(min_length=1)
+    n: int = Field(ge=1)
+    mean_uplift_r: float
+    ci90: tuple[float, float]
+    signed_off_by: str = Field(min_length=1)
+    signed_off_at: datetime
+
+    @property
+    def filename(self) -> str:
+        return f"g_llm_{self.prompt_version}_{self.model.replace('/', '_')}.json"
+
+
+def load_g_llm(directory: Path) -> list[GLlmSignoff]:
+    if not directory.is_dir():
+        return []
+    out = []
+    for path in sorted(directory.glob("g_llm_*.json")):
+        try:
+            out.append(GLlmSignoff.model_validate_json(path.read_text()))
+        except ValidationError as exc:
+            raise EvidenceError(f"{path.name}: invalid G-LLM sign-off: {exc.errors()[0]['msg']}") from exc
+    return out
+
+
+def write_g_llm(directory: Path, signoff: GLlmSignoff) -> Path:
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / signoff.filename
+    path.write_text(json.dumps(signoff.model_dump(mode="json"), indent=2, sort_keys=True) + "\n")
+    return path
+
+
+def require_g_llm(
+    signoffs: Sequence[GLlmSignoff], *, prompt_version: str, model: str, mode: Mode, analyst_orders: bool
+) -> None:
+    """Outside SIM the analyst may send orders only with a sign-off for this prompt version and model."""
+    if mode is Mode.SIM or not analyst_orders:
+        return
+    if not any(s.prompt_version == prompt_version and s.model == model for s in signoffs):
+        raise EvidenceError(
+            f"G-LLM refuses analyst orders in {mode.value}: no sign-off for {prompt_version} on {model} "
+            "(keep strategy.analyst_orders off to run the analyst in shadow; scripts/uplift_report.py)"
+        )

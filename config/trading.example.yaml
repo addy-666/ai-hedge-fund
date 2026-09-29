@@ -18,6 +18,9 @@ strategy:
   analyst_enabled: true         # false = deterministic baseline only (LLM outage fallback)
   baseline_enabled: false       # deterministic mtf_trend_pullback without LLM (Phase 2)
   dry_run: false                # true: decisions and risk checks run, nothing is sent (outcome DRY_RUN)
+  analyst_orders: false         # G-LLM (docs/09 §7): off = the analyst decides in SHADOW (both its and the
+                                #   baseline's decisions become shadow virtual trades; the baseline trades if
+                                #   enabled). On outside SIM needs a sign-off: scripts/uplift_report.py
   analyst_prompt_version: 1     # agents/prompts/analyst_v<n>.j2
 
 symbols:                        # canonical -> broker symbol (Vantage uses no suffix; Exness appends "m")

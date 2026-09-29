@@ -73,6 +73,16 @@ class StrategyConfig(_Strict):
     baseline_enabled: bool = False
     dry_run: bool = False  # decide and risk-check everything, record what would be sent, send nothing
     analyst_prompt_version: int = Field(default=1, ge=1)
+    # The analyst's decisions reach the Risk Manager only with this on (docs/09 §7 G-LLM). Off, the analyst
+    # decides in SHADOW: both its decision and the baseline's become shadow virtual trades on every bar with a
+    # candidate, and the baseline (if enabled) trades. Outside SIM, on also needs a G-LLM sign-off record.
+    analyst_orders: bool = False
+
+    @model_validator(mode="after")
+    def _orders_need_the_analyst(self) -> StrategyConfig:
+        if self.analyst_orders and not self.analyst_enabled:
+            raise ValueError("strategy.analyst_orders needs strategy.analyst_enabled")
+        return self
 
 
 # ---------------------------------------------------------------- symbols / profiles

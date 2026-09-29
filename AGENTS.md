@@ -29,6 +29,7 @@ cd backend && uv run python scripts/mt5_smoke.py   # Windows + MT5 terminal only
 cd backend && uv run python scripts/export_history.py --months 24  # Windows: bars -> <repo>/data/history (Parquet); set MT5 "Max bars in chart" = Unlimited first
 cd backend && uv run python scripts/export_history.py --from 2024-01-01 --to 2024-07-01 --timeframes M1,M5 --merge   # Windows: add a date range to the export
 cd backend && uv run python scripts/data_quality.py --details 5   # quality of the export: bar caps, gaps the session calendar cannot explain, spreads
+cd backend && uv run python scripts/uplift_report.py   # gate G-LLM: analyst vs baseline shadows net of LLM cost; --sign-off NAME only if it passed
 cd backend && uv run python scripts/replay.py --from 2026-06-15 --to 2026-09-27   # full stack on exported history (SimBroker); --snapshot-minutes 1 for engine cadence
 cd backend && uv run python scripts/research.py baseline   # edge study: grid, walk-forward, gate E1 (docs/09); --spend-holdout once
 cd backend && uv run python scripts/research.py dsl --file ideas.json   # operator entry hypotheses (docs/09 §5) through the research loop

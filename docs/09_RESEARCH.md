@@ -198,6 +198,16 @@ every problem. SIM is exempt, and so is a **dry run** (`strategy.dry_run`: decis
 ever sent) — a shadow run is how a strategy collects forward (E2) evidence. E2 and G-LLM are tracked on the dashboard and signed off in
 `audit_log` (operator), like the L2/L3 rollout gates.
 
+Implementation (R.9, G-LLM): while the analyst is enabled, every bar with a candidate records two SHADOW
+virtual trades with the same stop planner — `SHADOW_BASELINE` (the strongest candidate at the baseline's
+fixed confidence) and, when the analyst proposed a trade that its rules and the threshold let through,
+`SHADOW_ANALYST` (virtual_trades.arm; a decision may carry one per arm). Its decisions reach the Risk Manager
+only with `strategy.analyst_orders`; outside SIM that needs a sign-off for the exact prompt version and model
+(`config/evidence/g_llm_<prompt>_<model>.json`, written by `scripts/uplift_report.py --sign-off NAME` only when
+the gate passed; the pipeline refuses to start otherwise). Off, the baseline trades if enabled, else the
+decision ends `SHADOW`. The paired report counts a bar once both shadows have finished; an arm that did not
+trade earned 0R; the LLM cost is the decision's spend over the money one trade risks.
+
 ## 8. Throughput planning
 
 Plan the calendar in **signals and trades, not weeks**. Every research report prints the measured signal

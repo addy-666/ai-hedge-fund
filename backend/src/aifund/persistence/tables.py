@@ -41,6 +41,7 @@ from aifund.domain.enums import (
     Side,
     TradeOutcome,
     TradeStatus,
+    VirtualArm,
     VirtualStatus,
 )
 from aifund.persistence.types import DecimalText, UtcDateTime
@@ -353,11 +354,15 @@ class DealRow(Base):
 
 class VirtualTradeRow(Base):
     __tablename__ = "virtual_trades"
-    __table_args__ = (Index("ix_virtual_trades_status", "status"),)
+    __table_args__ = (
+        Index("ix_virtual_trades_status", "status"),
+        UniqueConstraint("decision_id", "arm"),  # one per arm: blocked, and the two G-LLM shadows
+    )
 
     id: Mapped[str] = mapped_column(ULID, primary_key=True)
     account_id: Mapped[str] = mapped_column(ACCOUNT)
-    decision_id: Mapped[str] = mapped_column(ForeignKey("decisions.id"), unique=True)
+    decision_id: Mapped[str] = mapped_column(ForeignKey("decisions.id"))
+    arm: Mapped[VirtualArm] = mapped_column(_enum(VirtualArm), default=VirtualArm.BLOCKED)
     snapshot_id: Mapped[str | None] = mapped_column(ForeignKey("feature_snapshots.id"))
     symbol: Mapped[str] = mapped_column(String(32))
     side: Mapped[Side] = mapped_column(_enum(Side))

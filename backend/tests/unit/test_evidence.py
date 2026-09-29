@@ -13,10 +13,14 @@ from aifund.config.evidence import (
     EvidenceError,
     EvidenceGate,
     EvidenceRecord,
+    GLlmSignoff,
     load_evidence,
+    load_g_llm,
     profile_key,
     require_evidence,
+    require_g_llm,
     write_evidence,
+    write_g_llm,
 )
 from aifund.config.loader import load_trading_config
 from aifund.config.settings import PROJECT_ROOT
@@ -131,3 +135,60 @@ def test_the_pipeline_refuses_to_start_without_evidence_outside_sim() -> None:
     pipeline(Mode.PAPER, evidence=True)
     with pytest.raises(EvidenceError, match="mtf_trend_pullback v1 on XAUUSD: no evidence record"):
         pipeline(Mode.PAPER, evidence=False)
+
+
+# ---------------------------------------------------------------- G-LLM (roadmap R.9)
+
+SIGNOFF = GLlmSignoff(
+    prompt_version="analyst_v1", model="deepseek-chat", n=180, mean_uplift_r=0.12, ci90=(0.02, 0.22),
+    signed_off_by="operator", signed_off_at=datetime(2026, 9, 29, tzinfo=UTC),
+)  # fmt: skip
+
+
+def test_analyst_orders_outside_sim_need_a_matching_sign_off() -> None:
+    kw: dict[str, Any] = dict(prompt_version="analyst_v1", model="deepseek-chat")
+    require_g_llm([SIGNOFF], mode=Mode.DEMO, analyst_orders=True, **kw)
+    require_g_llm([], mode=Mode.SIM, analyst_orders=True, **kw)  # replay and research
+    require_g_llm([], mode=Mode.DEMO, analyst_orders=False, **kw)  # the analyst runs in shadow
+    for stale in ({"prompt_version": "analyst_v2"}, {"model": "deepseek-reasoner"}):
+        with pytest.raises(EvidenceError, match="G-LLM refuses analyst orders in PAPER"):
+            require_g_llm([SIGNOFF], mode=Mode.PAPER, analyst_orders=True, **{**kw, **stale})
+
+
+def test_sign_offs_round_trip_and_stay_apart_from_e1_records(tmp_path: Path) -> None:
+    write_evidence(tmp_path, record())
+    path = write_g_llm(tmp_path, SIGNOFF)
+    assert path.name == "g_llm_analyst_v1_deepseek-chat.json"
+    assert load_g_llm(tmp_path) == [SIGNOFF]
+    assert load_evidence(tmp_path) == [record()]  # the E1 loader skips sign-offs
+    assert load_g_llm(tmp_path / "missing") == []
+    (tmp_path / "g_llm_broken.json").write_text("{}")
+    with pytest.raises(EvidenceError, match="invalid G-LLM sign-off"):
+        load_g_llm(tmp_path)
+
+
+def test_analyst_orders_need_the_analyst() -> None:
+    with pytest.raises(ValueError, match=r"analyst_orders needs strategy\.analyst_enabled"):
+        StrategyConfig(analyst_enabled=False, baseline_enabled=True, analyst_orders=True)
+
+
+def test_the_pipeline_refuses_analyst_orders_without_sign_off() -> None:
+    cfg = load_trading_config(PROJECT_ROOT / "config" / "trading.example.yaml").config
+    cfg = cfg.model_copy(
+        update={
+            "engine": cfg.engine.model_copy(update={"mode": Mode.PAPER}),
+            "symbols": [s for s in cfg.symbols if s.broker == "XAUUSD"],
+            "strategy": StrategyConfig(analyst_orders=True),
+        }
+    )
+
+    def build(g_llm: list[GLlmSignoff]) -> DecisionPipeline:
+        return DecisionPipeline(
+            cfg, broker=None, market=None, factory=None, clock=None, executor=None, risk=None,  # type: ignore[arg-type]
+            detectors=lambda _s, _r: [], equity=EquityTracker.for_engine(cfg.engine), account_id="acc",
+            analyst=object(), g_llm=g_llm,  # type: ignore[arg-type]
+        )  # fmt: skip
+
+    with pytest.raises(EvidenceError, match="no sign-off for analyst_v1"):
+        build([])
+    build([SIGNOFF.model_copy(update={"model": cfg.llm.analyst_model})])
