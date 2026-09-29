@@ -62,7 +62,9 @@ def analyst_input(candidates: list[SetupCandidate] | None = None) -> AnalystInpu
         candidates=[CANDIDATE] if candidates is None else candidates,
         trigger_bars=bars(),
         trigger_atr=D("9.67"),
-        tick=Tick(symbol="XAUUSD", time=BAR + timedelta(minutes=15, seconds=3), bid=D("4150.00"), ask=D("4150.28")),
+        tick=Tick(
+            symbol="XAUUSD", time=BAR + timedelta(minutes=15, seconds=3), bid=D("4150.00"), ask=D("4150.28")
+        ),
         spread_points=28,
         position=None,
         portfolio="0 open positions, equity 10000.00, drawdown 0.00%, today +0.00",
