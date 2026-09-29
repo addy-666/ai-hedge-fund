@@ -97,6 +97,9 @@ class SymbolConfig(_Strict):
     max_spread_points: int | None = Field(default=None, gt=0)
     max_spread_to_atr: Decimal = Field(gt=0, le=1)
     trade_weekends: bool = False
+    news_currencies: list[Annotated[str, Field(pattern=r"^[A-Z]{3}$")]] = Field(
+        default_factory=lambda: ["USD"]
+    )  # the news gate blacks out HIGH-impact events of these currencies (docs/03 §4 gate 5)
     session: str | None = None
     """Name of a ``sessions`` calendar. Required unless the symbol trades weekends: the position manager
     flattens before every long closure (weekend, holiday early close) that calendar knows about."""

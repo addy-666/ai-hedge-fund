@@ -193,10 +193,12 @@ def build_snapshot(
     max_gap: timedelta = timedelta(days=5),
     stale_after: timedelta | None = None,
     tf_cache: MutableMapping[tuple[Timeframe, datetime, int], dict[str, FeatureValue]] | None = None,
+    news_minutes: tuple[int | None, int | None] = (None, None),
 ) -> FeatureSnapshot:
     """``tf_cache`` (optional, ONE cache per symbol) reuses a timeframe's features while its window of bars is
     unchanged — keyed by the window's last bar time and length, so values are identical to a fresh build.
-    Research uses it: the setup/context timeframes change only once per their own bar."""
+    Research uses it: the setup/context timeframes change only once per their own bar. ``news_minutes``:
+    (to the next, since the last) HIGH-impact event from the news calendar, when the engine has one."""
     timeframes = [trigger_tf, setup_tf, *context_tfs]
     for tf in timeframes:
         if tf not in bars:
@@ -244,8 +246,8 @@ def build_snapshot(
         {
             "ctx.session": session_of(trigger_close_time),
             "ctx.day_of_week": trigger_close_time.weekday(),
-            "ctx.minutes_to_next_high_impact_news": None,
-            "ctx.minutes_since_last_high_impact_news": None,
+            "ctx.minutes_to_next_high_impact_news": news_minutes[0],
+            "ctx.minutes_since_last_high_impact_news": news_minutes[1],
             "ctx.spread_to_atr": spread_to_atr,
             "ctx.regime": classify_regime(
                 adx=adx if isinstance(adx, float) else None,
