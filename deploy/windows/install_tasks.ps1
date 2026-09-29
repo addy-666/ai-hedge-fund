@@ -8,6 +8,7 @@ $PS = "powershell.exe"
 $Tasks = @{   # name = (command, arguments)
     "aifund-mt5"    = @($MT5Path, "/portable")
     "aifund-engine" = @($PS, "-NoProfile -ExecutionPolicy Bypass -File `"$Here\run_engine.ps1`"")
+    "aifund-api"    = @($PS, "-NoProfile -ExecutionPolicy Bypass -File `"$Here\run_api.ps1`"")
     "aifund-backup" = @($PS, "-NoProfile -ExecutionPolicy Bypass -File `"$Here\backup.ps1`"")
 }
 foreach ($Name in $Tasks.Keys) {
@@ -19,4 +20,4 @@ foreach ($Name in $Tasks.Keys) {
     Register-ScheduledTask -TaskName $Name -Xml $Xml -Force | Out-Null
     Write-Host "registered $Name"
 }
-Write-Host "Done. Sign out and back in (auto-logon) or run: Start-ScheduledTask aifund-mt5; Start-ScheduledTask aifund-engine"
+Write-Host "Done. Sign out and back in (auto-logon) or run: Start-ScheduledTask aifund-mt5; Start-ScheduledTask aifund-engine; Start-ScheduledTask aifund-api"

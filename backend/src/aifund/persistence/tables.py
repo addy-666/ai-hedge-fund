@@ -150,6 +150,21 @@ class EventRow(Base):
     payload: Mapped[dict[str, Any] | None]
 
 
+class ApiSessionRow(Base):
+    """A dashboard login (docs/05 §2). The cookie carries the token; only its SHA-256 is stored."""
+
+    __tablename__ = "api_sessions"
+
+    token_sha256: Mapped[str] = mapped_column(String(64), primary_key=True)
+    csrf_token: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime]
+    expires_at: Mapped[datetime] = mapped_column(index=True)
+    reauth_at: Mapped[datetime]  # last password entry: re-auth-gated actions need it within 5 minutes
+    last_seen_at: Mapped[datetime]
+    ip: Mapped[str | None] = mapped_column(String(64))
+    user_agent: Mapped[str | None] = mapped_column(String(256))
+
+
 class AuditLogRow(Base):
     __tablename__ = "audit_log"
 
@@ -186,6 +201,22 @@ class SymbolRow(Base):
     currency_margin: Mapped[str] = mapped_column(String(8))
     raw: Mapped[dict[str, Any] | None]
     refreshed_at: Mapped[datetime]
+
+
+class BarCacheRow(Base):
+    """Closed bars the engine has read, kept for the dashboard's charts (the API never talks to MT5)."""
+
+    __tablename__ = "bar_cache"
+
+    symbol: Mapped[str] = mapped_column(String(32), primary_key=True)
+    timeframe: Mapped[str] = mapped_column(String(4), primary_key=True)
+    time: Mapped[datetime] = mapped_column(primary_key=True)  # bar open, UTC
+    open: Mapped[Decimal]
+    high: Mapped[Decimal]
+    low: Mapped[Decimal]
+    close: Mapped[Decimal]
+    tick_volume: Mapped[int] = mapped_column(BigInteger)
+    spread_points: Mapped[int]
 
 
 class FeatureSnapshotRow(Base):

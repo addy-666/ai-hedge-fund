@@ -147,7 +147,7 @@ Runs on the Mac against exported history (no broker, no network), except R.8 and
 | 6.2 | **Read endpoints** (system, account, equity, positions, trades, decisions, virtual trades, bars, llm usage, logs) | M | Contract tests against seeded DB |
 | 6.3 | **Command endpoints** + config GET/PUT with validation/versioning | S | Tests; PUT with invalid YAML rejected with field errors |
 | 6.4 | **WebSocket** events with `since=seq` resume | S | Test: disconnect/reconnect receives missed events once |
-| 6.5 | **Frontend scaffold**: Vite/TS/Tailwind/shadcn, generated OpenAPI types, API client with CSRF, WS client, auth flow, layout with sticky header (state, mode, kill switch) | M | Login → overview works against seeded API |
+| 6.5 | **Frontend scaffold**: Vite/TS/Tailwind (own primitives, no shadcn — PROGRESS decisions log), generated OpenAPI types, API client with CSRF, WS client, auth flow, layout with sticky header (state, mode, kill switch) | M | Login → overview works against seeded API |
 | 6.6 | **Overview + Positions pages** | M | Playwright smoke |
 | 6.7 | **Decisions + Trade Journal pages** (pipeline trace, dossier, price chart with markers) | L | Playwright smoke; visual check |
 | 6.8 | **Settings + System + Agents pages** | M | Config edit round-trip incl. re-auth prompt |

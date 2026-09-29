@@ -1,0 +1,28 @@
+// Aliases over the generated OpenAPI types (never hand-written: `npm run gen:api` after changing the API).
+import type { components } from "./openapi";
+
+type S = components["schemas"];
+export type SystemOut = S["SystemOut"];
+export type AccountOut = S["AccountOut"];
+export type EquityPoint = S["EquityPoint"];
+export type PositionOut = S["PositionOut"];
+export type TradeOut = S["TradeOut"];
+export type TradeDossier = S["TradeDossier"];
+export type DecisionOut = S["DecisionOut"];
+export type DecisionDossier = S["DecisionDossier"];
+export type VirtualTradeOut = S["VirtualTradeOut"];
+export type BarOut = S["BarOut"];
+export type LLMUsageRow = S["LLMUsageRow"];
+export type LogLine = S["LogLine"];
+export type Summary = S["Summary"];
+export type BreakdownRow = S["BreakdownRow"];
+export type Costs = S["Costs"];
+export type CommandOut = S["CommandOut"];
+export type ConfigOut = S["ConfigOut"];
+export type ConfigSaved = S["ConfigSaved"];
+export type ConfigVersionOut = S["ConfigVersionOut"];
+export type FieldError = S["FieldError"];
+export type Me = S["Me"];
+export type SessionInfo = S["SessionInfo"];
+export type HeartbeatOut = S["HeartbeatOut"];
+export type Page<T> = { items: T[]; next_cursor?: string | null };

@@ -1,0 +1,10 @@
+@import "tailwindcss";
+
+/* dense "operations terminal" look (docs/05 §4) */
+:root {
+  color-scheme: dark;
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+.num {
+  font-variant-numeric: tabular-nums;
+}

@@ -27,7 +27,7 @@
 | Method | Path | Purpose |
 |---|---|---|
 | POST | `/api/auth/login`, `/api/auth/logout`, `/api/auth/reauth` | Session management |
-| GET | `/api/me` | Current user, re-auth freshness |
+| GET | `/api/me` | Current user, re-auth freshness, the session's CSRF token (a reloaded page needs it) |
 | GET | `/api/health` | Unauthenticated liveness (no data) |
 | GET | `/api/system` | Engine state & mode, heartbeats with ages, MT5 connection, server-time offset, LLM circuit state, budget used, error counts, versions (config, rulebook, prompts, feature set) |
 | POST | `/api/engine/commands` | `{type: START\|PAUSE\|RESUME\|STOP\|REARM\|FLATTEN_ALL\|SET_MODE, payload}` |
@@ -52,7 +52,7 @@
 | GET | `/api/analytics/calibration` | Reliability bins, Brier history, active calibration model |
 | GET | `/api/analytics/costs` | Spread/commission/swap/slippage totals and per trade |
 | GET | `/api/llm/usage?from&to` | Calls, tokens, cache hit rate, cost, latency p50/p95, error rate per agent/model |
-| GET | `/api/bars?symbol&tf&from&to` | Bars for charts (served from a small bar cache table written by the engine) |
+| GET | `/api/bars?symbol&tf&from&to` | Bars for charts, from `bar_cache` (the pipeline upserts the closed bars it reads; the API never asks MT5) |
 | GET | `/api/config` / PUT `/api/config` | Current YAML + schema; PUT validates, versions, audit-logs, sends `RELOAD_CONFIG` |
 | GET | `/api/config/versions` | History and diffs |
 | GET | `/api/exports/vault` / `/api/exports/vault/{name}` | Weekly vault review files |
@@ -61,7 +61,11 @@
 
 ### WebSocket events
 
-Server pushes `{seq, ts, type, payload}`; client resumes with `?since=<seq>` after reconnect.
+Server pushes `{seq, ts, type, severity, payload}`; client resumes with `?since=<seq>` after reconnect.
+`?since=-1` starts from now: the first message is `stream.start` with the latest `seq` (the page has just
+loaded its data fresh). The socket authenticates with the session cookie (close code 1008 without one).
+Implemented so far (Phase 6): `engine.state`, `command.updated`, `trade.*` (opened, orphan, partial_close,
+closed, vanished), `risk.limit_breach`; the rest arrive with the phases that produce them.
 
 `engine.state_changed`, `heartbeat`, `decision.created`, `intent.updated`, `trade.opened`, `trade.updated`
 (throttled 1/s), `trade.closed`, `rule.status_changed`, `audit.finished`, `command.updated`,
@@ -101,6 +105,10 @@ Overview, Positions and the kill switch.
    symbol list; risk limits (re-auth to raise).
 9. **System** — heartbeats per loop, error budgets, server-time offset, gateway queue depth, disk space,
    backup status, log tail.
+
+Phase 6 builds pages 1–4 and 6–9; the Learning Lab (5) arrives with Phase 7 (7.9), the calibration diagram with
+Phase 8 (8.5). Engine controls (START / RESUME / STOP / REARM, with re-auth where §2 requires it) are on the
+System page. Components are a few own Tailwind primitives (`components/ui.tsx`), not shadcn/ui.
 
 Frontend structure:
 

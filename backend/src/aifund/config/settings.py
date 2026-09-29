@@ -68,7 +68,11 @@ class Settings(BaseSettings):
 
     # --- API
     API_SECRET_KEY: SecretStr | None = None
-    ADMIN_PASSWORD_HASH: SecretStr | None = None
+    ADMIN_PASSWORD_HASH: SecretStr | None = None  # argon2: uv run python scripts/hash_password.py
+    API_COOKIE_SECURE: bool = True  # False only for plain-http local development
+    API_ALLOWED_ORIGINS: str = (
+        ""  # comma-separated dashboard origins for CORS (the API serves it: usually none)
+    )
 
     @field_validator("CONFIG_PATH")
     @classmethod

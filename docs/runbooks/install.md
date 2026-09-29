@@ -74,19 +74,28 @@ powershell -ExecutionPolicy Bypass -File C:\aifund\ai-hedge-fund\deploy\windows\
 |---|---|---|
 | `aifund-mt5` | `C:\aifund\mt5\terminal64.exe /portable` | at logon; restarted on failure every minute |
 | `aifund-engine` | `deploy\windows\run_engine.ps1`: waits for the terminal, runs `python -m aifund.engine`, restarts it with backoff 5 s → 5 min | at logon |
+| `aifund-api` | `deploy\windows\run_api.ps1`: `tailscale serve --bg 8000` (tailnet-only HTTPS) + uvicorn on `127.0.0.1:8000` serving the API and `frontend\dist` | at logon; restarted on failure every minute |
 | `aifund-backup` | `deploy\windows\backup.ps1` → `scripts\backup_db.py` (online backup, gzip, 30 daily + 12 monthly; set user variable `AIFUND_BACKUP_REMOTE=gdrive:aifund` to upload with rclone) | daily 21:30 UTC |
 
-The API task (`run_api.ps1`) is added with Phase 6.
+Before the API task can serve the dashboard (once, and after every frontend change):
+
+```powershell
+cd C:\aifund\ai-hedge-fund\backend; uv run python scripts/hash_password.py   # paste the printed ADMIN_PASSWORD_HASH=... line into .env
+cd ..\frontend; npm ci; npm run build
+```
+
+Enable HTTPS certificates for the tailnet once (Tailscale admin console → DNS → HTTPS Certificates). The
+dashboard is then `https://<machine>.<tailnet>.ts.net` from any device on the tailnet, and nowhere else.
 
 ## 5. First start
 
 ```powershell
-Start-ScheduledTask aifund-mt5; Start-ScheduledTask aifund-engine
+Start-ScheduledTask aifund-mt5; Start-ScheduledTask aifund-engine; Start-ScheduledTask aifund-api
 Get-Content C:\aifund\ai-hedge-fund\logs\run_engine.log -Wait
 ```
 
 The engine always starts **PAUSED** (Telegram: "Engine restarted"). Check `logs\engine.jsonl` for
-`engine.booted`, then resume it (until the dashboard exists, commands go through a script):
+`engine.booted`, then resume it from the dashboard (System → Resume) or with the script:
 
 ```powershell
 cd C:\aifund\ai-hedge-fund\backend
