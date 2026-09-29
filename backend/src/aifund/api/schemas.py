@@ -366,3 +366,105 @@ class ConfigVersionOut(Row):
     created_by: str
     comment: str | None
     created_at: datetime
+
+
+# ---------------------------------------------------------------- learning lab (Phase 7)
+
+
+class RuleOut(Row):
+    rule_id: str
+    version: int
+    status: str
+    origin: str
+    text: str = ""  # the rule in one line
+    action: dict[str, Any] = Field(default_factory=dict)
+    dsl: dict[str, Any]
+    hypothesis: str | None
+    evidence: dict[str, Any] | None
+    audit_run_id: str | None
+    approved_by: str | None
+    created_at: datetime
+    shadow_started_at: datetime | None
+    activated_at: datetime | None
+    review_at: datetime | None
+    expires_at: datetime | None
+    retired_at: datetime | None
+    retire_reason: str | None
+    awaiting_approval: bool = False
+
+
+class RuleMatch(BaseModel):
+    decision_id: str
+    symbol: str
+    bar_time: datetime
+    outcome: str
+    mode: str
+    matched: bool
+    r: Decimal | None  # its trade's R, else its virtual trade's
+
+
+class RuleDetail(BaseModel):
+    rule: RuleOut
+    versions: list[RuleOut]
+    matches: list[RuleMatch]
+
+
+class RuleIn(BaseModel):
+    """An operator-authored rule: it becomes a CANDIDATE and goes through the same validator."""
+
+    scope: dict[str, Any] = Field(default_factory=dict)
+    conditions: dict[str, Any]
+    action: dict[str, Any] = Field(default_factory=lambda: {"type": "penalty", "points": 10})
+    hypothesis: str = Field(min_length=10, max_length=1000)
+
+
+class RuleCreated(BaseModel):
+    rule_id: str
+    version: int
+    status: str
+
+
+class RulebookVersionOut(Row):
+    version: int
+    active_rules: list[str]
+    shadow_rules: list[str]
+    reason: str
+    created_at: datetime
+
+
+class RulebookDiff(BaseModel):
+    version: int
+    previous: int | None
+    activated: list[str]
+    deactivated: list[str]
+    shadowed: list[str]
+    unshadowed: list[str]
+    reason: str
+
+
+class AuditRunOut(Row):
+    id: str
+    trigger: str
+    status: str
+    window_from: datetime
+    window_to: datetime
+    n_trades: int
+    n_virtual: int
+    created_at: datetime
+    finished_at: datetime | None
+
+
+class AuditRunDetail(AuditRunOut):
+    miner_output: dict[str, Any] | None
+    candidates: list[Any] | None
+    validation: dict[str, Any] | None
+    lessons_md: str | None
+
+
+class FeatureOut(BaseModel):
+    name: str
+    dtype: str
+    unit: str
+    description: str
+    categories: list[str] | None
+    bounds: list[float] | None

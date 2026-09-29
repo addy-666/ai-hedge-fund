@@ -15,6 +15,7 @@ const Agents = page(() => import("./pages/Agents"), "Agents");
 const Analytics = page(() => import("./pages/Analytics"), "Analytics");
 const Decisions = page(() => import("./pages/Decisions"), "Decisions");
 const Journal = page(() => import("./pages/Journal"), "Journal");
+const LearningLab = page(() => import("./pages/LearningLab"), "LearningLab");
 const Overview = page(() => import("./pages/Overview"), "Overview");
 const Positions = page(() => import("./pages/Positions"), "Positions");
 const Settings = page(() => import("./pages/Settings"), "Settings");
@@ -31,6 +32,7 @@ function Authed() {
         <Route path="positions" element={<Positions />} />
         <Route path="decisions" element={<Decisions />} />
         <Route path="journal" element={<Journal />} />
+        <Route path="learning" element={<LearningLab />} />
         <Route path="analytics" element={<Analytics />} />
         <Route path="agents" element={<Agents />} />
         <Route path="settings" element={<Settings />} />

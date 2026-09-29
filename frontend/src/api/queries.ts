@@ -4,7 +4,8 @@ import { api } from "./client";
 import type {
   AccountOut, BreakdownRow, CommandOut, ConfigOut, ConfigSaved, ConfigVersionOut, Costs, DecisionDossier,
   DecisionOut, EquityPoint, LLMUsageRow, LogLine, Me, Page, PositionOut, Summary, SystemOut, TradeDossier,
-  TradeOut, VirtualTradeOut,
+  TradeOut, VirtualTradeOut, RuleOut, RuleDetail, RuleIn, RuleCreated, RulebookVersionOut, RulebookDiff,
+  AuditRunOut, AuditRunDetail, FeatureOut,
 } from "./types";
 
 export const useMe = () => useQuery({ queryKey: ["me"], queryFn: () => api.get<Me>("/api/me"), retry: false });
@@ -118,3 +119,41 @@ export const useCommandStatus = (id: string | null) =>
     enabled: id !== null,
     refetchInterval: (q) => (q.state.data && ["DONE", "FAILED"].includes(q.state.data.status) ? false : 1000),
   });
+
+// ---------------------------------------------------------------- learning lab (Phase 7)
+export const useRules = () =>
+  useQuery({ queryKey: ["rules"], queryFn: () => api.get<RuleOut[]>("/api/rules"), refetchInterval: 15_000 });
+export const useRule = (id: string | undefined) =>
+  useQuery({ queryKey: ["rule", id], queryFn: () => api.get<RuleDetail>(`/api/rules/${id}`), enabled: !!id });
+export const useRulebook = () =>
+  useQuery({ queryKey: ["rulebook"], queryFn: () => api.get<RulebookVersionOut[]>("/api/rulebook/versions") });
+export const useRulebookDiff = (v: number | undefined) =>
+  useQuery({
+    queryKey: ["rulebook-diff", v],
+    queryFn: () => api.get<RulebookDiff>(`/api/rulebook/versions/${v}/diff`),
+    enabled: v !== undefined,
+  });
+export const useAudits = () => useQuery({ queryKey: ["audits"], queryFn: () => api.get<AuditRunOut[]>("/api/audits") });
+export const useAudit = (id: string | undefined) =>
+  useQuery({ queryKey: ["audit", id], queryFn: () => api.get<AuditRunDetail>(`/api/audits/${id}`), enabled: !!id });
+export const useFeatures = () =>
+  useQuery({ queryKey: ["features"], queryFn: () => api.get<FeatureOut[]>("/api/features"), staleTime: Infinity });
+
+export function useRuleAction() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, action, force }: { id: string; action: "approve" | "reject" | "retire"; force?: boolean }) =>
+      api.post<{ command_id: string }>(`/api/rules/${id}/${action}${force ? "?force=true" : ""}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["rules"] }),
+  });
+}
+export function useRunAudit() {
+  return useMutation({ mutationFn: () => api.post<{ command_id: string }>("/api/audits/run") });
+}
+export function useCreateRule() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: RuleIn) => api.post<RuleCreated>("/api/rules", body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["rules"] }),
+  });
+}

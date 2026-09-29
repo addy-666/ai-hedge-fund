@@ -41,6 +41,7 @@ from aifund.domain.enums import Side
 from aifund.market.feature_registry import FEATURE_SET_VERSION
 from aifund.persistence.repositories.api import BarCacheRepository
 from aifund.persistence.repositories.dashboard import DashboardQueries
+from aifund.persistence.repositories.learning import RulebookRepository
 from aifund.persistence.tables import DecisionRow, TradeRow
 from aifund.risk.limits import trading_day_start
 
@@ -67,6 +68,7 @@ def system(request: Request, _s: Authenticated) -> SystemOut:
         ]
         latest = q.latest_config()
         spent = q.llm_spend(day)
+        rulebook = RulebookRepository(s, ctx.clock(request)).version()
     engine_beat = next((b for b in beats if b.component == "engine"), None)
     return SystemOut(
         now=now,
@@ -80,7 +82,7 @@ def system(request: Request, _s: Authenticated) -> SystemOut:
             config_sha256=latest.sha256 if latest else None,
             feature_set=FEATURE_SET_VERSION,
             prompts=sorted(released_templates()),
-            rulebook=engine.rulebook_version if engine else 0,
+            rulebook=rulebook,
         ),
     )
 

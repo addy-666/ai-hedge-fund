@@ -6,8 +6,9 @@ export type LiveEvent = { seq: number; ts: string; type: string; severity: strin
 
 const INVALIDATES: Record<string, string[][]> = {
   "engine.state": [["system"]],
-  "command.updated": [["system"], ["positions"]],
+  "command.updated": [["system"], ["positions"], ["rules"], ["audits"]],
   "risk.limit_breach": [["account"], ["system"]],
+  "rule.status_changed": [["rules"], ["rule"], ["rulebook"], ["system"]],
 };
 
 export function invalidationsFor(type: string): string[][] {

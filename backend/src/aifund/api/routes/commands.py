@@ -73,7 +73,7 @@ RISKIER_WHEN_TRUE = ("engine.allow_live", "strategy.analyst_orders")
 RISKIER_WHEN_FALSE = ("strategy.dry_run", "risk.news.enabled")
 
 
-def _enqueue(request: Request, type_: CommandType, payload: dict[str, Any] | None) -> str:
+def enqueue(request: Request, type_: CommandType, payload: dict[str, Any] | None) -> str:
     with ctx.tx(request) as s:
         command_id: str = (
             CommandRepository(s, ctx.clock(request)).enqueue(type_, payload, requested_by="operator").id
@@ -93,7 +93,7 @@ def engine_command(body: CommandIn, request: Request, session: Mutating) -> Comm
         require_reauth(request, session)
     if type_ is CommandType.REARM and _drawdown_halt(request):
         require_reauth(request, session)
-    return CommandAccepted(command_id=_enqueue(request, type_, body.payload))
+    return CommandAccepted(command_id=enqueue(request, type_, body.payload))
 
 
 def _drawdown_halt(request: Request) -> bool:
@@ -118,7 +118,7 @@ def close_position(request: Request, position_id: int, _s: Mutating) -> CommandA
         if DashboardQueries(s).trade_by_position(position_id) is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "no engine trade for that position")
     return CommandAccepted(
-        command_id=_enqueue(request, CommandType.CLOSE_POSITION, {"position_id": position_id})
+        command_id=enqueue(request, CommandType.CLOSE_POSITION, {"position_id": position_id})
     )
 
 
@@ -210,5 +210,5 @@ def put_config(body: ConfigIn, request: Request, session: Mutating) -> ConfigSav
             ip=client_ip(request),
         )
         version_id = version.id
-    command_id = _enqueue(request, CommandType.RELOAD_CONFIG, None) if changed else None
+    command_id = enqueue(request, CommandType.RELOAD_CONFIG, None) if changed else None
     return ConfigSaved(version_id=version_id, changed=changed, command_id=command_id)

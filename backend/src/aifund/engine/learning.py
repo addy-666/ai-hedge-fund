@@ -323,14 +323,7 @@ class Learning:
             )  # fmt: skip
             self._settle(s, row, v, changes, cited=cited)
             results.append(_validation_json(stored, v))
-        for row in repo.with_status(
-            RuleStatus.CANDIDATE
-        ):  # operator-authored rules waiting for the validator
-            v = self._validate(s, rule_of(row), samples)
-            final = rule_of(row).model_copy(update={"action": v.action})
-            repo.set_dsl(row.rule_id, row.version, dsl.dump(final), dsl.dsl_sha256(final))
-            self._settle(s, row, v, changes, cited=())
-            results.append(_validation_json(final, v))
+        results += self._validate_candidates(s, samples, changes)
         for rule_id in retire_suggestions:
             suggested = repo.get(rule_id)
             if suggested is not None and suggested.status is RuleStatus.ACTIVE:
@@ -338,6 +331,20 @@ class Learning:
         if changes.reasons:
             RulebookRepository(s, self._clock).record("; ".join(changes.reasons))
         return results, changes
+
+    def _validate_candidates(
+        self, s: Session, samples: Sequence[Sample], changes: _Changes
+    ) -> list[dict[str, Any]]:
+        """Operator-authored CANDIDATEs through the validator (which also sets their action)."""
+        repo = RuleRepository(s, self._clock)
+        results = []
+        for row in repo.with_status(RuleStatus.CANDIDATE):
+            v = self._validate(s, rule_of(row), samples)
+            final = rule_of(row).model_copy(update={"action": v.action})
+            repo.set_dsl(row.rule_id, row.version, dsl.dump(final), dsl.dsl_sha256(final))
+            self._settle(s, row, v, changes, cited=())
+            results.append(_validation_json(final, v))
+        return results
 
     def _settle(
         self, s: Session, row: RuleRow, v: Validation, changes: _Changes, *, cited: tuple[str, ...]
@@ -383,6 +390,7 @@ class Learning:
         repo = RuleRepository(s, self._clock)
         changes = _Changes()
         now = self._clock.now()
+        self._validate_candidates(s, samples, changes)  # operator-authored rules need not wait for an audit
         for row in repo.with_status(RuleStatus.SHADOW):
             ev = self._shadow_evidence(s, row)
             evidence = dict(row.evidence or {})
