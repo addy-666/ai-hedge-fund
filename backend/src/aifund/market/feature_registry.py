@@ -10,8 +10,9 @@ Changing what a feature means or adding one = bump FEATURE_SET_VERSION.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import StrEnum
 
 from aifund.domain.enums import Direction, EmaStack, Regime, Timeframe
@@ -24,6 +25,30 @@ class FeatureType(StrEnum):
     INT = "int"
     BOOL = "bool"
     CATEGORY = "category"
+
+
+class MirrorKind(StrEnum):
+    """How a feature's value transforms when the price series is reflected (price -> K - price, highs <->
+    lows): the SHORT side of a symmetric hypothesis is the LONG side on the reflected market (docs/09 §5).
+    Every kind is its own inverse."""
+
+    SAME = "same"  # direction-neutral (ATR rank, ADX, session)
+    NEGATE = "negate"  # value -> -value (signed distances, slopes)
+    COMPLEMENT = "complement"  # value -> 100 - value (0-100 oscillators: RSI, stochastics)
+    NOT = "not"  # bool -> not bool
+    CATEGORY = "category"  # BULL <-> BEAR, TREND_UP <-> TREND_DOWN; other categories unchanged
+
+
+CATEGORY_MIRROR = {"BULL": "BEAR", "BEAR": "BULL", "TREND_UP": "TREND_DOWN", "TREND_DOWN": "TREND_UP"}
+
+
+@dataclass(frozen=True)
+class Mirror:
+    """On the reflected market, ``partner`` (this feature when None) takes the value ``kind`` maps this
+    feature's value to. Partners are mutual: low_dist_ema50_atr <-> high_dist_ema50_atr (NEGATE)."""
+
+    kind: MirrorKind
+    partner: str | None = None
 
 
 class FeatureSource(StrEnum):
@@ -43,6 +68,13 @@ class FeatureSpec:
     categories: tuple[str, ...] | None = None
     available_at_entry: bool = True
     since_version: int = 1
+    mirror: Mirror | None = None  # None: no declared mirror (a "mirror" short side may not use it)
+
+    @property
+    def bounds(self) -> tuple[float, float] | None:
+        """Declared numeric range for bounded units ("0-100", "0-1"); thresholds must lie inside it."""
+        m = re.fullmatch(r"(\d+)-(\d+)", self.unit)
+        return (float(m.group(1)), float(m.group(2))) if m else None
 
 
 _F, _I, _B, _C = FeatureType.FLOAT, FeatureType.INT, FeatureType.BOOL, FeatureType.CATEGORY
@@ -95,6 +127,31 @@ _V2 = {
     "stoch_cross_up",
     "stoch_cross_down",
 }
+
+_M = Mirror
+_SAME, _NEG, _C100, _NOT, _CAT = (
+    _M(MirrorKind.SAME), _M(MirrorKind.NEGATE), _M(MirrorKind.COMPLEMENT), _M(MirrorKind.NOT),
+    _M(MirrorKind.CATEGORY),
+)  # fmt: skip
+TF_MIRRORS: dict[str, Mirror] = {  # base name -> mirror (partners are base names on the same timeframe)
+    "dist_ema20_atr": _NEG, "dist_ema50_atr": _NEG, "dist_ema200_atr": _NEG, "ema50_slope_atr": _NEG,
+    "ema_stack": _CAT, "adx14": _SAME, "close_above_ema200": _NOT, "rsi14": _C100, "rsi14_slope3": _NEG,
+    "macd_hist_z": _NEG, "atr14": _SAME, "atr14_pct_rank100": _SAME,
+    "bb_width_pct_rank100": _SAME,  # approximate: width / SMA depends on the price level (direction-neutral)
+    "range_to_atr": _SAME, "nr7": _SAME, "rel_tick_volume20": _SAME,
+    "dist_swing_high_atr": _M(MirrorKind.SAME, "dist_swing_low_atr"),
+    "dist_swing_low_atr": _M(MirrorKind.SAME, "dist_swing_high_atr"),
+    "bars_since_swing_break": _SAME, "body_to_range": _SAME,
+    "upper_wick_to_range": _M(MirrorKind.SAME, "lower_wick_to_range"),
+    "lower_wick_to_range": _M(MirrorKind.SAME, "upper_wick_to_range"),
+    "candle_dir": _CAT, "ema50_above_ema200": _NOT,
+    "low_dist_ema50_atr": _M(MirrorKind.NEGATE, "high_dist_ema50_atr"),
+    "high_dist_ema50_atr": _M(MirrorKind.NEGATE, "low_dist_ema50_atr"),
+    "stoch_k": _C100, "stoch_d": _C100,
+    "stoch_cross_up": _M(MirrorKind.SAME, "stoch_cross_down"),
+    "stoch_cross_down": _M(MirrorKind.SAME, "stoch_cross_up"),
+    # "close" has none: a price level does not reflect into anything meaningful
+}  # fmt: skip
 
 CTX_FEATURES: tuple[FeatureSpec, ...] = (
     FeatureSpec(
@@ -168,6 +225,14 @@ CTX_FEATURES: tuple[FeatureSpec, ...] = (
     FeatureSpec("ctx.drawdown_pct", _F, "%", "equity drawdown from peak", FeatureSource.PORTFOLIO),
 )
 
+_CTX_MIRRORS: dict[str, Mirror] = {  # full names; portfolio features are not snapshot features (no mirror)
+    "ctx.session": _SAME, "ctx.day_of_week": _SAME, "ctx.minutes_to_next_high_impact_news": _SAME,
+    "ctx.minutes_since_last_high_impact_news": _SAME, "ctx.spread_to_atr": _SAME, "ctx.regime": _CAT,
+    "ctx.htf_trend_score": _NEG, "ctx.dist_pdh_atr": _M(MirrorKind.SAME, "ctx.dist_pdl_atr"),
+    "ctx.dist_pdl_atr": _M(MirrorKind.SAME, "ctx.dist_pdh_atr"),
+}  # fmt: skip
+CTX_FEATURES = tuple(replace(s, mirror=_CTX_MIRRORS.get(s.name)) for s in CTX_FEATURES)
+
 PROP_FEATURES: tuple[FeatureSpec, ...] = (
     FeatureSpec(
         "prop.direction",
@@ -197,6 +262,12 @@ def tf_prefix(tf: Timeframe) -> str:
     return tf.value.lower()
 
 
+def _prefixed(mirror: Mirror | None, prefix: str) -> Mirror | None:
+    if mirror is None or mirror.partner is None:
+        return mirror
+    return Mirror(mirror.kind, f"{prefix}.{mirror.partner}")
+
+
 def tf_feature_specs(tf: Timeframe) -> tuple[FeatureSpec, ...]:
     p = tf_prefix(tf)
     return tuple(
@@ -208,6 +279,7 @@ def tf_feature_specs(tf: Timeframe) -> tuple[FeatureSpec, ...]:
             FeatureSource.BARS,
             cats,
             since_version=2 if base in _V2 else 1,
+            mirror=_prefixed(TF_MIRRORS.get(base), p),
         )
         for base, dtype, unit, desc, cats in TF_FEATURES
     )
@@ -225,6 +297,14 @@ _ALL = registry()
 def get(name: str) -> FeatureSpec:
     """Look up any registered feature (all timeframes). KeyError if it does not exist."""
     return _ALL[name]
+
+
+def mirror_of(name: str) -> tuple[str, MirrorKind] | None:
+    """(feature whose value mirrors ``name`` on the reflected market, how it transforms), or None."""
+    spec = _ALL.get(name)
+    if spec is None or spec.mirror is None:
+        return None
+    return (spec.mirror.partner or name, spec.mirror.kind)
 
 
 def is_rule_usable(name: str) -> bool:

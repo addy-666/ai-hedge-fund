@@ -127,6 +127,24 @@ condition grammar with the learned-rule DSL (`04` §5: `all`/`any`, the same ops
 value, `ema50_above_ema200` → negation, `dist_*_atr` → sign flip); a feature without a declared mirror makes
 `"mirror"` invalid (write the short side explicitly). A missing feature value → no signal.
 
+Implementation notes (R.5):
+
+- The grammar lives in `market/conditions.py` (validation, pure evaluation, canonical form + SHA-256,
+  mirroring): `rules` and `strategies` are independent layers and may not import each other, so both use it
+  from `market`. Mirrors are declared per feature in `market/feature_registry.py` (`Mirror`: SAME, NEGATE,
+  COMPLEMENT (100 − v), NOT, CATEGORY (BULL↔BEAR, TREND_UP↔TREND_DOWN), optionally with a partner feature:
+  `low_dist_ema50_atr` ↔ −`high_dist_ema50_atr`, `stoch_cross_up` ↔ `stoch_cross_down`, the wicks, the swing
+  distances, PDH/PDL). A test checks every declared mirror against snapshots built on the price-reflected
+  market; the only approximate one is `bb_width_pct_rank100` (width / SMA depends on the price level).
+- Entry hypotheses may use bar and context features only (not portfolio or proposal fields) and no raw price
+  levels (`close`, `atr14`): hypotheses must transfer between symbols and years. At most 6 predicates a side;
+  every timeframe referenced must be in the profile.
+- Levels are prices: invalidation = trigger close ∓ k·ATR, target = close ± rr·k·ATR; the live stop planner
+  measures them from the real entry, adds its buffer and the spread, and clamps them — so the realised stop is
+  slightly wider than k·ATR and the realised RR slightly below `rr`, as it would be live.
+- `params_sha256` hashes the behaviour (setup tag, both resolved sides, levels), not the prose: a `"mirror"`
+  and the same short side written out hash the same.
+
 ## 6. LLM researcher — `agents/researcher.py`, loop in `research/loop.py`
 
 The LLM's job in research is **hypothesis generation**, not judgement:
