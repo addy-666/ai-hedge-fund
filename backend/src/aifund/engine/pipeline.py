@@ -14,7 +14,7 @@ from __future__ import annotations
 import asyncio
 import time
 from collections import defaultdict
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from decimal import Decimal
@@ -24,16 +24,24 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from aifund.agents.analyst import Analyst, AnalystInput, Verdict
 from aifund.agents.portfolio_manager import PortfolioManager
+from aifund.config.evidence import (
+    Deployment,
+    EvidenceRecord,
+    GLlmSignoff,
+    profile_key,
+    require_evidence,
+    require_g_llm,
+)
 from aifund.config.trading_config import ProfileConfig, SymbolConfig, TradingConfig
 from aifund.domain.decision import FeatureSnapshot, FinalDecision, SetupCandidate
 from aifund.domain.enums import (
-    CloseReason,
     DealEntry,
     DecisionOutcome,
     Direction,
     IntentKind,
     IntentStatus,
     ReasonCode,
+    VirtualArm,
 )
 from aifund.domain.ids import new_id
 from aifund.domain.market import Position, SymbolSpec, Tick
@@ -52,6 +60,7 @@ from aifund.persistence.repositories.market import FeatureSnapshotRepository
 from aifund.persistence.repositories.virtual import VirtualTradeRepository
 from aifund.ports.broker import BrokerError, BrokerPort, MarketDataPort
 from aifund.ports.system import ClockPort
+from aifund.reconcile.virtual import virtual_expiry
 from aifund.risk.guards import GuardAction, GuardContext
 from aifund.risk.limits import Exposure, check_loss_limits, drawdown_pct
 from aifund.risk.manager import RiskManager, RiskRequest
@@ -87,10 +96,8 @@ class DecisionRecord:
     cost_usd: Decimal | None = None
     prompt_version: str | None = None
     virtual: dict[str, Any] | None = None  # a blocked signal's counterfactual trade plan (docs/03 §14.4)
+    shadows: list[dict[str, Any]] = field(default_factory=list)  # G-LLM shadow plans (docs/09 §7)
     decision_id: str = field(default_factory=new_id)
-
-
-MAX_VIRTUAL_BARS = 96  # expiry for virtual trades when no time stop is configured
 
 
 @dataclass(frozen=True)
@@ -129,12 +136,27 @@ class DecisionPipeline:
         profile_override: dict[str, ProfileConfig] | None = None,
         analyst: Analyst | None = None,
         portfolio: PortfolioManager | None = None,
+        evidence: Sequence[EvidenceRecord] = (),
+        g_llm: Sequence[GLlmSignoff] = (),
     ) -> None:
         if cfg.strategy.analyst_enabled and analyst is None and not cfg.strategy.baseline_enabled:
             raise ValueError(
                 "strategy.analyst_enabled needs an Analyst (an LLM); or enable the baseline instead"
             )
         self._cfg = cfg
+        self._profiles = {**cfg.profiles, **(profile_override or {})}
+        # gate E1 (docs/09 §7): outside SIM every detector needs matching, passing research evidence
+        require_evidence(
+            self._deployments(detectors), evidence, mode=cfg.engine.mode, dry_run=cfg.strategy.dry_run
+        )
+        # G-LLM (docs/09 §7): outside SIM the analyst's decisions reach the Risk Manager only after sign-off
+        require_g_llm(
+            g_llm,
+            prompt_version=f"analyst_v{cfg.strategy.analyst_prompt_version}",
+            model=cfg.llm.analyst_model,
+            mode=cfg.engine.mode,
+            analyst_orders=cfg.strategy.analyst_orders and not cfg.strategy.dry_run,
+        )
         self._analyst = analyst if cfg.strategy.analyst_enabled else None
         self._portfolio = portfolio or PortfolioManager(max_total_penalty=cfg.learning.max_total_penalty)
         self._sessions = calendars(cfg.sessions)
@@ -149,7 +171,6 @@ class DecisionPipeline:
         self._account = account_id
         self._version = strategy_version
         self._enabled = trading_enabled
-        self._profiles = {**cfg.profiles, **(profile_override or {})}
         self._locks: defaultdict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
         self._flip_flop_until: dict[str, datetime] = {}
         self._by_broker = {s.broker: s for s in cfg.symbols}
@@ -162,6 +183,16 @@ class DecisionPipeline:
 
     async def _tx(self, fn: Callable[[Session], Any]) -> Any:
         return await asyncio.to_thread(self._tx_sync, fn)
+
+    def _deployments(
+        self, detectors: Callable[[SymbolConfig, TfRoles], list[SetupDetector]]
+    ) -> list[Deployment]:
+        out = []
+        for sym in self._cfg.symbols:
+            roles = self.roles(sym)
+            profile = profile_key(roles.trigger, roles.setup, roles.context)
+            out += [Deployment(d, sym.broker, profile) for d in detectors(sym, roles)]
+        return out
 
     def roles(self, symbol_cfg: SymbolConfig) -> TfRoles:
         profile = self._profiles[symbol_cfg.profile]
@@ -217,19 +248,18 @@ class DecisionPipeline:
         stops = self._risk.counterfactual_stops(b.decision, b.tick, atr, b.spec) if atr else None
         if stops is None:
             return None
-        tf = timedelta(minutes=b.roles.trigger.minutes)
-        entry_time = b.event.bar_time + tf  # the next trigger bar opens as this one closes
-        pm = self._cfg.position_management
-        expires_at = entry_time + tf * (pm.time_stop_bars or MAX_VIRTUAL_BARS)
-        reason = CloseReason.TIME_STOP
+        entry_time = b.event.bar_time + timedelta(minutes=b.roles.trigger.minutes)  # the next bar's open
         session = self._sessions.get(b.sym_cfg.session) if b.sym_cfg.session else None
-        if not b.sym_cfg.trade_weekends and session is not None and pm.flatten_before_close_minutes:
-            long_close = session.next_long_close(entry_time, timedelta(hours=pm.long_close_hours))
-            flatten_at = long_close - timedelta(minutes=pm.flatten_before_close_minutes)
-            if flatten_at <= entry_time:
-                return None  # a real trade would have been flattened at once
-            if flatten_at < expires_at:
-                expires_at, reason = flatten_at, CloseReason.FLATTEN
+        expiry = virtual_expiry(
+            entry_time,
+            b.roles.trigger,
+            self._cfg.position_management,
+            session,
+            trade_weekends=b.sym_cfg.trade_weekends,
+        )
+        if expiry is None:
+            return None  # a real trade would have been flattened at once
+        expires_at, reason = expiry
         return dict(
             side=b.decision.direction.to_side(),
             setup_tag=b.decision.setup_tag,
@@ -239,6 +269,37 @@ class DecisionPipeline:
             expires_at=expires_at,
             expire_reason=reason,
         )
+
+    def _baseline(
+        self, decision_id: str, symbol: str, candidates: list[SetupCandidate]
+    ) -> tuple[FinalDecision, dict[str, Any]]:
+        """The deterministic baseline: the strongest candidate at a fixed confidence (Phase 2)."""
+        best = max(candidates, key=lambda c: c.strength)
+        proposal = {
+            "direction": best.direction_hint.value,
+            "setup_tag": best.setup_tag,
+            "confidence": BASELINE_CONFIDENCE,
+            "source": "baseline",
+        }
+        decision = FinalDecision(
+            decision_id=decision_id,
+            symbol=symbol,
+            direction=best.direction_hint,
+            setup_tag=best.setup_tag,
+            llm_confidence=BASELINE_CONFIDENCE,
+            calibrated_confidence=BASELINE_CONFIDENCE,
+            penalty_points=0,
+            final_confidence=BASELINE_CONFIDENCE,
+            risk_factor=Decimal(1),
+            invalidation_price=best.key_levels.get("invalidation"),
+            target_price=best.key_levels.get("target"),
+        )
+        return decision, proposal
+
+    def _shadow(self, record: DecisionRecord, arm: VirtualArm, b: _Blocked) -> None:
+        plan = self._virtual_plan(b)
+        if plan is not None:
+            record.shadows.append({**plan, "arm": arm})
 
     def _stop_atr(self, snapshot: FeatureSnapshot, roles: TfRoles) -> Decimal | None:
         """ATR on the configured stops timeframe, as the Risk Manager receives it."""
@@ -336,7 +397,12 @@ class DecisionPipeline:
 
         # 4. decision: the LLM analyst + portfolio manager, or the deterministic baseline
         record.stage = "DECISION"
-        if self._analyst is not None:
+        baseline, baseline_proposal = self._baseline(record.decision_id, event.symbol, candidates)
+        verdict = None
+        if self._analyst is None:
+            record.confidence, record.prompt_version = BASELINE_CONFIDENCE, self._version
+            record.proposal, decision = baseline_proposal, baseline
+        else:
             position = next((p for p in own if p.symbol == event.symbol), None)
             portfolio = (
                 f"{len(own)} open positions, equity {account.equity}, "
@@ -354,45 +420,51 @@ class DecisionPipeline:
             record.model, record.cost_usd, record.prompt_version = (
                 analysis.model, analysis.cost_usd, analysis.prompt_version,
             )  # fmt: skip
-            record.proposal = {**(analysis.raw or {}), "source": "analyst", "notes": analysis.notes}
-            if analysis.proposal is not None:
-                record.confidence = analysis.proposal.confidence
-            if analysis.verdict is Verdict.INVALID:
-                self._end(record, DecisionOutcome.INVALID, analysis.reason, analysis.detail)
-            if analysis.verdict is Verdict.HOLD or analysis.proposal is None:
-                self._end(record, DecisionOutcome.HOLD, analysis.reason, analysis.detail)
-            verdict = self._portfolio.decide(
-                decision_id=record.decision_id,
-                symbol=event.symbol,
-                proposal=analysis.proposal,
-                snapshot=snapshot,
+            analyst_proposal = {
+                **(analysis.raw or {}), "source": "analyst", "verdict": analysis.verdict.value,
+                "prompt_version": analysis.prompt_version, "notes": analysis.notes,
+            }  # fmt: skip
+            if analysis.verdict is Verdict.PROPOSAL and analysis.proposal is not None:
+                verdict = self._portfolio.decide(
+                    decision_id=record.decision_id,
+                    symbol=event.symbol,
+                    proposal=analysis.proposal,
+                    snapshot=snapshot,
+                )
+            # G-LLM shadows (docs/09 §7): both decisions become virtual trades on this bar, whatever is sent
+            self._shadow(
+                record,
+                VirtualArm.SHADOW_BASELINE,
+                _Blocked(event, sym_cfg, roles, spec, tick, snapshot, baseline),
             )
-            decision = verdict.decision
-            record.rules_matched = list(verdict.rules_matched)
-        else:
-            best = max(candidates, key=lambda c: c.strength)
-            record.confidence = BASELINE_CONFIDENCE
-            record.prompt_version = self._version
-            record.proposal = {
-                "direction": best.direction_hint.value,
-                "setup_tag": best.setup_tag,
-                "confidence": BASELINE_CONFIDENCE,
-                "source": "baseline",
-            }
-            decision = FinalDecision(
-                decision_id=record.decision_id,
-                symbol=event.symbol,
-                direction=best.direction_hint,
-                setup_tag=best.setup_tag,
-                llm_confidence=BASELINE_CONFIDENCE,
-                calibrated_confidence=BASELINE_CONFIDENCE,
-                penalty_points=0,
-                final_confidence=BASELINE_CONFIDENCE,
-                risk_factor=Decimal(1),
-                invalidation_price=best.key_levels.get("invalidation"),
-                target_price=best.key_levels.get("target"),
-            )
-            verdict = None
+            if (
+                verdict is not None
+                and verdict.blocked_by is None
+                and verdict.decision.final_confidence >= self._cfg.risk.confidence_threshold
+            ):
+                analyst_arm = _Blocked(event, sym_cfg, roles, spec, tick, snapshot, verdict.decision)
+                self._shadow(record, VirtualArm.SHADOW_ANALYST, analyst_arm)
+
+            if self._cfg.strategy.analyst_orders:  # G-LLM signed off (or SIM): the analyst decides
+                record.proposal = analyst_proposal
+                if analysis.proposal is not None:
+                    record.confidence = analysis.proposal.confidence
+                if analysis.verdict is Verdict.INVALID:
+                    self._end(record, DecisionOutcome.INVALID, analysis.reason, analysis.detail)
+                if verdict is None:
+                    self._end(record, DecisionOutcome.HOLD, analysis.reason, analysis.detail)
+                decision = verdict.decision
+                record.rules_matched = list(verdict.rules_matched)
+            elif self._cfg.strategy.baseline_enabled:  # analyst in shadow, the baseline trades
+                record.proposal = {**baseline_proposal, "shadow_analyst": analyst_proposal}
+                record.confidence, record.prompt_version = BASELINE_CONFIDENCE, self._version
+                decision, verdict = baseline, None
+            else:  # analyst in shadow and nothing else trades
+                record.proposal = analyst_proposal
+                if analysis.proposal is not None:
+                    record.confidence = analysis.proposal.confidence
+                detail = f"analyst {analysis.verdict.value} in shadow (strategy.analyst_orders off: no G-LLM)"
+                self._end(record, DecisionOutcome.SHADOW, analysis.reason, detail)
         record.calibrated_confidence = decision.calibrated_confidence
         record.penalty_points = decision.penalty_points
         record.final_confidence = decision.final_confidence
@@ -570,13 +642,14 @@ class DecisionPipeline:
                 risk_calc=record.risk_calc,
                 latency_ms=latency_ms,
             )
-            if record.virtual is not None:
+            planned = [{**record.virtual, "arm": VirtualArm.BLOCKED}] if record.virtual is not None else []
+            for plan in planned + record.shadows:
                 VirtualTradeRepository(s, self._clock).add_pending(
                     account_id=self._account,
                     decision_id=record.decision_id,
                     snapshot_id=record.snapshot_id,
                     symbol=record.symbol,
-                    **record.virtual,
+                    **plan,
                 )
 
         await self._tx(_write)

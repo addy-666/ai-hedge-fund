@@ -17,6 +17,7 @@ should read `AGENTS.md` (repo root) first, then the docs relevant to the phase i
 | 06 | `06_OPERATIONS_AND_SECURITY.md` | Windows VPS, process supervision, alerts, backups, runbooks, rollout ladder | Phases 5, 9 |
 | 07 | `07_ROADMAP.md` | Phased task list with acceptance criteria and go-live gates | Always |
 | 08 | `08_PROTOTYPE_AUDIT.md` | Defects in the current prototype and where the new design fixes each | Phase 0 |
+| 09 | `09_RESEARCH.md` | Signal studies, walk-forward, trial ledger, LLM researcher, evidence gates E1/E2/G-LLM | Phase R, before enabling any strategy outside SIM |
 
 ---
 
@@ -57,6 +58,8 @@ should read `AGENTS.md` (repo root) first, then the docs relevant to the phase i
 | Orchestration framework | Plain asyncio + explicit pipeline; **no LangChain/LangGraph** | Auditable, debuggable, fewer dependency breaks |
 | Access | Dashboard reachable only over Tailscale, with login | A public trading control panel is an account-takeover risk |
 | Independent safety net | MQL5 "Guardian EA" in the terminal enforcing hard equity limits | Protects the account even if Python is dead |
+| When a strategy may trade | Only after evidence gates: E1 research-validated (walk-forward + whole-ledger FDR + single-use holdout), E2 forward-confirmed; the analyst only after G-LLM (paired uplift over the baseline net of cost) | Safety ≠ edge; the gates make the absence of an edge visible before money is at risk (ADR 0001) |
+| What LLMs do in research | Generate hypotheses in a machine-evaluable DSL; statistics decide; holdout results never reach the LLM | LLMs are good at proposing ideas and bad at judging their own; replaying history to an LLM measures memory |
 
 ---
 

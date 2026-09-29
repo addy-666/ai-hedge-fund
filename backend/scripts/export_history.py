@@ -1,9 +1,16 @@
 """Export bar history from MT5 to Parquet for replay on any machine (roadmap task 1.2). READ-ONLY.
 
     cd backend
-    uv run python scripts/export_history.py                       # 6 months, M1..D1, all configured symbols
+    uv run python scripts/export_history.py                       # 24 months, M1..D1, all configured symbols
     uv run python scripts/export_history.py --months 12 --timeframes M15,H1,H4,D1
+    uv run python scripts/export_history.py --from 2024-01-01 --to 2024-07-01 --timeframes M1,M5 --merge
+                                                                  # a date range added to the existing export
     uv run python scripts/export_history.py --server-offset-hours 3   # weekends: no live tick to detect it
+
+BEFORE a long export set MT5 Tools > Options > Charts > "Max bars in chart" to Unlimited and restart the
+terminal: every copy_rates_* call is capped at that number per symbol and timeframe (the default 100,000 is
+~70 days of M1). A capped timeframe is warned about and listed under "capped" in manifest.json.
+Then check the export: uv run python scripts/data_quality.py
 
 Writes <repo>/data/history/ (git-ignored): <SYMBOL>/<TF>.parquet, specs.json, manifest.json.
 Copy that folder to the Mac (same path under the repo) to replay real data there.
@@ -31,7 +38,14 @@ DEFAULT_TFS = "M1,M5,M15,H1,H4,D1"
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--months", type=int, default=6, help="how far back to export (default 6)")
+    p.add_argument("--months", type=int, default=24, help="how far back to export (default 24)")
+    p.add_argument(
+        "--from", dest="date_from", default=None, help="start date YYYY-MM-DD (UTC), instead of --months"
+    )
+    p.add_argument(
+        "--to", dest="date_to", default=None, help="end date YYYY-MM-DD (UTC, exclusive; default now)"
+    )
+    p.add_argument("--merge", action="store_true", help="add to the existing export instead of replacing it")
     p.add_argument("--timeframes", default=DEFAULT_TFS, help=f"comma-separated (default {DEFAULT_TFS})")
     p.add_argument(
         "--symbols", default="", help="comma-separated broker symbols (default: from trading.yaml)"
@@ -39,6 +53,10 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     p.add_argument("--out", default=str(PROJECT_ROOT / "data" / "history"), help="output folder")
     p.add_argument("--server-offset-hours", type=float, default=None, help="use when markets are closed")
     return p.parse_args(argv)
+
+
+def _date(text: str) -> datetime:
+    return datetime.strptime(text, "%Y-%m-%d").replace(tzinfo=UTC)
 
 
 async def main(argv: list[str]) -> int:
@@ -84,13 +102,16 @@ async def main(argv: list[str]) -> int:
                 return 2
             print(f"server time = UTC{offset / timedelta(hours=1):+.2f}h")
         now = datetime.now(UTC)
-        start = now - timedelta(days=30 * args.months)
+        start = _date(args.date_from) if args.date_from else now - timedelta(days=30 * args.months)
+        end = _date(args.date_to) if args.date_to else None
         result = await export_history(
             gw,
             symbols=symbols,
             timeframes=timeframes,
             start=start,
             now=now,
+            end=end,
+            merge=args.merge,
             root=Path(args.out),
             progress=print,
         )

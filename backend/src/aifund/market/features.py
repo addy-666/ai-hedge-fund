@@ -16,6 +16,7 @@ database or a prompt.
 from __future__ import annotations
 
 import math
+from collections.abc import MutableMapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from itertools import pairwise
@@ -191,7 +192,11 @@ def build_snapshot(
     min_bars: int = 300,
     max_gap: timedelta = timedelta(days=5),
     stale_after: timedelta | None = None,
+    tf_cache: MutableMapping[tuple[Timeframe, datetime, int], dict[str, FeatureValue]] | None = None,
 ) -> FeatureSnapshot:
+    """``tf_cache`` (optional, ONE cache per symbol) reuses a timeframe's features while its window of bars is
+    unchanged — keyed by the window's last bar time and length, so values are identical to a fresh build.
+    Research uses it: the setup/context timeframes change only once per their own bar."""
     timeframes = [trigger_tf, setup_tf, *context_tfs]
     for tf in timeframes:
         if tf not in bars:
@@ -207,7 +212,11 @@ def build_snapshot(
     features: dict[str, FeatureValue] = {}
     per_tf: dict[Timeframe, dict[str, FeatureValue]] = {}
     for tf in timeframes:
-        per_tf[tf] = tf_features(bars[tf])
+        key = (tf, bars[tf][-1].time, len(bars[tf]))
+        cached = tf_cache.get(key) if tf_cache is not None else None
+        per_tf[tf] = cached if cached is not None else tf_features(bars[tf])
+        if tf_cache is not None:
+            tf_cache[key] = per_tf[tf]
         prefix = tf_prefix(tf)
         features.update({f"{prefix}.{k}": v for k, v in per_tf[tf].items()})
 

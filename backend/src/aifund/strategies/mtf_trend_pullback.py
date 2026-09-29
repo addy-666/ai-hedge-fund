@@ -24,11 +24,12 @@ measures them on real data.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 
 from aifund.domain.decision import FeatureSnapshot, SetupCandidate
 from aifund.domain.enums import Direction
 from aifund.domain.values import to_decimal
+from aifund.market.conditions import sha256
 from aifund.strategies.base import TfRoles, feature, num
 
 SETUP_TAG = "mtf_trend_pullback"
@@ -54,6 +55,10 @@ class MtfTrendPullback:
     def __init__(self, roles: TfRoles, params: PullbackParams | None = None) -> None:
         self.roles = roles
         self.params = params or PullbackParams()
+
+    def params_sha256(self) -> str:
+        """Fingerprint of the parameters, matched against evidence records (gate E1, docs/09 §7)."""
+        return sha256(asdict(self.params))
 
     def detect(self, snapshot: FeatureSnapshot) -> list[SetupCandidate]:
         out = []

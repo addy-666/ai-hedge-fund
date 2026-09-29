@@ -33,8 +33,9 @@ from aifund.engine.replay import ReplayReport, run_replay
 from aifund.execution.executor import Executor
 from aifund.market.bar_clock import BarClock
 from aifund.persistence.repositories.cursors import DecisionCursorStore
-from aifund.persistence.tables import DecisionRow, LLMCallRow, OrderIntentRow
-from aifund.ports.llm import LLMRequest
+from aifund.persistence.repositories.virtual import VirtualTradeRepository
+from aifund.persistence.tables import DecisionRow, LLMCallRow, OrderIntentRow, VirtualTradeRow
+from aifund.ports.llm import LLMError, LLMRequest
 from aifund.reconcile.enrichment import Enricher
 from aifund.reconcile.reconciler import Reconciler
 from aifund.reconcile.virtual import VirtualTracker
@@ -197,9 +198,10 @@ async def test_analyst_replay_with_a_fake_llm(
     factory: sessionmaker[Session],
     clock: FakeClock,
 ) -> None:
-    """The full stack with the analyst deciding (roadmap 4.6); every LLM call recorded with its decision."""
+    """The full stack with the analyst deciding (roadmap 4.6); every LLM call recorded with its decision.
+    ``analyst_orders`` lets its decisions reach the Risk Manager (SIM needs no G-LLM sign-off)."""
     llm = FakeLLM([echo_candidate], factory=factory, clock=clock)
-    report = await replay(market, factory, strategy=StrategyConfig(), llm=llm, days=1)
+    report = await replay(market, factory, strategy=StrategyConfig(analyst_orders=True), llm=llm, days=1)
     print(report.render())
     assert report.violations == []
     assert report.outcomes[DecisionOutcome.ORDERED.value] >= 2
@@ -218,7 +220,8 @@ async def test_dry_run_decides_but_sends_nothing(
     clock: FakeClock,
 ) -> None:
     llm = FakeLLM([echo_candidate], factory=factory, clock=clock)
-    report = await replay(market, factory, strategy=StrategyConfig(dry_run=True), llm=llm, days=1)
+    strategy = StrategyConfig(dry_run=True, analyst_orders=True)
+    report = await replay(market, factory, strategy=strategy, llm=llm, days=1)
     assert report.violations == []
     assert report.outcomes[DecisionOutcome.DRY_RUN.value] >= 2
     assert report.fills == 0
@@ -227,3 +230,97 @@ async def test_dry_run_decides_but_sends_nothing(
         dry = s.scalars(select(DecisionRow).where(DecisionRow.outcome == DecisionOutcome.DRY_RUN)).all()
     assert all(d.reason_detail and d.reason_detail.startswith("would send OPEN") for d in dry)
     assert all(d.risk_calc and "sl" in d.risk_calc for d in dry)  # fully risk-checked and sized
+
+
+def shadow_rows(
+    factory: sessionmaker[Session],
+) -> tuple[list[DecisionRow], dict[str, dict[str, VirtualTradeRow]]]:
+    with factory() as s:
+        decided = s.scalars(select(DecisionRow).where(DecisionRow.setups.is_not(None))).all()
+        analysed = [d for d in decided if d.outcome not in (DecisionOutcome.SKIPPED, DecisionOutcome.ERROR)]
+        arms: dict[str, dict[str, VirtualTradeRow]] = {}
+        for v in s.scalars(select(VirtualTradeRow)).all():
+            arms.setdefault(v.decision_id, {})[v.arm.value] = v
+    return list(analysed), arms
+
+
+async def test_before_g_llm_the_analyst_decides_in_shadow_and_nothing_is_sent(
+    market: dict,  # type: ignore[type-arg]
+    factory: sessionmaker[Session],
+    clock: FakeClock,
+) -> None:
+    """Roadmap R.9: without analyst_orders (no G-LLM sign-off) and no baseline, the analyst's decisions
+    never reach the Risk Manager; every bar it decided gets a baseline shadow and, for a proposal, an
+    analyst one."""
+    llm = FakeLLM([echo_candidate], factory=factory, clock=clock)
+    report = await replay(market, factory, strategy=StrategyConfig(), llm=llm, days=1)
+    assert report.violations == []
+    assert report.outcomes[DecisionOutcome.SHADOW.value] >= 12
+    assert DecisionOutcome.ORDERED.value not in report.outcomes
+    assert report.fills == 0
+    with factory() as s:
+        assert s.scalars(select(OrderIntentRow)).all() == []
+    analysed, arms = shadow_rows(factory)
+    assert len(analysed) >= 12
+    for d in analysed:  # both shadows on every candidate bar (the echo analyst always proposes)
+        assert set(arms[d.id]) == {"SHADOW_BASELINE", "SHADOW_ANALYST"}, d.id
+    assert report.virtual_arms is not None
+    assert report.virtual_arms["SHADOW_BASELINE"] == report.virtual_arms["SHADOW_ANALYST"] == len(analysed)
+    with factory() as s:
+        pairs = VirtualTradeRepository(s, clock).shadow_pairs("acc")
+    assert pairs  # finished pairs; the echo analyst takes the baseline's trade with the same stops
+    assert all(p.analyst_r == p.baseline_r for p in pairs)
+
+
+async def test_in_shadow_the_baseline_trades_and_the_analyst_is_recorded(
+    market: dict,  # type: ignore[type-arg]
+    factory: sessionmaker[Session],
+    clock: FakeClock,
+) -> None:
+    llm = FakeLLM([echo_candidate], factory=factory, clock=clock)
+    strategy = StrategyConfig(baseline_enabled=True)  # analyst on, analyst_orders off
+    report = await replay(market, factory, strategy=strategy, llm=llm, days=1)
+    assert report.violations == []
+    assert report.outcomes[DecisionOutcome.ORDERED.value] >= 2
+    analysed, arms = shadow_rows(factory)
+    assert analysed
+    assert all(d.prompt_version == "baseline_v1" for d in analysed)  # the baseline decided the order
+    assert all((d.proposal or {})["shadow_analyst"]["verdict"] == "PROPOSAL" for d in analysed)
+    assert all("SHADOW_BASELINE" in arms[d.id] for d in analysed)
+
+
+def hold(request: LLMRequest) -> dict[str, Any]:
+    return {**echo_candidate(request), "direction": "NONE", "setup_tag": "none"}
+
+
+@pytest.mark.parametrize(
+    ("script", "strategy", "outcome", "reason"),
+    [
+        ([hold], StrategyConfig(), DecisionOutcome.SHADOW, ReasonCode.ANALYST_HOLD),
+        ([hold], StrategyConfig(analyst_orders=True), DecisionOutcome.HOLD, ReasonCode.ANALYST_HOLD),
+        (
+            [LLMError("HTTP 503")],
+            StrategyConfig(analyst_orders=True),
+            DecisionOutcome.INVALID,
+            ReasonCode.LLM_ERROR,
+        ),
+    ],
+)
+async def test_an_analyst_that_does_not_trade_gets_no_shadow_of_its_own(
+    market: dict,  # type: ignore[type-arg]
+    factory: sessionmaker[Session],
+    clock: FakeClock,
+    script: list[Any],
+    strategy: StrategyConfig,
+    outcome: DecisionOutcome,
+    reason: ReasonCode,
+) -> None:
+    llm = FakeLLM(script, factory=factory, clock=clock)
+    report = await replay(market, factory, strategy=strategy, llm=llm, days=1)
+    assert report.violations == []
+    assert report.outcomes[outcome.value] >= 12
+    assert report.reasons[reason.value] >= 12
+    assert report.fills == 0
+    analysed, arms = shadow_rows(factory)
+    assert analysed
+    assert all(set(arms[d.id]) == {"SHADOW_BASELINE"} for d in analysed)  # the baseline's shadow only

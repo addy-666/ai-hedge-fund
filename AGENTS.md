@@ -9,7 +9,7 @@ fully before every task, then `docs/00_INDEX.md` and the docs referenced by your
 2. Before coding: list files to create/modify and any spec ambiguity. If the spec is wrong or ambiguous, stop and
    ask, or propose a spec edit in the same change — never silently diverge.
 3. Tests first for money-path code (`risk/`, `execution/`, `reconcile/`, `rules/engine.py`).
-4. Finish with: all tests green, `ruff check`, `ruff format --check`, `mypy`, `lint-imports` clean. Update
+4. Finish with: all tests green, the coverage gate, `ruff check`, `ruff format --check`, `mypy`, `lint-imports` clean. Update
    `docs/PROGRESS.md` (what was built, deviations, follow-ups).
 5. Never edit files in `legacy/` (reference only) or anything in the TRADING BRAIN vault's `raw/` folder.
 
@@ -21,12 +21,19 @@ Working now (verified at the end of Phase 0; Python 3.12 via uv):
 cd backend && uv sync --python 3.12                # install incl. dev tools (macOS: no MT5 extra needed)
 cd backend && uv sync --python 3.12 --extra mt5    # Windows VPS only: adds the MetaTrader5 wheel
 cd backend && uv run pytest -q
+cd backend && uv run pytest -q --cov --cov-report=json && uv run python scripts/coverage_gate.py   # CI gate: money path 100%
 cd backend && uv run ruff check . && uv run ruff format --check . && uv run mypy && uv run lint-imports
 cd backend && uv run alembic upgrade head          # DATABASE_URL, default <repo>/data/aifund.db
 cd backend && uv run alembic revision --autogenerate -m "<change>"   # then review the generated file
 cd backend && uv run python scripts/mt5_smoke.py   # Windows + MT5 terminal only: READ-ONLY checks on a demo account
-cd backend && uv run python scripts/export_history.py --months 15  # Windows: bars -> <repo>/data/history (Parquet)
+cd backend && uv run python scripts/export_history.py --months 24  # Windows: bars -> <repo>/data/history (Parquet); set MT5 "Max bars in chart" = Unlimited first
+cd backend && uv run python scripts/export_history.py --from 2024-01-01 --to 2024-07-01 --timeframes M1,M5 --merge   # Windows: add a date range to the export
+cd backend && uv run python scripts/data_quality.py --details 5   # quality of the export: bar caps, gaps the session calendar cannot explain, spreads
+cd backend && uv run python scripts/uplift_report.py   # gate G-LLM: analyst vs baseline shadows net of LLM cost; --sign-off NAME only if it passed
 cd backend && uv run python scripts/replay.py --from 2026-06-15 --to 2026-09-27   # full stack on exported history (SimBroker); --snapshot-minutes 1 for engine cadence
+cd backend && uv run python scripts/research.py baseline   # edge study: grid, walk-forward, gate E1 (docs/09); --spend-holdout once
+cd backend && uv run python scripts/research.py dsl --file ideas.json   # operator entry hypotheses (docs/09 §5) through the research loop
+cd backend && uv run python scripts/research.py llm --rounds 1   # LLM researcher proposes, the loop judges (DEEPSEEK_API_KEY, llm.pricing, migrated DB)
 cd backend && uv run python scripts/spread_report.py   # spread vs ATR per symbol: evidence for the spread gates
 cd backend && uv run python scripts/capture_deals.py  # Windows, DEMO: record deal history -> tests/fixtures/mt5_deals (READ-ONLY)
 ```

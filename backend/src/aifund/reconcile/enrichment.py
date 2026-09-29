@@ -217,6 +217,5 @@ def _summary(t: TradeRow) -> str:
     parts = [f"{t.close_reason.value if t.close_reason else '?'}", f"net {t.net_pnl}", r]
     if t.mae_r is not None and t.mfe_r is not None:
         parts.append(f"MAE {t.mae_r}R / MFE {t.mfe_r}R")
-    if t.holding_minutes is not None:
-        parts.append(f"held {t.holding_minutes} min")
+    parts.append(f"held {t.holding_minutes} min")  # always set once enriched
     return ", ".join(parts)

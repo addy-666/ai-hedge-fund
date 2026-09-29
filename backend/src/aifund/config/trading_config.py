@@ -73,6 +73,16 @@ class StrategyConfig(_Strict):
     baseline_enabled: bool = False
     dry_run: bool = False  # decide and risk-check everything, record what would be sent, send nothing
     analyst_prompt_version: int = Field(default=1, ge=1)
+    # The analyst's decisions reach the Risk Manager only with this on (docs/09 §7 G-LLM). Off, the analyst
+    # decides in SHADOW: both its decision and the baseline's become shadow virtual trades on every bar with a
+    # candidate, and the baseline (if enabled) trades. Outside SIM, on also needs a G-LLM sign-off record.
+    analyst_orders: bool = False
+
+    @model_validator(mode="after")
+    def _orders_need_the_analyst(self) -> StrategyConfig:
+        if self.analyst_orders and not self.analyst_enabled:
+            raise ValueError("strategy.analyst_orders needs strategy.analyst_enabled")
+        return self
 
 
 # ---------------------------------------------------------------- symbols / profiles
@@ -372,6 +382,25 @@ class AlertsConfig(_Strict):
 # ---------------------------------------------------------------- root
 
 
+class ResearchConfig(_Strict):
+    """Evidence gates and research defaults (docs/09 §7). Change a threshold only with a decisions-log entry:
+    the gates exist to reject strategies, and lowering one to let a strategy through defeats them."""
+
+    holdout_fraction: Decimal = Field(default=Decimal("0.25"), ge=Decimal("0.1"), le=Decimal("0.5"))
+    folds: int = Field(default=4, ge=2, le=20)
+    min_train_signals: int = Field(default=30, ge=5)
+    fdr_q: Decimal = Field(default=Decimal("0.10"), gt=0, le=Decimal("0.2"))
+    min_oos_signals: int = Field(default=200, ge=30)
+    min_positive_fold_share: Decimal = Field(default=Decimal("0.6"), ge=Decimal("0.5"), le=1)
+    min_holdout_signals: int = Field(default=60, ge=20)
+    min_forward_signals: int = Field(default=100, ge=30)
+    min_paired_signals: int = Field(default=150, ge=30)
+    max_months_to_evidence: int = Field(default=6, ge=1, le=36)
+    commission_per_lot: Decimal = Field(default=Decimal(0), ge=0)  # round turn, account currency
+    slippage_points: int = Field(default=0, ge=0)
+    max_hypotheses_per_run: int = Field(default=5, ge=1, le=20)
+
+
 class TradingConfig(_Strict):
     engine: EngineConfig
     strategy: StrategyConfig = StrategyConfig()
@@ -383,6 +412,7 @@ class TradingConfig(_Strict):
     llm: LLMConfig
     learning: LearningConfig = LearningConfig()
     alerts: AlertsConfig = AlertsConfig()
+    research: ResearchConfig = ResearchConfig()
 
     @model_validator(mode="after")
     def _cross_checks(self) -> Self:

@@ -334,10 +334,9 @@ class Reconciler:
             (d for d in sorted(deals, key=lambda d: (d.time, d.ticket)) if not d.entry.reduces_position), None
         )
         open_price = entry.price if entry else intent.fill_price or intent.price_ref
-        sl = tp = None
-        if intent.sl_distance is not None and intent.tp_distance is not None:
-            sign = 1 if intent.side is Side.BUY else -1  # the executor places SL/TP at these distances
-            sl, tp = open_price - sign * intent.sl_distance, open_price + sign * intent.tp_distance
+        assert intent.sl_distance is not None and intent.tp_distance is not None  # noqa: PT018 - OPEN invariant
+        sign = 1 if intent.side is Side.BUY else -1  # the executor places SL/TP at these distances
+        sl, tp = open_price - sign * intent.sl_distance, open_price + sign * intent.tp_distance
         volume = summary.volume_in or intent.fill_volume or intent.volume
         trades.add(
             **self._engine_trade(s, intent),

@@ -225,6 +225,14 @@ class VirtualStatus(StrEnum):
     NO_ENTRY = "NO_ENTRY"  # the entry bar never arrived (market closed, no data)
 
 
+class VirtualArm(StrEnum):
+    """Why a virtual trade exists (docs/03 §14.4, docs/09 §7 G-LLM)."""
+
+    BLOCKED = "BLOCKED"  # a directional signal the rules, threshold, guards or limits blocked
+    SHADOW_BASELINE = "SHADOW_BASELINE"  # what the deterministic baseline would have traded on this bar
+    SHADOW_ANALYST = "SHADOW_ANALYST"  # what the analyst would have traded on this bar
+
+
 class CloseReason(StrEnum):
     SL = "SL"
     TP = "TP"
@@ -264,6 +272,7 @@ class DecisionOutcome(StrEnum):
     RISK_REJECTED = "RISK_REJECTED"
     ORDERED = "ORDERED"
     DRY_RUN = "DRY_RUN"  # the Risk Manager approved an order; dry-run mode recorded it and sent nothing
+    SHADOW = "SHADOW"  # the analyst decided in shadow (no G-LLM sign-off) and no baseline trades instead
     ERROR = "ERROR"
 
 

@@ -381,6 +381,13 @@ class MT5Gateway:
         threshold = max(timedelta(days=4), timedelta(minutes=3 * timeframe.minutes))
         return lag if lag > threshold else None
 
+    async def max_bars(self) -> int | None:
+        """The terminal's "Max bars in chart" (``terminal_info().maxbars``): every copy_rates_* call returns
+        at most this many bars per symbol and timeframe, whatever range is asked for."""
+        term = await self._run(lambda mt5: mt5.terminal_info())
+        value = getattr(term, "maxbars", None) if term is not None else None
+        return int(value) if isinstance(value, int) and value > 0 else None
+
     async def bars_range(
         self, symbol: str, timeframe: Timeframe, start: datetime, end: datetime
     ) -> list[Bar]:

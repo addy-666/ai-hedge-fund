@@ -12,6 +12,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from decimal import Decimal
+from typing import Any
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
@@ -26,6 +27,7 @@ from aifund.domain.enums import (
     ReasonCode,
     Side,
     TradeStatus,
+    VirtualArm,
 )
 from aifund.domain.market import Deal
 from aifund.domain.trade import gets_virtual_trade
@@ -65,6 +67,7 @@ class ReplayReport:
     mean_mae_r: Decimal | None = None
     mean_mfe_r: Decimal | None = None
     virtual: Counter[str] | None = None  # virtual trades by status (None: no tracker in this run)
+    virtual_arms: Counter[str] | None = None  # by arm: BLOCKED, SHADOW_BASELINE, SHADOW_ANALYST
     virtual_mean_r: Decimal | None = None
     snapshots: int = 0
     final_equity: Decimal | None = None
@@ -214,18 +217,33 @@ async def _check_equity(report: ReplayReport, factory: sessionmaker[Session], br
         report.violations.append(f"last snapshot balance {rows[-1].balance} != broker {account.balance}")
 
 
+def _analyst_verdict(proposal: dict[str, Any] | None) -> str | None:
+    if not proposal:
+        return None
+    analyst = proposal.get("shadow_analyst", proposal)
+    return analyst.get("verdict") if isinstance(analyst, dict) else None
+
+
 def _check_virtual(report: ReplayReport, factory: sessionmaker[Session]) -> None:
-    """Virtual trades exist only for qualifying blocked signals, and every finished one is consistent."""
+    """BLOCKED virtual trades exist only for qualifying blocked signals; G-LLM shadows only where the analyst
+    decided on a bar with a candidate (SHADOW_ANALYST only for an analyst PROPOSAL); every finished one is
+    consistent."""
     with factory() as s:
         rows = s.scalars(select(VirtualTradeRow)).all()
         decisions = {d.id: d for d in s.scalars(select(DecisionRow)).all()}
     report.virtual = Counter(v.status.value for v in rows)
+    report.virtual_arms = Counter(v.arm.value for v in rows)
     finished = []
     for v in rows:
         d = decisions[v.decision_id]
         reason = ReasonCode(d.reason_code) if d.reason_code else None
-        if not gets_virtual_trade(d.outcome, reason) or v.blocked_by != d.reason_code:
-            report.violations.append(f"virtual trade {v.id} for a {d.outcome} / {d.reason_code} decision")
+        if v.arm is VirtualArm.BLOCKED:
+            if not gets_virtual_trade(d.outcome, reason) or v.blocked_by != d.reason_code:
+                report.violations.append(f"virtual trade {v.id} for a {d.outcome} / {d.reason_code} decision")
+        elif _analyst_verdict(d.proposal) is None or not d.setups:  # the analyst ran (even if it failed)
+            report.violations.append(f"{v.arm} {v.id} on a decision without an analyst or a setup")
+        elif v.arm is VirtualArm.SHADOW_ANALYST and _analyst_verdict(d.proposal) != "PROPOSAL":
+            report.violations.append(f"{v.arm} {v.id} although the analyst did not propose a trade")
         if v.r_multiple is None:
             continue
         finished.append(v.r_multiple)

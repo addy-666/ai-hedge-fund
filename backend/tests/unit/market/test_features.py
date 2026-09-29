@@ -209,3 +209,16 @@ def test_registry_names_and_lookup() -> None:
     assert len(reg.registry()) == len(reg.TF_FEATURES) * len(Timeframe) + len(reg.CTX_FEATURES) + len(
         reg.PROP_FEATURES
     )
+
+
+def test_the_timeframe_cache_changes_nothing_and_is_reused() -> None:
+    cache: dict[tuple[Timeframe, datetime, int], dict[str, object]] = {}
+    fresh = snapshot()
+    first = snapshot(tf_cache=cache)
+    assert first.features == fresh.features
+    assert len(cache) == len(TFS)
+    marker = {**cache[(Timeframe.H1, LAST_OPEN[Timeframe.H1], 300)], "rsi14": -1.0}
+    cache[(Timeframe.H1, LAST_OPEN[Timeframe.H1], 300)] = marker  # a hit is used as-is
+    assert snapshot(tf_cache=cache).features["h1.rsi14"] == -1.0
+    other = {tf: linear(tf, n=301) for tf in TFS}  # a different window is a miss
+    assert snapshot(other, tf_cache=cache).features["h1.rsi14"] != -1.0

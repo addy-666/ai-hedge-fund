@@ -49,6 +49,10 @@ class ExecutorConfig:
     deal_search_window: timedelta = timedelta(seconds=60)
     max_reprice_fraction_of_stop: Decimal = Decimal("0.5")
 
+    def __post_init__(self) -> None:
+        if self.max_attempts < 1:
+            raise ValueError(f"max_attempts must be at least 1, got {self.max_attempts}")
+
 
 @dataclass(frozen=True)
 class ExecutionResult:
@@ -228,7 +232,8 @@ class Executor:
                 pause_engine=outcome is RetcodeClass.PAUSE,
                 detail=result.comment,
             )
-        raise AssertionError("unreachable: the attempt loop always returns")
+        # max_attempts >= 1 is validated, so the loop always returns
+        raise AssertionError("unreachable: the attempt loop always returns")  # pragma: no cover
 
     async def _filled(
         self,
