@@ -52,6 +52,7 @@ from aifund.execution.executor import ExecutionResult, Executor
 from aifund.market.bar_clock import BarClosed
 from aifund.market.feature_registry import tf_prefix
 from aifund.market.features import PortfolioContext, SnapshotError, build_snapshot
+from aifund.market.news import NewsCalendar
 from aifund.market.sessions import calendars
 from aifund.persistence.db import unit_of_work
 from aifund.persistence.repositories.decisions import DecisionRepository
@@ -138,6 +139,7 @@ class DecisionPipeline:
         portfolio: PortfolioManager | None = None,
         evidence: Sequence[EvidenceRecord] = (),
         g_llm: Sequence[GLlmSignoff] = (),
+        news: Callable[[], NewsCalendar | None] | None = None,
     ) -> None:
         if cfg.strategy.analyst_enabled and analyst is None and not cfg.strategy.baseline_enabled:
             raise ValueError(
@@ -146,8 +148,12 @@ class DecisionPipeline:
         self._cfg = cfg
         self._profiles = {**cfg.profiles, **(profile_override or {})}
         # gate E1 (docs/09 §7): outside SIM every detector needs matching, passing research evidence
+        strategy = cfg.strategy
+        sends_orders = not strategy.dry_run and (
+            strategy.baseline_enabled or (strategy.analyst_enabled and strategy.analyst_orders)
+        )  # an analyst in shadow with the baseline off decides, records its shadows, and sends nothing
         require_evidence(
-            self._deployments(detectors), evidence, mode=cfg.engine.mode, dry_run=cfg.strategy.dry_run
+            self._deployments(detectors), evidence, mode=cfg.engine.mode, dry_run=not sends_orders
         )
         # G-LLM (docs/09 §7): outside SIM the analyst's decisions reach the Risk Manager only after sign-off
         require_g_llm(
@@ -174,6 +180,7 @@ class DecisionPipeline:
         self._locks: defaultdict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
         self._flip_flop_until: dict[str, datetime] = {}
         self._by_broker = {s.broker: s for s in cfg.symbols}
+        self._news = news  # the Guardian EA's calendar (5.7b); None = no calendar source
 
     # ------------------------------------------------------------------ helpers
 
@@ -344,6 +351,26 @@ class DecisionPipeline:
         spread_points = int(tick.spread / spec.point)
         if sym_cfg.max_spread_points is not None and spread_points > sym_cfg.max_spread_points:
             self._end(record, DecisionOutcome.SKIPPED, ReasonCode.SPREAD_TOO_WIDE, f"{spread_points} points")
+        calendar = self._news() if self._news is not None else None
+        news_cfg = self._cfg.risk.news
+        if news_cfg.enabled:  # gate 5: fail closed without a calendar
+            if calendar is None:
+                self._end(record, DecisionOutcome.SKIPPED, ReasonCode.NEWS_BLACKOUT, "no news calendar")
+            news = calendar.blackout(
+                sym_cfg.news_currencies, news_cfg.impact, now,
+                before_min=news_cfg.blackout_minutes_before, after_min=news_cfg.blackout_minutes_after,
+            )  # fmt: skip
+            if news is not None:
+                self._end(
+                    record, DecisionOutcome.SKIPPED, ReasonCode.NEWS_BLACKOUT,
+                    f"{news.impact} {news.currency} {news.title} at {news.time:%H:%M} UTC",
+                )  # fmt: skip
+        news_minutes: tuple[int | None, int | None] = (None, None)
+        if calendar is not None:
+            news_minutes = (
+                calendar.minutes_to_next(sym_cfg.news_currencies, ["HIGH"], now),
+                calendar.minutes_since_last(sym_cfg.news_currencies, ["HIGH"], now),
+            )
         account = await self._broker.account_info()
         equity_state = self._equity.update(account.equity, now)
         breach = check_loss_limits(equity_state, self._cfg.risk.limits)
@@ -371,6 +398,7 @@ class DecisionPipeline:
                 tick=tick,
                 min_bars=profile.bars_per_tf,
                 portfolio=PortfolioContext(len(own), 0.0, 0.0, 0, float(drawdown_pct(equity_state))),
+                news_minutes=news_minutes,
             )
         except SnapshotError as exc:
             self._end(record, DecisionOutcome.ERROR, exc.reason, exc.detail)

@@ -77,6 +77,9 @@ class StrategyConfig(_Strict):
     # decides in SHADOW: both its decision and the baseline's become shadow virtual trades on every bar with a
     # candidate, and the baseline (if enabled) trades. Outside SIM, on also needs a G-LLM sign-off record.
     analyst_orders: bool = False
+    # setup detectors the engine runs: built-in ids, or playbooks in config/playbooks/ that carry an APPROVED
+    # DSL hypothesis (research drafts approved by the operator). Outside SIM each needs E1 evidence.
+    detectors: list[str] = Field(default_factory=lambda: ["mtf_trend_pullback"], min_length=1)
 
     @model_validator(mode="after")
     def _orders_need_the_analyst(self) -> StrategyConfig:
@@ -97,6 +100,9 @@ class SymbolConfig(_Strict):
     max_spread_points: int | None = Field(default=None, gt=0)
     max_spread_to_atr: Decimal = Field(gt=0, le=1)
     trade_weekends: bool = False
+    news_currencies: list[Annotated[str, Field(pattern=r"^[A-Z]{3}$")]] = Field(
+        default_factory=lambda: ["USD"]
+    )  # the news gate blacks out HIGH-impact events of these currencies (docs/03 §4 gate 5)
     session: str | None = None
     """Name of a ``sessions`` calendar. Required unless the symbol trades weekends: the position manager
     flattens before every long closure (weekend, holiday early close) that calendar knows about."""

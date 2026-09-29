@@ -7,6 +7,7 @@ orphans, one decision per bar, nothing left mid-send, a ledger that matches the 
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -32,9 +33,16 @@ from aifund.engine.position_loop import PositionLoop
 from aifund.engine.replay import ReplayReport, run_replay
 from aifund.execution.executor import Executor
 from aifund.market.bar_clock import BarClock
+from aifund.market.news import NewsCalendar, NewsEvent
 from aifund.persistence.repositories.cursors import DecisionCursorStore
 from aifund.persistence.repositories.virtual import VirtualTradeRepository
-from aifund.persistence.tables import DecisionRow, LLMCallRow, OrderIntentRow, VirtualTradeRow
+from aifund.persistence.tables import (
+    DecisionRow,
+    FeatureSnapshotRow,
+    LLMCallRow,
+    OrderIntentRow,
+    VirtualTradeRow,
+)
 from aifund.ports.llm import LLMError, LLMRequest
 from aifund.reconcile.enrichment import Enricher
 from aifund.reconcile.reconciler import Reconciler
@@ -101,10 +109,18 @@ async def replay(
     strategy: StrategyConfig,
     llm: FakeLLM | None = None,
     days: int = REPLAY_DAYS,
+    news: Callable[[], NewsCalendar | None] | None = None,
 ) -> ReplayReport:
     cfg = load_trading_config(CONFIG).config
+    risk = cfg.risk.model_copy(
+        update={"news": cfg.risk.news.model_copy(update={"enabled": news is not None})}
+    )
     cfg = cfg.model_copy(
-        update={"symbols": [s for s in cfg.symbols if s.canonical == "XAUUSD"], "strategy": strategy}
+        update={
+            "symbols": [s for s in cfg.symbols if s.canonical == "XAUUSD"],
+            "strategy": strategy,
+            "risk": risk,
+        }
     )
     profile = ProfileConfig(trigger_tf=Timeframe.M15, setup_tf=Timeframe.H1, context_tfs=[Timeframe.H4])
     clock = FakeClock(START + timedelta(days=WARMUP_DAYS, seconds=5))
@@ -124,6 +140,7 @@ async def replay(
         cfg, broker=broker, market=feed, factory=factory, clock=clock, executor=executor, risk=risk,
         detectors=detectors, equity=tracker, account_id="acc",
         profile_override={"intraday_m15": profile}, analyst=analyst,
+        news=news,
     )  # fmt: skip
     bar_clock = BarClock(feed, clock, [("XAUUSD", Timeframe.M15)], DecisionCursorStore(factory))
     manager = PositionManager(cfg.position_management, cfg.risk.stops, magic=cfg.engine.magic, account=1)
@@ -324,3 +341,46 @@ async def test_an_analyst_that_does_not_trade_gets_no_shadow_of_its_own(
     analysed, arms = shadow_rows(factory)
     assert analysed
     assert all(set(arms[d.id]) == {"SHADOW_BASELINE"} for d in analysed)  # the baseline's shadow only
+
+
+async def test_the_news_gate_skips_the_blackout_and_feeds_the_features(
+    market: dict,  # type: ignore[type-arg]
+    factory: sessionmaker[Session],
+) -> None:
+    """Roadmap 5.7b: a HIGH USD event mid-day blacks out entries 15 min before to 15 min after; every snapshot
+    carries the minutes to it / since it."""
+    when = START + timedelta(days=WARMUP_DAYS, hours=13, minutes=30)
+    calendar = NewsCalendar([NewsEvent(when, "USD", "HIGH", "CPI")], loaded_at=START)
+    report = await replay(market, factory, strategy=BASELINE, days=1, news=lambda: calendar)
+    assert report.violations == []
+    assert (
+        report.reasons[ReasonCode.NEWS_BLACKOUT.value] == 2
+    )  # bars closing 13:15 and 13:30..13:45 -> 13:30, 13:45
+    with factory() as s:
+        blacked = s.scalars(select(DecisionRow).where(DecisionRow.reason_code == "NEWS_BLACKOUT")).all()
+        snaps = s.scalars(select(FeatureSnapshotRow)).all()
+    assert all(d.reason_detail == "HIGH USD CPI at 13:30 UTC" for d in blacked)
+    before = [
+        f.features["ctx.minutes_to_next_high_impact_news"]
+        for f in snaps
+        if f.bar_time < when - timedelta(hours=1)
+    ]
+    after = [
+        f.features["ctx.minutes_since_last_high_impact_news"]
+        for f in snaps
+        if f.bar_time > when + timedelta(hours=1)
+    ]
+    assert before and all(isinstance(m, int) and m > 45 for m in before)  # noqa: PT018
+    assert after and all(isinstance(m, int) and m > 45 for m in after)  # noqa: PT018
+
+
+async def test_without_a_calendar_the_news_gate_fails_closed(
+    market: dict,  # type: ignore[type-arg]
+    factory: sessionmaker[Session],
+) -> None:
+    report = await replay(market, factory, strategy=BASELINE, days=1, news=lambda: None)
+    assert report.violations == []
+    assert report.fills == 0
+    assert report.reasons[ReasonCode.NEWS_BLACKOUT.value] == report.outcomes[
+        DecisionOutcome.SKIPPED.value
+    ] - report.reasons.get(ReasonCode.MARKET_CLOSED.value, 0)

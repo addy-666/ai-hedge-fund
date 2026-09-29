@@ -110,7 +110,7 @@ risk:
     flip_flop_window: 3
     flip_flop_lock_bars: 8
   news:
-    enabled: false              # needs the Guardian EA calendar export (Phase 8)
+    enabled: false              # needs the Guardian EA calendar export (mql5/GuardianEA.mq5); true = fail closed without it
     blackout_minutes_before: 15
     blackout_minutes_after: 15
     impact: [HIGH]

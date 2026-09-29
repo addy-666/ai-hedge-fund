@@ -194,8 +194,9 @@ the research loop writes it and the engine reads it, and those layers may not im
 matches a detector on id, version, `params_sha256` (every detector exposes it), a symbol it lists and the
 profile (trigger/setup/context) it was researched with; changed parameters make it STALE. The decision
 pipeline checks every (symbol, detector) it would run when it is constructed and refuses to start, listing
-every problem. SIM is exempt, and so is a **dry run** (`strategy.dry_run`: decisions are recorded, nothing is
-ever sent) — a shadow run is how a strategy collects forward (E2) evidence. E2 and G-LLM are tracked on the dashboard and signed off in
+every problem. SIM is exempt, and so is any configuration that cannot send an order: a **dry run**
+(`strategy.dry_run`), or the analyst in shadow with the baseline off (`analyst_orders: false`,
+`baseline_enabled: false`) — a shadow run is how a strategy collects forward (E2) evidence. E2 and G-LLM are tracked on the dashboard and signed off in
 `audit_log` (operator), like the L2/L3 rollout gates.
 
 Implementation (R.9, G-LLM): while the analyst is enabled, every bar with a candidate records two SHADOW

@@ -164,14 +164,14 @@ CTX_FEATURES: tuple[FeatureSpec, ...] = (
         "ctx.minutes_to_next_high_impact_news",
         _I,
         "min",
-        "calendar (Phase 8); null until then",
+        "Guardian EA calendar (live only; null in research and without a calendar)",
         FeatureSource.CONTEXT,
     ),
     FeatureSpec(
         "ctx.minutes_since_last_high_impact_news",
         _I,
         "min",
-        "calendar (Phase 8); null until then",
+        "Guardian EA calendar (live only; null in research and without a calendar)",
         FeatureSource.CONTEXT,
     ),
     FeatureSpec("ctx.spread_to_atr", _F, "ATR", "current spread / trigger-TF ATR14", FeatureSource.CONTEXT),
@@ -233,8 +233,8 @@ _CTX_MIRRORS: dict[str, Mirror] = {  # full names; portfolio features are not sn
 }  # fmt: skip
 CTX_FEATURES = tuple(replace(s, mirror=_CTX_MIRRORS.get(s.name)) for s in CTX_FEATURES)
 
-NOT_YET_COMPUTED = frozenset(  # registered but always null until the news gate (roadmap 5.7b) fills them
-    {"ctx.minutes_to_next_high_impact_news", "ctx.minutes_since_last_high_impact_news"}
+NOT_YET_COMPUTED = frozenset(  # live only (the Guardian EA's calendar, roadmap 5.7b): research history has
+    {"ctx.minutes_to_next_high_impact_news", "ctx.minutes_since_last_high_impact_news"}  # no calendar -> null
 )
 NEEDS_TIMEFRAME = {"ctx.dist_pdh_atr": Timeframe.D1, "ctx.dist_pdl_atr": Timeframe.D1}  # context from D1 bars
 

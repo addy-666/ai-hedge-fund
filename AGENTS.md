@@ -30,6 +30,12 @@ cd backend && uv run python scripts/export_history.py --months 24  # Windows: ba
 cd backend && uv run python scripts/export_history.py --from 2024-01-01 --to 2024-07-01 --timeframes M1,M5 --merge   # Windows: add a date range to the export
 cd backend && uv run python scripts/data_quality.py --details 5   # quality of the export: bar caps, gaps the session calendar cannot explain, spreads
 cd backend && uv run python scripts/uplift_report.py   # gate G-LLM: analyst vs baseline shadows net of LLM cost; --sign-off NAME only if it passed
+cd backend && uv run python -m aifund.engine        # Windows: the engine (engine.mode DEMO/LIVE; PAPER = DEMO + strategy.dry_run)
+cd backend && BROKER=sim uv run python -m aifund.engine --days 2   # the whole engine replayed over data/history (throw-away DB in data/sim)
+cd backend && uv run python scripts/verify_ledger.py --days 7   # Windows: trades table vs MT5 deal history (exit 1 on any difference)
+cd backend && uv run python scripts/engine_command.py RESUME   # operator command to the running engine (PAUSE, FLATTEN_ALL, CLOSE_POSITION --payload ...)
+cd backend && uv run python scripts/backup_db.py   # online SQLite backup -> <repo>/backups (30 daily + 12 monthly); --remote for rclone
+powershell -ExecutionPolicy Bypass -File deploy\windows\install_tasks.ps1   # Windows: register the MT5 / engine / backup tasks (docs/runbooks/install.md)
 cd backend && uv run python scripts/replay.py --from 2026-06-15 --to 2026-09-27   # full stack on exported history (SimBroker); --snapshot-minutes 1 for engine cadence
 cd backend && uv run python scripts/research.py baseline   # edge study: grid, walk-forward, gate E1 (docs/09); --spend-holdout once
 cd backend && uv run python scripts/research.py dsl --file ideas.json   # operator entry hypotheses (docs/09 §5) through the research loop
@@ -41,7 +47,6 @@ cd backend && uv run python scripts/capture_deals.py  # Windows, DEMO: record de
 Not yet available (the phase that adds each is in brackets; update this list when it lands):
 
 ```bash
-cd backend && BROKER=sim uv run python -m aifund.engine        # [Phase 5] engine against SimBroker + replay
 cd backend && uv run uvicorn aifund.api.app:app --reload        # [Phase 6] API
 cd frontend && npm ci && npm run dev | npm run build | npm test  # [Phase 6]
 cd frontend && npm run gen:api                                  # [Phase 6] regenerate OpenAPI types
