@@ -1,0 +1,14 @@
+[
+  {
+    "direction": "LONG",
+    "confidence": 74,
+    "setup_tag": "mtf_trend_pullback",
+    "invalidation_price": 4138.2,
+    "target_price": 4182.5,
+    "thesis": "H4 and H1 trend up; M15 pulled back into the EMA50 zone and the stochastic hooked up from 22.",
+    "key_risks": ["US data at 12:30 UTC", "H1 RSI near 68"],
+    "lessons_considered": [],
+    "time_horizon_bars": 12
+  },
+  "Sure, I'd go long here."
+]

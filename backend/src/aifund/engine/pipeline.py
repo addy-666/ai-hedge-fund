@@ -22,6 +22,8 @@ from typing import Any, NoReturn
 
 from sqlalchemy.orm import Session, sessionmaker
 
+from aifund.agents.analyst import Analyst, AnalystInput, Verdict
+from aifund.agents.portfolio_manager import PortfolioManager
 from aifund.config.trading_config import ProfileConfig, SymbolConfig, TradingConfig
 from aifund.domain.decision import FeatureSnapshot, FinalDecision, SetupCandidate
 from aifund.domain.enums import (
@@ -75,6 +77,15 @@ class DecisionRecord:
     confidence: int | None = None
     risk_calc: dict[str, str] | None = None
     execution: ExecutionResult | None = None
+    # the confidence pipeline (docs/03 §8); for the baseline all four equal its fixed confidence
+    calibrated_confidence: int | None = None
+    penalty_points: int | None = None
+    final_confidence: int | None = None
+    risk_factor: Decimal | None = None
+    rules_matched: list[str] | None = None
+    model: str | None = None
+    cost_usd: Decimal | None = None
+    prompt_version: str | None = None
     virtual: dict[str, Any] | None = None  # a blocked signal's counterfactual trade plan (docs/03 §14.4)
     decision_id: str = field(default_factory=new_id)
 
@@ -116,8 +127,16 @@ class DecisionPipeline:
         strategy_version: str = "baseline_v1",
         trading_enabled: Callable[[], bool] = lambda: True,
         profile_override: dict[str, ProfileConfig] | None = None,
+        analyst: Analyst | None = None,
+        portfolio: PortfolioManager | None = None,
     ) -> None:
+        if cfg.strategy.analyst_enabled and analyst is None and not cfg.strategy.baseline_enabled:
+            raise ValueError(
+                "strategy.analyst_enabled needs an Analyst (an LLM); or enable the baseline instead"
+            )
         self._cfg = cfg
+        self._analyst = analyst if cfg.strategy.analyst_enabled else None
+        self._portfolio = portfolio or PortfolioManager(max_total_penalty=cfg.learning.max_total_penalty)
         self._sessions = calendars(cfg.sessions)
         self._broker = broker
         self._market = market
@@ -312,38 +331,85 @@ class DecisionPipeline:
         record.setups = [c.model_dump(mode="json") for c in candidates]
         if not candidates:
             self._end(record, DecisionOutcome.NO_SETUP, None, "")
-        best = max(candidates, key=lambda c: c.strength)
+        if not isinstance(atr, float):
+            self._end(record, DecisionOutcome.ERROR, ReasonCode.INSUFFICIENT_BARS, "no trigger ATR")
 
-        # 4. decision (baseline: deterministic, no LLM)
+        # 4. decision: the LLM analyst + portfolio manager, or the deterministic baseline
         record.stage = "DECISION"
-        record.confidence = BASELINE_CONFIDENCE
-        record.proposal = {
-            "direction": best.direction_hint.value,
-            "setup_tag": best.setup_tag,
-            "confidence": BASELINE_CONFIDENCE,
-            "source": "baseline",
-        }
-        decision = FinalDecision(
-            decision_id=record.decision_id,
-            symbol=event.symbol,
-            direction=best.direction_hint,
-            setup_tag=best.setup_tag,
-            llm_confidence=BASELINE_CONFIDENCE,
-            calibrated_confidence=BASELINE_CONFIDENCE,
-            penalty_points=0,
-            final_confidence=BASELINE_CONFIDENCE,
-            risk_factor=Decimal(1),
-            invalidation_price=best.key_levels.get("invalidation"),
-            target_price=best.key_levels.get("target"),
-        )
+        if self._analyst is not None:
+            position = next((p for p in own if p.symbol == event.symbol), None)
+            portfolio = (
+                f"{len(own)} open positions, equity {account.equity}, "
+                f"drawdown {drawdown_pct(equity_state):.2f}%, "
+                f"today {account.equity - equity_state.day_start_equity:+.2f}"
+            )
+            analysis = await self._analyst.analyse(
+                AnalystInput(
+                    decision_id=record.decision_id, symbol=event.symbol, snapshot=snapshot, roles=roles,
+                    candidates=candidates, trigger_bars=bars[roles.trigger], trigger_atr=to_decimal(atr),
+                    tick=tick,
+                    spread_points=spread_points, position=position, portfolio=portfolio,
+                )
+            )  # fmt: skip
+            record.model, record.cost_usd, record.prompt_version = (
+                analysis.model, analysis.cost_usd, analysis.prompt_version,
+            )  # fmt: skip
+            record.proposal = {**(analysis.raw or {}), "source": "analyst", "notes": analysis.notes}
+            if analysis.proposal is not None:
+                record.confidence = analysis.proposal.confidence
+            if analysis.verdict is Verdict.INVALID:
+                self._end(record, DecisionOutcome.INVALID, analysis.reason, analysis.detail)
+            if analysis.verdict is Verdict.HOLD or analysis.proposal is None:
+                self._end(record, DecisionOutcome.HOLD, analysis.reason, analysis.detail)
+            verdict = self._portfolio.decide(
+                decision_id=record.decision_id,
+                symbol=event.symbol,
+                proposal=analysis.proposal,
+                snapshot=snapshot,
+            )
+            decision = verdict.decision
+            record.rules_matched = list(verdict.rules_matched)
+        else:
+            best = max(candidates, key=lambda c: c.strength)
+            record.confidence = BASELINE_CONFIDENCE
+            record.prompt_version = self._version
+            record.proposal = {
+                "direction": best.direction_hint.value,
+                "setup_tag": best.setup_tag,
+                "confidence": BASELINE_CONFIDENCE,
+                "source": "baseline",
+            }
+            decision = FinalDecision(
+                decision_id=record.decision_id,
+                symbol=event.symbol,
+                direction=best.direction_hint,
+                setup_tag=best.setup_tag,
+                llm_confidence=BASELINE_CONFIDENCE,
+                calibrated_confidence=BASELINE_CONFIDENCE,
+                penalty_points=0,
+                final_confidence=BASELINE_CONFIDENCE,
+                risk_factor=Decimal(1),
+                invalidation_price=best.key_levels.get("invalidation"),
+                target_price=best.key_levels.get("target"),
+            )
+            verdict = None
+        record.calibrated_confidence = decision.calibrated_confidence
+        record.penalty_points = decision.penalty_points
+        record.final_confidence = decision.final_confidence
+        record.risk_factor = decision.risk_factor
         blocked = _Blocked(event, sym_cfg, roles, spec, tick, snapshot, decision)
+        if verdict is not None and verdict.blocked_by is not None:
+            self._block(
+                record, blocked, DecisionOutcome.RULE_BLOCKED, ReasonCode.RULE_BLOCK, verdict.blocked_by
+            )
         if decision.final_confidence < self._cfg.risk.confidence_threshold:
-            self._block(record, blocked, DecisionOutcome.BELOW_THRESHOLD, ReasonCode.BELOW_THRESHOLD, "")
+            threshold = f"{decision.final_confidence} < {self._cfg.risk.confidence_threshold}"
+            self._block(
+                record, blocked, DecisionOutcome.BELOW_THRESHOLD, ReasonCode.BELOW_THRESHOLD, threshold
+            )
 
         # 5–7. risk (guards, stops, sizing, exposure)
         record.stage = "RISK"
-        if not isinstance(atr, float):
-            self._end(record, DecisionOutcome.ERROR, ReasonCode.INSUFFICIENT_BARS, "no trigger ATR")
         request = await self._risk_request(
             event,
             sym_cfg,
@@ -371,8 +437,13 @@ class DecisionPipeline:
             detail = rejection.detail if rejection else ""
             self._block(record, blocked, DecisionOutcome.RISK_REJECTED, reason, detail)
 
-        # 8. execution
+        # 8. execution (or, in dry-run mode, the record of what would have been sent)
         record.stage = "EXECUTION"
+        if self._cfg.strategy.dry_run:
+            intent = outcome.intent
+            record.outcome, record.reason = DecisionOutcome.DRY_RUN, None
+            record.detail = f"would send {intent.kind} {intent.side} {intent.volume} {intent.symbol}"
+            return
         result = await self._executor.execute(outcome.intent, spec)
         record.execution = result
         if result.status in (IntentStatus.FILLED, IntentStatus.UNKNOWN):
@@ -486,12 +557,16 @@ class DecisionPipeline:
                 setups=record.setups or None,
                 proposal=record.proposal,
                 llm_confidence=record.confidence,
-                calibrated_confidence=record.confidence,
-                penalty_points=0,
-                final_confidence=record.confidence,
-                risk_factor=Decimal(1) if record.proposal else None,
+                calibrated_confidence=record.calibrated_confidence,
+                penalty_points=record.penalty_points,
+                final_confidence=record.final_confidence,
+                risk_factor=record.risk_factor,
+                rules_matched=record.rules_matched,
+                lessons_shown=[] if record.model is not None else None,
                 rulebook_version=0,
-                model=None,
+                model=record.model,
+                cost_usd=record.cost_usd,
+                prompt_version=record.prompt_version or self._version,
                 risk_calc=record.risk_calc,
                 latency_ms=latency_ms,
             )

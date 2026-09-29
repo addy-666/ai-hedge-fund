@@ -5,9 +5,10 @@ Updated by the coding agent at the end of every task.
 ## Current position
 
 - Phase: 4 — LLM analyst (3.6 demo shakedown deferred until the Phase 5 engine runner)
-- Next task: 4.2 FakeLLM
+- Next task: 4.7 PAPER run on the VPS with real DeepSeek (ops: needs the Phase 5 runner or a manual loop; set
+  `llm.pricing` and the model ids first)
 - Rollout level: L0 (SIM). The full stack trades the SimBroker in replay; nothing is wired to MT5 order sending outside tests yet.
-- Tests: 648 passing + 1 Windows-only (MQL5 constant cross-check against the real MetaTrader5 package).
+- Tests: 683 passing + 1 Windows-only (MQL5 constant cross-check against the real MetaTrader5 package).
 - Windows run 2026-09-28 (VantageMarkets-Demo, hedging, 1:500, server UTC+3): smoke checks passed; history
   exported. Replay of the real export builds valid snapshots for XAUUSD/EURUSD/BTCUSD.
 - Findings from real data: (1) the terminal's first M15 request for EURUSD returned 2024 bars (stale local
@@ -71,6 +72,16 @@ Updated by the coding agent at the end of every task.
 | 2026-09-29 | 3.6 Demo shakedown | DEFERRED (operator decision): it needs the engine running unattended on the demo for ≥ 5 trading days, and that runner is Phase 5 (5.x); the system is completed first, then the shakedown runs | — | Run after Phase 5; write `scripts/verify_ledger.py` then |
 
 | 2026-09-29 | 4.1 DeepSeek adapter | `adapters/llm/deepseek.py` (openai SDK → DeepSeek base_url, JSON output mode, per-call timeout), retries with jittered backoff via tenacity ONLY on 429/5xx/timeouts/connection errors, `circuit_breaker.py` (closed → open after N consecutive failures → one half-open trial), `budget.py` (UTC-day spend from `llm_calls`, checked before each call, survives restarts), cost incl. cache-hit tokens, every call persisted (messages, raw output, tokens, cost, latency, reported model, error), non-JSON output → `LLMInvalidOutput` (billed, breaker untouched), `verify_models` against `/models` | `llm.pricing` per model added to config and REQUIRED outside SIM (the budget cannot be enforced without it; prices are not hard-coded, copy them from DeepSeek's pricing page); LLMRequest carries prompt metadata and LLMResponse the call id/cost; typed errors LLMBudgetExhausted / LLMCircuitOpen / LLMInvalidOutput; deps openai, tenacity (spec §11) and respx (tests only) | Set `llm.pricing` and the model ids before 4.7 |
+
+| 2026-09-29 | 4.2 FakeLLM | Scripted answers in order (text, JSON objects, LLMError instances, per-request callables), last one repeated, fixture files (`tests/fixtures/llm/*.json`), calls recorded in `llm_calls` like real ones (shared `adapters/llm/recording.py`) | — | — |
+
+| 2026-09-29 | 4.3 Prompt system | `agents/prompts/analyst_v1.j2`: stable system prefix (role, output schema, playbook cards, fixed lessons wording) then the per-bar user message (feature table per TF, 20 ATR-normalised candles, candidates, position, portfolio); `released.json` pins each released template's SHA-256 (a test fails if one changes, invariant 12); golden file of the rendered prompt; token estimate logged | Adds jinja2 (named in the spec) | — |
+
+| 2026-09-29 | 4.4 Analyst agent | Strict `TradeProposal` validation, one repair call quoting the validation error, then INVALID; provider failures → INVALID with LLM_BUDGET_EXHAUSTED / LLM_UNAVAILABLE / LLM_ERROR; NONE → HOLD; undetected setup → SETUP_MISMATCH; wrong-side invalidation/target dropped and noted; each call's verdict recorded on `llm_calls` | A candidate is matched by tag AND direction (spec clarified) | — |
+
+| 2026-09-29 | 4.5 Portfolio manager | Calibrated (identity) confidence minus capped rule penalties, BLOCK rules, risk factor = product of rule scales (down only, floor 0.25); rules/calibration pluggable no-ops until P7/P8 | Regime/drawdown scaling stays in sizing (not applied twice) | — |
+
+| 2026-09-29 | 4.6 Pipeline integration | The analyst + portfolio manager decide when `strategy.analyst_enabled`, else the baseline; HOLD / INVALID / RULE_BLOCKED / BELOW_THRESHOLD outcomes; decision rows carry LLM, calibrated, penalty and final confidence, model, cost, prompt version; `strategy.dry_run` records DRY_RUN with what would be sent and never calls the executor (new outcome, migration 068109ac27bb) | The pipeline refuses to start with the analyst enabled but no LLM; `scripts/replay.py` always runs the baseline (a real-LLM replay would bill every bar) | Replay with FakeLLM end-to-end and dry-run (zero intents) pass, 0 violations. Next: 4.7 PAPER run with real DeepSeek |
 
 ## Decisions log
 

@@ -69,8 +69,10 @@ class EngineConfig(_Strict):
 
 
 class StrategyConfig(_Strict):
-    analyst_enabled: bool = True
+    analyst_enabled: bool = True  # the LLM analyst decides (Phase 4); else the deterministic baseline
     baseline_enabled: bool = False
+    dry_run: bool = False  # decide and risk-check everything, record what would be sent, send nothing
+    analyst_prompt_version: int = Field(default=1, ge=1)
 
 
 # ---------------------------------------------------------------- symbols / profiles

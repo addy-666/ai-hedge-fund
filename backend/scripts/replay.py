@@ -27,7 +27,7 @@ from aifund.adapters.sim.replay_feed import ReplayFeed
 from aifund.adapters.sim.sim_broker import SimBroker, SimConfig
 from aifund.config.loader import load_trading_config
 from aifund.config.settings import PROJECT_ROOT, Settings
-from aifund.config.trading_config import ProfileConfig, SymbolConfig
+from aifund.config.trading_config import ProfileConfig, StrategyConfig, SymbolConfig
 from aifund.domain.enums import Timeframe
 from aifund.engine.equity import EquitySnapshotter, EquityTracker
 from aifund.engine.pipeline import DecisionPipeline
@@ -78,7 +78,9 @@ async def main(argv: list[str]) -> int:
     ]
     if skipped:
         print(f"no exported history for {skipped}: skipped (export them on Windows to include them)")
-    cfg = cfg.model_copy(update={"symbols": symbols})
+    # replays run the deterministic baseline: a real-LLM replay would bill DeepSeek for every bar with a setup
+    baseline = StrategyConfig(analyst_enabled=False, baseline_enabled=True)
+    cfg = cfg.model_copy(update={"symbols": symbols, "strategy": baseline})
     context = [Timeframe(tf.strip()) for tf in args.context.split(",")]
     profile = ProfileConfig(trigger_tf=Timeframe.M15, setup_tf=Timeframe.H1, context_tfs=context)
     start = datetime.fromisoformat(args.start).replace(tzinfo=UTC)

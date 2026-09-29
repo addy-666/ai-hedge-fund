@@ -310,6 +310,8 @@ engine:
 
 strategy:
   analyst_enabled: true         # false = deterministic baseline only (LLM outage fallback)
+  dry_run: false                # decide + risk-check everything, record DRY_RUN, send nothing (4.6)
+  analyst_prompt_version: 1     # agents/prompts/analyst_v<n>.j2
   baseline_enabled: false       # deterministic mtf_trend_pullback trading without LLM (Phase 2)
 
 symbols:                        # canonical -> broker symbol + profile

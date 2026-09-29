@@ -13,13 +13,10 @@ Model ids come from config and are checked against the provider's ``/models`` at
 
 from __future__ import annotations
 
-import asyncio
-import hashlib
 import json
 import time
-from collections.abc import Callable
 from datetime import timedelta
-from typing import Any, TypeVar
+from typing import Any
 
 import httpx
 import openai
@@ -31,13 +28,11 @@ from tenacity.wait import wait_base
 
 from aifund.adapters.llm.budget import DailyBudget, call_cost
 from aifund.adapters.llm.circuit_breaker import CircuitBreaker
+from aifund.adapters.llm.recording import record_call
 from aifund.config.trading_config import LLMConfig
-from aifund.persistence.db import unit_of_work
-from aifund.persistence.repositories.llm import LLMCallRepository
 from aifund.ports.llm import LLMError, LLMInvalidOutput, LLMRequest, LLMResponse
 from aifund.ports.system import ClockPort, NotifierPort, Severity
 
-T = TypeVar("T")
 log = structlog.get_logger(__name__)
 
 
@@ -84,25 +79,8 @@ class DeepSeekClient:
     def breaker(self) -> CircuitBreaker:
         return self._breaker
 
-    # ------------------------------------------------------------------ persistence
-
-    def _run_tx(self, fn: Callable[[Session], T]) -> T:
-        with unit_of_work(self._factory) as session:
-            return fn(session)
-
     async def _record(self, request: LLMRequest, **fields: Any) -> str:
-        messages = [m.model_dump() for m in request.messages]
-        sha = hashlib.sha256(json.dumps(messages, sort_keys=True).encode()).hexdigest()
-
-        def write(s: Session) -> str:
-            return LLMCallRepository(s, self._clock).add(
-                agent=request.agent, decision_id=request.decision_id, trade_id=request.trade_id,
-                audit_run_id=request.audit_run_id, model=request.model,
-                prompt_template=request.prompt_template, prompt_version=request.prompt_version,
-                prompt_sha256=sha, messages=messages, **fields,
-            ).id  # fmt: skip
-
-        return await asyncio.to_thread(self._run_tx, write)
+        return await record_call(self._factory, self._clock, request, **fields)
 
     # ------------------------------------------------------------------ calls
 
