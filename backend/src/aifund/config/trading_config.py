@@ -307,6 +307,14 @@ class CircuitBreakerConfig(_Strict):
     open_minutes: int = Field(default=10, ge=1, le=1440)
 
 
+class ModelPricing(_Strict):
+    """USD per million tokens, from the provider's pricing page. DeepSeek bills cached input separately."""
+
+    input_cache_hit_per_mtok: Decimal = Field(ge=0)
+    input_cache_miss_per_mtok: Decimal = Field(ge=0)
+    output_per_mtok: Decimal = Field(ge=0)
+
+
 class LLMConfig(_Strict):
     provider: Literal["deepseek"] = "deepseek"
     base_url: str = Field(default="https://api.deepseek.com", pattern=r"^https://")
@@ -318,6 +326,7 @@ class LLMConfig(_Strict):
     max_retries: int = Field(default=2, ge=0, le=5)
     daily_budget_usd: Decimal = Field(default=Decimal("5.0"), gt=0)
     circuit_breaker: CircuitBreakerConfig = CircuitBreakerConfig()
+    pricing: dict[str, ModelPricing] = Field(default_factory=dict)  # model id -> prices (for cost and budget)
 
 
 class LearningConfig(_Strict):
@@ -393,8 +402,11 @@ class TradingConfig(_Strict):
             raise ValueError("strategy: enable analyst_enabled and/or baseline_enabled")
         if self.strategy.analyst_enabled and self.engine.mode is not Mode.SIM:
             for field in ("analyst_model", "auditor_model"):
-                if getattr(self.llm, field).startswith("<"):
+                model = getattr(self.llm, field)
+                if model.startswith("<"):
                     raise ValueError(f"llm.{field} is still a placeholder; set a real model id")
+                if model not in self.llm.pricing:
+                    raise ValueError(f"llm.pricing has no prices for {model!r}: the daily budget needs them")
         return self
 
     def symbol(self, canonical: str) -> SymbolConfig:

@@ -25,6 +25,12 @@ class LLMRequest(BaseModel):
     timeout_s: float = Field(gt=0)
     max_tokens: int | None = Field(default=None, gt=0)
     json_output: bool = True
+    # recorded with the call in llm_calls (what produced this prompt and what it was for)
+    prompt_template: str = "adhoc"
+    prompt_version: str = "0"
+    decision_id: str | None = None
+    trade_id: str | None = None
+    audit_run_id: str | None = None
 
 
 class LLMResponse(BaseModel):
@@ -37,10 +43,25 @@ class LLMResponse(BaseModel):
     completion_tokens: int = Field(ge=0)
     cached_tokens: int = Field(default=0, ge=0)
     latency_ms: int = Field(ge=0)
+    cost_usd: Decimal | None = None
+    call_id: str | None = None
+    """The ``llm_calls`` row, so the agent can record the parsed/validated result on it."""
 
 
 class LLMError(Exception):
     """The provider failed (network, HTTP error, timeout, budget, open circuit). Callers fail closed."""
+
+
+class LLMBudgetExhausted(LLMError):
+    """Today's LLM spend reached ``llm.daily_budget_usd``: no call was made."""
+
+
+class LLMCircuitOpen(LLMError):
+    """Too many consecutive failures: the provider is skipped until the breaker half-opens."""
+
+
+class LLMInvalidOutput(LLMError):
+    """The provider answered, but not with the JSON object that was asked for (the call was billed)."""
 
 
 @runtime_checkable

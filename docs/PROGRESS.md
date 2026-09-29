@@ -4,12 +4,10 @@ Updated by the coding agent at the end of every task.
 
 ## Current position
 
-- Phase: 3 — Reconciliation & ledger
-- Next task: 3.6 Demo shakedown (VPS): run the baseline on the demo ≥ 5 trading days with `scripts/verify_ledger.py`
-  (needs the Phase 5 engine to run unattended; see 07_ROADMAP). 3.2 has a real demo capture; a second one with a TP exit and
-  an overnight swap would cover those paths too.
+- Phase: 4 — LLM analyst (3.6 demo shakedown deferred until the Phase 5 engine runner)
+- Next task: 4.2 FakeLLM
 - Rollout level: L0 (SIM). The full stack trades the SimBroker in replay; nothing is wired to MT5 order sending outside tests yet.
-- Tests: 636 passing + 1 Windows-only (MQL5 constant cross-check against the real MetaTrader5 package).
+- Tests: 648 passing + 1 Windows-only (MQL5 constant cross-check against the real MetaTrader5 package).
 - Windows run 2026-09-28 (VantageMarkets-Demo, hedging, 1:500, server UTC+3): smoke checks passed; history
   exported. Replay of the real export builds valid snapshots for XAUUSD/EURUSD/BTCUSD.
 - Findings from real data: (1) the terminal's first M15 request for EURUSD returned 2024 bars (stale local
@@ -69,6 +67,10 @@ Updated by the coding agent at the end of every task.
 | 2026-09-29 | 3.4 Virtual trade tracker | Blocked directional signals (rule, threshold, guard and limit reasons; not duplicates, sizing, broker or internal errors) get a PENDING virtual trade with the stop/target distances stage 10 would plan (`RiskManager.counterfactual_stops`, shared with the real path); `reconcile/virtual.py` enters at the next trigger bar open, exits with the SimBroker's own rule (`market/fills.py`: SL first, gaps at the open), expires at the time stop or the pre-close flatten, R/MAE/MFE as real trades; recomputed from entry each cycle; replay invariants (only qualifying decisions, SL ≤ -1R, TP = planned RR, R within MAE/MFE) | Entry at the ask/bid of the bar open, not "open ± half spread" (bars are bid prices; this matches real fills); PENDING and NO_ENTRY statuses; expiry also at the pre-close flatten; migration 718e999a1b7b (virtual_trades held no rows) | Real replay: 1 qualifying block (cooldown) → TP +2.53R; 9 duplicate rejections correctly got none. Synthetic scenario: 27 virtual trades, 0 violations |
 
 | 2026-09-29 | 3.5 Equity snapshotter + boundaries + peak | Trading day/week roll at 17:00 New York (`engine.trading_day_boundary` + `trading_day_timezone`), so they follow DST (21:00 UTC summer, 22:00 winter; 23/25-hour days on the DST Sundays); `EquityTracker` references persisted in `engine_state` (day/week start + when, peak) and restored with the last snapshot on startup; on a roll the new reference is max(last equity seen, current) so losses while down or across the boundary are never forgotten; `EquitySnapshotter` (60 s): snapshot row, references, and on a loss-limit breach HALTED + event + one critical alert per limit and day; replay shares one tracker between pipeline and snapshotter and checks the curve | `trading_day_boundary_utc` (fixed 21:00 UTC, an hour off the broker's day all winter) replaced; migration a1c0eb351778; the replay script snapshots every 5 simulated minutes by default (`--snapshot-minutes`; per-minute made a 3.5-month replay ~12 min) | Real replay: final equity 9862.63 = 10000 − 137.37 net, max drawdown 3.04%, worst day −56.13, no breaches, 0 violations. The engine state machine that acts on HALTED is Phase 5 |
+
+| 2026-09-29 | 3.6 Demo shakedown | DEFERRED (operator decision): it needs the engine running unattended on the demo for ≥ 5 trading days, and that runner is Phase 5 (5.x); the system is completed first, then the shakedown runs | — | Run after Phase 5; write `scripts/verify_ledger.py` then |
+
+| 2026-09-29 | 4.1 DeepSeek adapter | `adapters/llm/deepseek.py` (openai SDK → DeepSeek base_url, JSON output mode, per-call timeout), retries with jittered backoff via tenacity ONLY on 429/5xx/timeouts/connection errors, `circuit_breaker.py` (closed → open after N consecutive failures → one half-open trial), `budget.py` (UTC-day spend from `llm_calls`, checked before each call, survives restarts), cost incl. cache-hit tokens, every call persisted (messages, raw output, tokens, cost, latency, reported model, error), non-JSON output → `LLMInvalidOutput` (billed, breaker untouched), `verify_models` against `/models` | `llm.pricing` per model added to config and REQUIRED outside SIM (the budget cannot be enforced without it; prices are not hard-coded, copy them from DeepSeek's pricing page); LLMRequest carries prompt metadata and LLMResponse the call id/cost; typed errors LLMBudgetExhausted / LLMCircuitOpen / LLMInvalidOutput; deps openai, tenacity (spec §11) and respx (tests only) | Set `llm.pricing` and the model ids before 4.7 |
 
 ## Decisions log
 

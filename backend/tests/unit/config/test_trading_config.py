@@ -132,6 +132,10 @@ def test_live_is_accepted_only_with_allow_live_and_real_models(base: dict[str, A
     raw = _mutated(base, "engine.mode", "LIVE")
     raw["engine"]["allow_live"] = True
     raw["llm"]["analyst_model"] = raw["llm"]["auditor_model"] = "some-model-id"
+    with pytest.raises(ValidationError, match="no prices for 'some-model-id'"):
+        TradingConfig.model_validate(raw)  # the daily budget cannot be enforced without prices
+    price = {"input_cache_hit_per_mtok": 0.1, "input_cache_miss_per_mtok": 0.5, "output_per_mtok": 2}
+    raw["llm"]["pricing"] = {"some-model-id": price}
     assert TradingConfig.model_validate(raw).engine.mode is Mode.LIVE
 
 
