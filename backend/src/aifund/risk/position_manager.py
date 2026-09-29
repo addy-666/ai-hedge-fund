@@ -188,6 +188,46 @@ class PositionManager:
             strategy_version=f"pm:{kind}:{f.position.ticket}",
         )
 
+    def operator_close(
+        self,
+        position: Position,
+        tick: Tick,
+        trigger_tf: Timeframe,
+        now: datetime,
+        *,
+        reason: CloseReason,
+        label: str,
+        attempt: int,
+    ) -> OrderIntent:
+        """A full close the operator asked for (CLOSE_POSITION, or the FLATTEN_ALL kill switch). Each attempt
+        has its own idempotency key, so a failed close can be retried at once."""
+        intent_id = new_id()
+        key = make_idempotency_key(
+            account=self._account,
+            symbol=position.symbol,
+            trigger_tf=trigger_tf,
+            bar_time=now.replace(second=0, microsecond=0),
+            direction=Direction.LONG if position.side is Side.BUY else Direction.SHORT,
+            strategy_version=f"op:{label}:{position.ticket}:{attempt}",
+        )
+        return issue_order_intent(
+            id=intent_id,
+            idempotency_key=key,
+            decision_id=None,
+            kind=IntentKind.CLOSE,
+            close_reason=reason,
+            symbol=position.symbol,
+            side=position.side.opposite,
+            volume=position.volume,
+            price_ref=tick.entry_price(position.side.opposite),
+            risk_money=Decimal(0),
+            risk_pct=Decimal(0),
+            magic=self._magic,
+            comment=intent_comment(intent_id),
+            position_ticket=position.ticket,
+            created_at=now,
+        )
+
     def _close(
         self, f: PositionFacts, now: datetime, kind: ActionKind, ik: IntentKind, detail: str
     ) -> PositionAction:

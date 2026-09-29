@@ -60,7 +60,12 @@ def executor(
 
 
 def open_intent(
-    clock: FakeClock, *, key: str = KEY, volume: str = "0.04", price_ref: str = "4150.28"
+    clock: FakeClock,
+    *,
+    key: str = KEY,
+    volume: str = "0.04",
+    price_ref: str = "4150.28",
+    magic: int = 26092801,
 ) -> OrderIntent:
     intent_id = new_id()
     ref = D(price_ref)
@@ -79,7 +84,7 @@ def open_intent(
         tp_distance=D("29.32"),
         risk_money=D("47.72"),
         risk_pct=D("0.4772"),
-        magic=26092801,
+        magic=magic,
         comment=intent_comment(intent_id),
         created_at=clock.now(),
     )
