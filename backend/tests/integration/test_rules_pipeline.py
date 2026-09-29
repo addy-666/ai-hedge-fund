@@ -23,7 +23,7 @@ from aifund.rules import dsl
 from tests.integration.test_baseline_replay import BASELINE, echo_candidate, market, replay  # noqa: F401
 
 pytestmark = pytest.mark.scenario
-GOLDEN = Path(__file__).resolve().parents[1] / "fixtures" / "golden" / "lessons_block.txt"
+GOLDEN = Path(__file__).resolve().parents[1] / "fixtures" / "prompts" / "lessons_block.golden.txt"
 EVIDENCE = {
     "n_matched": 23,
     "win_matched": 0.26,

@@ -152,3 +152,42 @@ def test_choose_uses_only_finished_training_outcomes() -> None:
     chosen, train = choose({"a": a, "b": b}, start=T0, before=T0 + timedelta(days=50), min_train_signals=25)
     assert chosen == "a"  # b has only 20 finished outcomes: not eligible
     assert len(train) == 40
+
+
+def test_bootstrap_cis_of_a_mean_and_a_difference() -> None:
+    from aifund.stats import bootstrap_diff_ci, bootstrap_mean_ci
+
+    lo, hi = bootstrap_mean_ci([-1.0, -1.0, 1.5, -1.0, 2.0, -1.0], seed=1)  # type: ignore[misc]
+    assert lo < -1 / 12 < hi  # the sample mean sits inside its own interval
+    assert bootstrap_mean_ci([1.0]) is None
+    lo, hi = bootstrap_diff_ci([-1.0] * 10 + [1.5], [1.5] * 10 + [-1.0], seed=2)  # type: ignore[misc]
+    assert hi < 0
+    assert bootstrap_diff_ci([1.0], [1.0, 2.0]) is None
+
+
+def test_the_permutation_z_p_matches_brute_force_relabelling() -> None:
+    import itertools
+
+    import numpy as np
+
+    from aifund.stats import permutation_z_p_lower
+
+    rng = np.random.default_rng(7)
+    x = rng.choice([-1.0, 1.5], size=16, p=[0.55, 0.45])
+    mask = np.zeros(16, dtype=bool)
+    mask[:5] = True
+    x[:5] = -1.0  # the masked group loses
+    observed = x[mask].mean() - x[~mask].mean()
+    effects = []
+    for idx in itertools.combinations(range(16), 5):  # every relabelling: the exact permutation distribution
+        m = np.zeros(16, dtype=bool)
+        m[list(idx)] = True
+        effects.append(x[m].mean() - x[~m].mean())
+    exact = np.mean(np.asarray(effects) <= observed + 1e-12)
+    approx = permutation_z_p_lower(x, mask)
+    assert abs(approx - exact) < 0.03, (approx, exact)
+    assert np.isclose(np.var(effects), (x.var() * 16 * 16 / (5 * 11 * 15)))  # the variance used is exact
+    assert permutation_z_p_lower([1.0, 2.0, 3.0], [False, False, False]) == 1.0
+    assert permutation_z_p_lower([1.0, 1.0, 1.0], [True, False, False]) == 1.0
+    assert permutation_z_p_lower([1.0, 2.0], [True, False]) == 1.0
+    assert permutation_z_p_lower([3.0, 3.0, 1.0, 1.0], [True, True, False, False]) > 0.9  # a HIGHER group

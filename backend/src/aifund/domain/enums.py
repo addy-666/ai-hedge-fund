@@ -255,6 +255,33 @@ class RuleStatus(StrEnum):
     RETIRED = "RETIRED"
 
 
+class MistakeTag(StrEnum):
+    """The trade reviewer's fixed taxonomy (docs/04 §2). Extend only through a spec change."""
+
+    COUNTER_HTF_TREND = "COUNTER_HTF_TREND"
+    CHASED_EXTENSION = "CHASED_EXTENSION"
+    LOW_VOLATILITY_CHOP = "LOW_VOLATILITY_CHOP"
+    VOLATILITY_SPIKE = "VOLATILITY_SPIKE"
+    NEWS_EVENT = "NEWS_EVENT"
+    STOP_TOO_TIGHT = "STOP_TOO_TIGHT"
+    STOP_TOO_WIDE = "STOP_TOO_WIDE"
+    TARGET_TOO_AMBITIOUS = "TARGET_TOO_AMBITIOUS"
+    LATE_SESSION_ENTRY = "LATE_SESSION_ENTRY"
+    RANGE_MIDDLE_ENTRY = "RANGE_MIDDLE_ENTRY"
+    FAILED_BREAKOUT = "FAILED_BREAKOUT"
+    THESIS_INVALIDATED_EARLY = "THESIS_INVALIDATED_EARLY"
+    SPREAD_OR_COST_DRAG = "SPREAD_OR_COST_DRAG"
+    GOOD_TRADE_BAD_OUTCOME = "GOOD_TRADE_BAD_OUTCOME"  # stops the auditor learning from variance
+    GOOD_TRADE_GOOD_OUTCOME = "GOOD_TRADE_GOOD_OUTCOME"
+    LUCKY_WIN = "LUCKY_WIN"
+
+
+class ThesisVerdict(StrEnum):
+    CORRECT = "CORRECT"
+    WRONG = "WRONG"
+    UNCLEAR = "UNCLEAR"
+
+
 class DecisionOutcome(StrEnum):
     """Terminal outcome of one decision-pipeline run (docs/03 §3).
 
