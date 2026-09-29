@@ -31,7 +31,7 @@ def load_hypothesis(playbooks: Path, detector_id: str) -> EntryHypothesis:
         raise ConfigError(
             f"strategy.detectors: {detector_id!r} is neither built in nor a playbook in {playbooks}"
         )
-    card = yaml.safe_load(path.read_text()) or {}
+    card = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     if "hypothesis" not in card:
         raise ConfigError(f"playbook {path.name} has no DSL hypothesis: it cannot run as a detector")
     if card.get("status") != "APPROVED":
