@@ -376,6 +376,7 @@ ai-hedge-fund/
 │   │   ├── reconcile/             # reconciler.py, pnl.py, enrichment.py, virtual.py
 │   │   ├── engine/                # main.py, orchestrator.py, pipeline.py, state_machine.py,
 │   │   │                          #   loops.py, supervisor.py, commands.py
+│   │   ├── research/              # signals.py, stats.py, walkforward.py, ledger.py, loop.py (docs/09)
 │   │   ├── persistence/           # db.py, tables.py, repositories/*.py, backup.py
 │   │   ├── api/                   # app.py, auth.py, deps.py, ws.py, routers/*.py
 │   │   └── vault/                 # playbook_compiler.py, review_exporter.py
@@ -388,6 +389,7 @@ ai-hedge-fund/
 ```
 
 Dependency rule (enforced with `import-linter` in CI):
-`domain` ← `ports` ← `market` ← `risk`, `rules`, `strategies` ← `agents`, `execution`, `reconcile` ← `engine` ← `api`.
+`domain` ← `ports` ← `market` ← `risk`, `rules`, `strategies` ← `agents`, `execution`, `reconcile` ← `engine`,
+`research` ← `api`. `research` never imports `execution` or any broker adapter: it cannot place an order.
 `adapters` implement `ports`; only `engine/main.py` and `api/app.py` wire concrete adapters. `domain`, `risk`
 and `rules` import nothing with I/O.

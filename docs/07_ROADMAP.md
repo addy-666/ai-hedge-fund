@@ -5,8 +5,12 @@ implicitly requires: tests for new behaviour, `ruff` + `mypy` clean, no network 
 updated. Size: S ≈ < 300 LOC, M ≈ 300–800, L ≈ 800+ (split L tasks if the agent struggles).
 
 Build order rationale: prove the **plumbing with deterministic logic first** (data → risk → execution →
-reconciliation), then add the LLM, then operations and UI, then learning. An LLM on top of broken plumbing
-produces losses you cannot diagnose.
+reconciliation), then **prove an edge** (Phase R, `09_RESEARCH.md`, ADR 0001), then let the LLM trade, then
+operations and UI, then learning. An LLM on top of broken plumbing produces losses you cannot diagnose; a
+learning loop and a dashboard on top of a strategy with no edge only make its losses easier to watch.
+
+Plan in **signals and trades, not weeks** (`09` §8): every duration below that depends on trades is a
+minimum, set by the measured signal rate.
 
 ```mermaid
 gantt
@@ -18,8 +22,11 @@ gantt
     P2 Risk & execution       :p2, after p1, 2
     P3 Reconciliation         :p3, after p2, 1
     section Intelligence
-    P4 LLM analyst            :p4, after p3, 1
-    P5 Engine ops             :p5, after p4, 1
+    P4 LLM analyst (4.1–4.6)  :p4, after p3, 1
+    section Evidence
+    PR Edge research & gates  :pr, after p4, 2
+    section Operations
+    P5 Engine ops             :p5, after pr, 1
     P6 API & dashboard        :p6, after p5, 2
     P7 Learning loop          :p7, after p6, 2
     P8 Multi-agent & playbooks:p8, after p7, 2
@@ -28,7 +35,10 @@ gantt
 ```
 
 Milestones: **M1** after P3 — deterministic baseline strategy trades a demo account end-to-end with correct
-ledger. **M2** after P5 — LLM-driven engine runs 24/7 on demo (paper→demo). **M3** after P6 — operable from the
+ledger (the demo part runs with 3.6, after the Phase 5 runner). **ME** after PR — at least one strategy is
+research-validated (gate E1) or the research reports say plainly that none is. **M2** after P5 — engine runs
+24/7 on demo (paper→demo) with only E1-passed strategies sending orders; the analyst sends orders only once
+G-LLM passes, otherwise it runs in shadow. **M3** after P6 — operable from the
 dashboard. **M4** after P7 — self-learning loop live in shadow → active. **M5** after P9 — go-live gates.
 
 ---
@@ -94,7 +104,24 @@ dashboard. **M4** after P7 — self-learning loop live in shadow → active. **M
 | 4.4 | **Analyst agent**: schema (`03` §7.2), validation & repair retry, fallbacks (`03` §7.3) | M | Tests for every fallback path |
 | 4.5 | **Portfolio manager & confidence pipeline** (`03` §8) (rules/calibration hooks as no-ops until P7/P8) | S | Unit tests |
 | 4.6 | **Pipeline integration**: replace baseline decision with analyst (baseline remains selectable by config); dry-run mode (decisions logged, no orders) | M | Replay with FakeLLM end-to-end; dry-run produces decisions and zero intents |
-| 4.7 | **PAPER run on VPS** with real DeepSeek for ≥ 3 days: measure latency, cost/day, HOLD ratio, invalid-output rate | S (ops) | Numbers recorded in PROGRESS.md; budget adjusted |
+| 4.7 | **PAPER run on VPS** with real DeepSeek for ≥ 3 days: measure latency, cost/day, HOLD ratio, invalid-output rate — AFTER R.9 (the shadow comparator runs from the first paper day) | S (ops) | Numbers recorded in PROGRESS.md; budget adjusted |
+
+## Phase R — Edge research & evidence gates (Milestone ME) — `09_RESEARCH.md`, ADR 0001
+
+Runs on the Mac against exported history (no broker, no network), except R.8 and the forward parts of R.9.
+
+| # | Task | Size | DoD |
+|---|---|---|---|
+| R.0 | **Coverage gate**: `pytest-cov` branch coverage in CI with a per-package floor (`scripts/coverage_gate.py`), money path (`risk`, `execution`, `reconcile`) at 100% (tests for every uncovered branch; a `# pragma: no cover` only with a one-line justification); `aifund.engine` under strict mypy | M | CI fails when any gated package drops below its floor; money path at 100% |
+| R.1 | **Signal study** (`research/signals.py`, `09` §2): every detector candidate on every closed trigger bar → counterfactual trade with the live `plan_stops` and `simulate`, live data-only pre-flight gates, costs, session-calendar expiry; `scripts/research.py signals` | M | Determinism test; hand-derived synthetic series gives exact R per signal; costs lower R by exactly spread/commission/slippage over the stop distance |
+| R.2 | **Statistics & walk-forward** (`research/stats.py`, `walkforward.py`, `09` §3): expectancy, seeded bootstrap CI, one-sided p, PF, drawdown in R, monthly; anchored walk-forward with in-sample parameter choice | M | Planted edge found with CI > 0; pure noise: CI covers 0 in ≥ 90% of 200 seeded runs; walk-forward never uses a test window's data to choose its parameters (property test) |
+| R.3 | **Trial ledger** (`research/ledger.py`, `09` §4): append-only, idempotent trial ids, BH-FDR over the whole ledger, single-use holdout | S | Duplicate trial not double-counted; BH matches a hand-computed example; second holdout request refused |
+| R.4 | **First edge report**: R.1–R.3 on the 15-month export for `mtf_trend_pullback` (default + a small declared grid) incl. signal rate and throughput projection (`09` §8) | S | Report and numbers in PROGRESS.md, whatever they say |
+| R.5 | **Entry-rule DSL detector** (`strategies/dsl_detector.py`, `09` §5) + feature mirrors in the registry; condition grammar shared with `rules/dsl.py` (7.1 reuses it) | M | Exhaustive op tests; unknown / not-entry-time feature rejected; mirror correctness per feature |
+| R.6 | **LLM researcher** (`agents/researcher.py`, `research/loop.py`, `09` §6): hypotheses in the DSL from registry + in-sample ledger summary; walk-forward, ledger, BH, holdout only for survivors; DRAFT playbook card for validated ones | M | FakeLLM tests: invalid DSL dropped with reason; holdout results never appear in a prompt (test inspects every rendered prompt); planted-edge dataset → validated; noise dataset → none |
+| R.7 | **Evidence gate E1** (`config/evidence/*.json`, `09` §7): engine/pipeline refuse to run a detector outside SIM without a matching E1-passed record (hash of detector id, version, params) | S | Config/startup tests: missing, stale-hash and failed records rejected; SIM exempt |
+| R.8 | **Research data depth** (Windows): chunked M1/M5 export by date range (`copy_rates_range`) so M1 is not capped at the terminal's max-bars; export ≥ 24 months where the broker has it; data-quality report (gaps, spread outliers) | S | Manifest shows no 99,999-bar cap; quality report committed to PROGRESS.md |
+| R.9 | **Shadow comparator & G-LLM** (`09` §7): every bar with a candidate gets SHADOW virtual trades for both the baseline decision and the analyst decision (same stop planner), whatever was ordered; paired uplift report net of LLM cost; the analyst may send orders only after G-LLM passes (config-enforced) | M | Replay with FakeLLM: both shadows recorded per candidate bar; paired report matches a hand-computed fixture; analyst orders refused before sign-off |
 
 ## Phase 5 — Engine orchestration & ops (Milestone M2)
 
@@ -107,7 +134,10 @@ dashboard. **M4** after P7 — self-learning loop live in shadow → active. **M
 | 5.5 | **Notifier** (Telegram) + healthchecks ping + daily summary | S | Mocked HTTP tests; message formats snapshot-tested |
 | 5.6 | **Startup sequence**: config → DB migrate check → gateway → startup checks → resolve UNKNOWN intents → reconcile → state restore (RUNNING→PAUSED) | S | Restart scenarios |
 | 5.7 | **Windows deployment**: `deploy/windows/*.ps1`, Task Scheduler XMLs, backup script, install guide in `docs/runbooks/install.md` | M | Fresh VPS install following the guide works; reboot → everything comes back |
-| 5.8 | **Demo 24/7 run** with LLM analyst ≥ 2 weeks | S (ops) | Uptime ≥ 99.5%; zero invariant violations; weekly notes in PROGRESS.md |
+| 5.7a | **Guardian EA** (moved from 9.1 — the only safety net that works when Python is dead must exist before unattended runs): `mql5/GuardianEA.mq5` per `06` §4 + engine halt-flag/heartbeat integration | M | Strategy Tester + demo test: forced equity drop closes positions and engine goes HALTED |
+| 5.7b | **News gate** (moved from 8.6 — pre-flight gate 5 in `03` §4 must be live before evidence is collected on demo): Guardian EA calendar export reader + blackout gate + news features | S | Tests with fixture CSV |
+| 5.7c | **`scripts/verify_ledger.py`** (needed by 3.6 and 9.3): DB trades vs MT5 deal history diff, including positions opened AND closed while the engine was down | S | Fixture-based tests incl. the engine-down orphan case |
+| 5.8 | **Demo 24/7 run** ≥ 2 weeks: E1-passed strategies trade; the analyst trades only if G-LLM passed, else runs in shadow; 3.6 shakedown folded in | S (ops) | Uptime ≥ 99.5%; zero invariant violations; zero ledger diffs; weekly notes in PROGRESS.md |
 
 ## Phase 6 — API & dashboard (Milestone M3)
 
@@ -148,25 +178,26 @@ dashboard. **M4** after P7 — self-learning loop live in shadow → active. **M
 | 8.3 | **Specialist analysts + risk critic** (`agents/specialists.py`, `critic.py`) | M | FakeLLM tests; cost per decision logged |
 | 8.4 | **Committee aggregation** in portfolio manager; runs in **shadow** alongside single-analyst for ≥ 2 weeks; compare via decisions table | M | Comparison report in Analytics |
 | 8.5 | **Calibrator** (isotonic, activation criteria) + reliability UI | M | Synthetic miscalibrated data corrected; Brier improves |
-| 8.6 | **News gate**: Guardian EA calendar export reader + blackout gate + news features | S | Tests with fixture CSV |
+| 8.6 | *(moved to 5.7b)* | — | — |
+| 8.7 | **Researcher at scale**: scheduled research runs (weekly) over new history, ledger-wide FDR, holdout rolled forward only with new data (the old holdout joins the walk-forward history) | S | Trigger tests; holdout never reused for the same hypothesis |
 
 ## Phase 9 — Hardening & go-live (Milestone M5)
 
 | # | Task | Size | DoD |
 |---|---|---|---|
-| 9.1 | **Guardian EA** (`mql5/GuardianEA.mq5`) per `06` §4 + engine halt-flag/heartbeat integration | M | Strategy Tester + demo test: forced equity drop closes positions and engine goes HALTED |
+| 9.1 | **Guardian EA hardening** (built in 5.7a): re-run the forced-drawdown test on the final build; heartbeat-loss behaviour under chaos (9.2) | S | Test re-run recorded |
 | 9.2 | **Chaos suite** on SimBroker: kill engine at random points (100 seeded runs), DB locked, LLM outage, gateway timeout storms | M | Zero duplicates, zero lost trades, zero orders on stale data across all runs |
-| 9.3 | **Ledger verification job** (daily DB vs MT5 history diff) + alert | S | Runs nightly; diff alert tested |
+| 9.3 | **Ledger verification job**: schedule 5.7c's `verify_ledger.py` nightly + alert | S | Runs nightly; diff alert tested |
 | 9.4 | **Security review** (checklist `06` §6), `pip-audit`/`npm audit`, pen-test the API auth flows | S | Checklist all ticked |
 | 9.5 | **Backup/restore drill** | S (ops) | Restore on Mac verified |
 | 9.6 | **Soak**: L2 DEMO gate (`06` §10) | ops | All L2 gates met, signed off in `audit_log` |
-| 9.7 | **Go-live L3** micro risk | ops | L3 gates tracked on dashboard |
+| 9.7 | **Go-live L3** micro risk — only strategies that passed E1 **and** E2 (`09` §7) | ops | L3 gates tracked on dashboard |
 
 ## Phase 10 — Continuous improvement (backlog, not scheduled)
 
 - Postgres/TimescaleDB migration if data volume or multi-process writes demand it.
 - Multi-account support (account_id already in schema).
-- Walk-forward research harness for deterministic detectors (not for LLM — see contamination note).
+- *(Walk-forward research harness: promoted to Phase R.)*
 - Headline/sentiment inputs (with prompt-injection hardening).
 - Portfolio-level optimisation of risk across correlated buckets.
 - A/B testing framework for prompt versions using shadow decisions.
@@ -176,7 +207,11 @@ dashboard. **M4** after P7 — self-learning loop live in shadow → active. **M
 ## Global quality gates (every phase)
 
 - Unit tests for pure logic; scenario tests (SimBroker + FakeLLM + FakeClock) for flows; no network in CI.
-- Money-path modules (`risk`, `execution`, `reconcile`, `rules/engine.py`): 100% branch coverage enforced.
+- Money-path modules (`risk`, `execution`, `reconcile`, `rules/engine.py`): 100% branch coverage enforced in
+  CI (R.0); every other package has a floor that may only go up.
+- No strategy sends orders outside SIM without an E1 evidence record; no gate is lowered to let a strategy
+  through (`09` §7, ADR 0001).
+- Durations that depend on trades are planned from the measured signal rate (`09` §8).
 - Every bug found in demo → regression test first, then fix.
 - Prompt changes → new prompt version file (never edit a released version in place); golden-file tests.
 - Schema changes → Alembic migration + backup-before-migrate.
