@@ -54,7 +54,10 @@ EXAMPLE = PROJECT_ROOT / "config" / "trading.example.yaml"
 @pytest.fixture
 def config_path(tmp_path: Path) -> Path:
     path = tmp_path / "trading.yaml"
-    path.write_text(EXAMPLE.read_text().replace("account_label: ", "account_label: acc #", 1))
+    path.write_text(
+        EXAMPLE.read_text(encoding="utf-8").replace("account_label: ", "account_label: acc #", 1),
+        encoding="utf-8",
+    )
     return path
 
 
@@ -382,7 +385,8 @@ def test_config_get_and_put(
 ) -> None:
     headers = login(client)
     current = client.get("/api/config").json()
-    assert current["yaml"] == config_path.read_text() and "properties" in current["json_schema"]  # noqa: PT018
+    assert current["yaml"] == config_path.read_text(encoding="utf-8")
+    assert "properties" in current["json_schema"]
 
     bad = client.put(
         "/api/config",
@@ -403,7 +407,7 @@ def test_config_get_and_put(
     safer = current["yaml"].replace("risk_per_trade_pct: 0.5", "risk_per_trade_pct: 0.4")
     saved = client.put("/api/config", json={"yaml": safer, "comment": "less risk"}, headers=headers).json()
     assert saved["changed"] is True and saved["command_id"]  # noqa: PT018
-    assert config_path.read_text() == safer
+    assert config_path.read_text(encoding="utf-8") == safer
     assert client.get(f"/api/commands/{saved['command_id']}").json()["type"] == "RELOAD_CONFIG"
 
     clock.advance(minutes=6)
