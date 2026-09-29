@@ -73,3 +73,10 @@ def test_candles_are_atr_normalised_relative_to_the_last_close() -> None:
 )  # fmt: skip
 def test_number_formatting_is_deterministic(value: object, text: str) -> None:
     assert fmt(value) == text  # type: ignore[arg-type]  # never scientific notation
+
+
+def test_the_release_hash_ignores_line_endings(tmp_path: Path) -> None:
+    source = (PROMPTS_DIR / "analyst_v1.j2").read_bytes()
+    crlf = tmp_path / "analyst_v1.j2"
+    crlf.write_bytes(source.replace(b"\r\n", b"\n").replace(b"\n", b"\r\n"))  # a Windows checkout
+    assert template_sha256(crlf) == template_sha256(PROMPTS_DIR / "analyst_v1.j2")

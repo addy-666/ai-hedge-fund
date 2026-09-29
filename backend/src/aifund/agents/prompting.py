@@ -45,7 +45,8 @@ class RenderedPrompt:
 
 
 def template_sha256(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+    """Hash of the template text with LF line endings, so a CRLF checkout (Windows) hashes the same."""
+    return hashlib.sha256(path.read_bytes().replace(b"\r\n", b"\n")).hexdigest()
 
 
 def released_templates() -> dict[str, str]:

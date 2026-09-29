@@ -1,0 +1,2 @@
+# prompt templates are hashed for immutability (AGENTS.md invariant 12): keep LF everywhere
+*.j2 text eol=lf
