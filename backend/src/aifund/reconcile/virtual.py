@@ -30,9 +30,11 @@ from typing import TypeVar
 
 from sqlalchemy.orm import Session, sessionmaker
 
+from aifund.config.trading_config import PositionManagementConfig
 from aifund.domain.enums import CloseReason, DealReason, Side, Timeframe, VirtualStatus
 from aifund.domain.market import Bar
 from aifund.market.fills import exit_on_bar
+from aifund.market.sessions import SessionCalendar
 from aifund.persistence.db import unit_of_work
 from aifund.persistence.repositories.virtual import VirtualTradeRepository
 from aifund.persistence.tables import VirtualTradeRow
@@ -45,6 +47,33 @@ T = TypeVar("T")
 ENTRY_WINDOW = timedelta(minutes=5)  # the entry bar must open within this of the planned entry time
 MINUTE = timedelta(minutes=1)
 _EXIT_REASON = {DealReason.SL: CloseReason.SL, DealReason.TP: CloseReason.TP}
+MAX_VIRTUAL_BARS = 96  # expiry for virtual trades when no time stop is configured
+
+
+def virtual_expiry(
+    entry_time: datetime,
+    trigger_tf: Timeframe,
+    pm: PositionManagementConfig,
+    session: SessionCalendar | None,
+    *,
+    trade_weekends: bool,
+) -> tuple[datetime, CloseReason] | None:
+    """When a counterfactual trade entered at ``entry_time`` would be closed by the position manager.
+
+    The time stop, or the pre-close flatten if that comes first; None when a real trade would be flattened
+    at once. Shared by the pipeline (virtual trades) and research (signal studies): one rule, not two.
+    """
+    tf = timedelta(minutes=trigger_tf.minutes)
+    expires_at = entry_time + tf * (pm.time_stop_bars or MAX_VIRTUAL_BARS)
+    reason = CloseReason.TIME_STOP
+    if not trade_weekends and session is not None and pm.flatten_before_close_minutes:
+        long_close = session.next_long_close(entry_time, timedelta(hours=pm.long_close_hours))
+        flatten_at = long_close - timedelta(minutes=pm.flatten_before_close_minutes)
+        if flatten_at <= entry_time:
+            return None  # a real trade would have been flattened at once
+        if flatten_at < expires_at:
+            expires_at, reason = flatten_at, CloseReason.FLATTEN
+    return expires_at, reason
 
 
 @dataclass(frozen=True)

@@ -111,7 +111,7 @@ name = "Layered architecture (docs/01 §12)"
 type = "layers"
 layers = [
     "aifund.api",
-    "aifund.engine",
+    "aifund.engine | aifund.research",
     "aifund.agents | aifund.execution | aifund.reconcile | aifund.vault",
     "aifund.risk | aifund.rules | aifund.strategies",
     "aifund.market",
@@ -125,6 +125,15 @@ name = "Agents never reach execution or the broker"
 type = "forbidden"
 source_modules = ["aifund.agents"]
 forbidden_modules = ["aifund.execution", "aifund.adapters", "MetaTrader5"]
+
+[[tool.importlinter.contracts]]
+name = "Research can never place an order (docs/09)"
+type = "forbidden"
+source_modules = ["aifund.research"]
+forbidden_modules = [
+    "aifund.execution", "aifund.engine", "aifund.adapters.mt5", "aifund.adapters.sim", "aifund.api",
+    "MetaTrader5",
+]
 
 [[tool.importlinter.contracts]]
 name = "Pure layers do no I/O"
@@ -147,7 +156,7 @@ type = "forbidden"
 source_modules = [
     "aifund.api", "aifund.engine", "aifund.agents", "aifund.execution", "aifund.reconcile",
     "aifund.vault", "aifund.rules", "aifund.strategies", "aifund.market", "aifund.ports",
-    "aifund.config", "aifund.persistence", "aifund.adapters",
+    "aifund.config", "aifund.persistence", "aifund.adapters", "aifund.research",
 ]
 forbidden_modules = ["aifund.domain._issuance"]
 allow_indirect_imports = true  # calling the Risk Manager is the intended path; importing _issuance is not
@@ -157,7 +166,7 @@ name = "Only the MT5 adapter imports MetaTrader5"
 type = "forbidden"
 source_modules = [
     "aifund.api", "aifund.engine", "aifund.agents", "aifund.execution", "aifund.reconcile",
-    "aifund.vault", "aifund.risk", "aifund.rules", "aifund.strategies", "aifund.market",
+    "aifund.research", "aifund.vault", "aifund.risk", "aifund.rules", "aifund.strategies", "aifund.market",
     "aifund.ports", "aifund.domain", "aifund.config", "aifund.persistence",
     "aifund.adapters.sim", "aifund.adapters.llm", "aifund.adapters.notify",
 ]
@@ -187,4 +196,5 @@ show_missing = true
 "aifund.persistence" = 93
 "aifund.adapters" = 92
 "aifund.engine" = 86
+"aifund.research" = 100
 "aifund" = 95

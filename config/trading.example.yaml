@@ -183,3 +183,18 @@ learning:
 alerts:
   telegram: false
   daily_summary_utc: "21:05"
+
+research:                     # evidence gates (docs/09 §7). Never lower a gate to let a strategy through.
+  holdout_fraction: 0.25      # the most recent quarter of history, evaluated ONCE per hypothesis
+  folds: 4                    # anchored walk-forward test windows before the holdout
+  min_train_signals: 30
+  fdr_q: 0.10                 # Benjamini-Hochberg across every hypothesis in the ledger
+  min_oos_signals: 200        # E1: out-of-sample signals needed
+  min_positive_fold_share: 0.6
+  min_holdout_signals: 60
+  min_forward_signals: 100    # E2: shadow signals on live data after the model's training cutoff
+  min_paired_signals: 150     # G-LLM: bars where both the analyst and the baseline decided
+  max_months_to_evidence: 6   # slower than this to reach E2 = "too slow to validate"
+  commission_per_lot: 0       # round turn; Vantage standard accounts charge none (spread only)
+  slippage_points: 0
+  max_hypotheses_per_run: 5

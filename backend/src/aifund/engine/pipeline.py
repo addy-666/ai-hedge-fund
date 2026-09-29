@@ -27,7 +27,6 @@ from aifund.agents.portfolio_manager import PortfolioManager
 from aifund.config.trading_config import ProfileConfig, SymbolConfig, TradingConfig
 from aifund.domain.decision import FeatureSnapshot, FinalDecision, SetupCandidate
 from aifund.domain.enums import (
-    CloseReason,
     DealEntry,
     DecisionOutcome,
     Direction,
@@ -52,6 +51,7 @@ from aifund.persistence.repositories.market import FeatureSnapshotRepository
 from aifund.persistence.repositories.virtual import VirtualTradeRepository
 from aifund.ports.broker import BrokerError, BrokerPort, MarketDataPort
 from aifund.ports.system import ClockPort
+from aifund.reconcile.virtual import virtual_expiry
 from aifund.risk.guards import GuardAction, GuardContext
 from aifund.risk.limits import Exposure, check_loss_limits, drawdown_pct
 from aifund.risk.manager import RiskManager, RiskRequest
@@ -88,9 +88,6 @@ class DecisionRecord:
     prompt_version: str | None = None
     virtual: dict[str, Any] | None = None  # a blocked signal's counterfactual trade plan (docs/03 §14.4)
     decision_id: str = field(default_factory=new_id)
-
-
-MAX_VIRTUAL_BARS = 96  # expiry for virtual trades when no time stop is configured
 
 
 @dataclass(frozen=True)
@@ -217,19 +214,18 @@ class DecisionPipeline:
         stops = self._risk.counterfactual_stops(b.decision, b.tick, atr, b.spec) if atr else None
         if stops is None:
             return None
-        tf = timedelta(minutes=b.roles.trigger.minutes)
-        entry_time = b.event.bar_time + tf  # the next trigger bar opens as this one closes
-        pm = self._cfg.position_management
-        expires_at = entry_time + tf * (pm.time_stop_bars or MAX_VIRTUAL_BARS)
-        reason = CloseReason.TIME_STOP
+        entry_time = b.event.bar_time + timedelta(minutes=b.roles.trigger.minutes)  # the next bar's open
         session = self._sessions.get(b.sym_cfg.session) if b.sym_cfg.session else None
-        if not b.sym_cfg.trade_weekends and session is not None and pm.flatten_before_close_minutes:
-            long_close = session.next_long_close(entry_time, timedelta(hours=pm.long_close_hours))
-            flatten_at = long_close - timedelta(minutes=pm.flatten_before_close_minutes)
-            if flatten_at <= entry_time:
-                return None  # a real trade would have been flattened at once
-            if flatten_at < expires_at:
-                expires_at, reason = flatten_at, CloseReason.FLATTEN
+        expiry = virtual_expiry(
+            entry_time,
+            b.roles.trigger,
+            self._cfg.position_management,
+            session,
+            trade_weekends=b.sym_cfg.trade_weekends,
+        )
+        if expiry is None:
+            return None  # a real trade would have been flattened at once
+        expires_at, reason = expiry
         return dict(
             side=b.decision.direction.to_side(),
             setup_tag=b.decision.setup_tag,
