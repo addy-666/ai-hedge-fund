@@ -410,6 +410,8 @@ llm:
   max_retries: 2
   daily_budget_usd: 5.0
   circuit_breaker: {failures: 5, open_minutes: 10}
+  pricing:                      # USD per million tokens per model id; required outside SIM (daily budget)
+    <model id>: {input_cache_hit_per_mtok: <usd>, input_cache_miss_per_mtok: <usd>, output_per_mtok: <usd>}
 
 learning:
   audit_schedule_utc: "00:30"

@@ -82,7 +82,7 @@ dashboard. **M4** after P7 — self-learning loop live in shadow → active. **M
 | 3.3 | **Enrichment**: MAE/MFE/R/bars held/slippage | S | Tests on synthetic paths |
 | 3.4 | **Virtual trade tracker** | M | Same maths as real trades; SL-first rule; expiry |
 | 3.5 | **Equity snapshotter + day/week boundaries + peak tracking** | S | Tests across boundary and DST changes |
-| 3.6 | **Demo shakedown (VPS)**: run baseline strategy on demo for ≥ 5 trading days with `scripts/verify_ledger.py` comparing DB trades vs MT5 history daily | S (ops) | Zero discrepancies; findings logged in PROGRESS.md |
+| 3.6 | **Demo shakedown (VPS)** — DEFERRED until the Phase 5 engine runner exists (operator decision 2026-09-29: finish the system first): run baseline strategy on demo for ≥ 5 trading days with `scripts/verify_ledger.py` comparing DB trades vs MT5 history daily | S (ops) | Zero discrepancies; findings logged in PROGRESS.md |
 
 ## Phase 4 — LLM analyst
 
