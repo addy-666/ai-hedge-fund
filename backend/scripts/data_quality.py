@@ -47,7 +47,7 @@ def main(argv: list[str]) -> int:
     by_broker = {s.broker: s for s in cfg.symbols}
 
     lines = [
-        f"History {root} — server {manifest.server}, {manifest.start:%Y-%m-%d} → {manifest.end:%Y-%m-%d}, "
+        f"History {root} - server {manifest.server}, {manifest.start:%Y-%m-%d} -> {manifest.end:%Y-%m-%d}, "
         f"exported {manifest.exported_at:%Y-%m-%d %H:%M}Z, terminal max bars "
         f"{manifest.max_bars if manifest.max_bars is not None else 'unknown'}",
         "",
@@ -80,7 +80,7 @@ def main(argv: list[str]) -> int:
     print(report)
     out = Path(args.out) / f"quality_{datetime.now(UTC):%Y%m%d_%H%M%S}.md"
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(report + "\n")
+    out.write_text(report + "\n", encoding="utf-8")
     print(f"\nsaved: {out}")
     return 0
 

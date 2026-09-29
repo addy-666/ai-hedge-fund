@@ -101,7 +101,11 @@ class Ledger:
     def trials(self) -> list[Trial]:
         if not self.path.is_file():
             return []
-        return [Trial.from_json(line) for line in self.path.read_text().splitlines() if line.strip()]
+        return [
+            Trial.from_json(line)
+            for line in self.path.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
 
     def record(
         self,
