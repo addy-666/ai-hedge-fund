@@ -159,6 +159,26 @@ The LLM's job in research is **hypothesis generation**, not judgement:
   the holdout gate becomes a **research-validated** record with a DRAFT playbook card for operator approval.
 - Budget: the LLM calls go through the same adapter, budget and `llm_calls` accounting as trading calls.
 
+Implementation notes (R.6):
+
+- `agents/researcher.py` + prompt `researcher_v1.j2` (released, hash-pinned). Model `llm.auditor_model`
+  with `auditor_timeout_s` (offline work; may be the slower reasoning model). Each proposed item is
+  validated on its own (strict `EntryHypothesis`, registry, ranges, profile timeframes); if the reply is
+  malformed or any item is invalid, ONE repair call lists the problems and asks for corrected versions of the
+  rejected ones only; what is still invalid is dropped with its reason. Ids are assigned by the engine from
+  the behaviour hash (`H-<sha[:10]>`), so an idea proposed twice is one hypothesis.
+- The holdout never reaches the model, enforced twice: `research/loop.py` builds the ledger summary without
+  holdout trials and the descriptive tables only from signals that entered before the holdout start (it
+  raises otherwise), and the agent refuses a brief containing a holdout line.
+- Descriptive tables come from a PROBE detector (alternating LONG/SHORT on every trigger bar, default stops):
+  mean R by direction, session, setup-TF regime and higher-timeframe alignment.
+- Features that are always null today (the news-distance features, until 5.7b) and D1-only context features
+  in a profile without D1 are neither shown to the model nor accepted in a hypothesis.
+- A research-validated hypothesis gets an evidence record (`config/evidence/`, §7) and a DRAFT card
+  (`data/research/drafts/<id>.yaml`); the operator approves it into `config/playbooks/`.
+- `scripts/research.py dsl --file ideas.json` runs operator hypotheses through the same loop (origin
+  `operator`); `scripts/research.py llm --rounds N` runs the researcher (each round sees the updated ledger).
+
 ## 7. Evidence gates
 
 | Gate | Where | Pass condition (defaults in `research:` config) |
@@ -169,7 +189,13 @@ The LLM's job in research is **hypothesis generation**, not judgement:
 
 The engine enforces E1 at startup: outside SIM, every enabled detector must reference an evidence record
 (`config/evidence/*.json`, produced by the research loop, hash-checked against the detector's version and
-params) with `gate = E1_PASSED` or later. E2 and G-LLM are tracked on the dashboard and signed off in
+params) with `gate = E1_PASSED` or later. Implementation (R.7): `config/evidence.py` (the record lives in `config` because
+the research loop writes it and the engine reads it, and those layers may not import each other). A record
+matches a detector on id, version, `params_sha256` (every detector exposes it), a symbol it lists and the
+profile (trigger/setup/context) it was researched with; changed parameters make it STALE. The decision
+pipeline checks every (symbol, detector) it would run when it is constructed and refuses to start, listing
+every problem. SIM is exempt, and so is a **dry run** (`strategy.dry_run`: decisions are recorded, nothing is
+ever sent) — a shadow run is how a strategy collects forward (E2) evidence. E2 and G-LLM are tracked on the dashboard and signed off in
 `audit_log` (operator), like the L2/L3 rollout gates.
 
 ## 8. Throughput planning

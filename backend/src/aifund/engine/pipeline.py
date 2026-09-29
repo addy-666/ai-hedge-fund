@@ -14,7 +14,7 @@ from __future__ import annotations
 import asyncio
 import time
 from collections import defaultdict
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from decimal import Decimal
@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from aifund.agents.analyst import Analyst, AnalystInput, Verdict
 from aifund.agents.portfolio_manager import PortfolioManager
+from aifund.config.evidence import Deployment, EvidenceRecord, profile_key, require_evidence
 from aifund.config.trading_config import ProfileConfig, SymbolConfig, TradingConfig
 from aifund.domain.decision import FeatureSnapshot, FinalDecision, SetupCandidate
 from aifund.domain.enums import (
@@ -126,12 +127,18 @@ class DecisionPipeline:
         profile_override: dict[str, ProfileConfig] | None = None,
         analyst: Analyst | None = None,
         portfolio: PortfolioManager | None = None,
+        evidence: Sequence[EvidenceRecord] = (),
     ) -> None:
         if cfg.strategy.analyst_enabled and analyst is None and not cfg.strategy.baseline_enabled:
             raise ValueError(
                 "strategy.analyst_enabled needs an Analyst (an LLM); or enable the baseline instead"
             )
         self._cfg = cfg
+        self._profiles = {**cfg.profiles, **(profile_override or {})}
+        # gate E1 (docs/09 §7): outside SIM every detector needs matching, passing research evidence
+        require_evidence(
+            self._deployments(detectors), evidence, mode=cfg.engine.mode, dry_run=cfg.strategy.dry_run
+        )
         self._analyst = analyst if cfg.strategy.analyst_enabled else None
         self._portfolio = portfolio or PortfolioManager(max_total_penalty=cfg.learning.max_total_penalty)
         self._sessions = calendars(cfg.sessions)
@@ -146,7 +153,6 @@ class DecisionPipeline:
         self._account = account_id
         self._version = strategy_version
         self._enabled = trading_enabled
-        self._profiles = {**cfg.profiles, **(profile_override or {})}
         self._locks: defaultdict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
         self._flip_flop_until: dict[str, datetime] = {}
         self._by_broker = {s.broker: s for s in cfg.symbols}
@@ -159,6 +165,16 @@ class DecisionPipeline:
 
     async def _tx(self, fn: Callable[[Session], Any]) -> Any:
         return await asyncio.to_thread(self._tx_sync, fn)
+
+    def _deployments(
+        self, detectors: Callable[[SymbolConfig, TfRoles], list[SetupDetector]]
+    ) -> list[Deployment]:
+        out = []
+        for sym in self._cfg.symbols:
+            roles = self.roles(sym)
+            profile = profile_key(roles.trigger, roles.setup, roles.context)
+            out += [Deployment(d, sym.broker, profile) for d in detectors(sym, roles)]
+        return out
 
     def roles(self, symbol_cfg: SymbolConfig) -> TfRoles:
         profile = self._profiles[symbol_cfg.profile]

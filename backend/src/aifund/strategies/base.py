@@ -28,6 +28,10 @@ class SetupDetector(Protocol):
     playbook_id: str
     version: str
 
+    def params_sha256(self) -> str:
+        """Fingerprint of the parameters: evidence records match it (gate E1, docs/09 §7)."""
+        ...
+
     def detect(self, snapshot: FeatureSnapshot) -> list[SetupCandidate]: ...
 
 

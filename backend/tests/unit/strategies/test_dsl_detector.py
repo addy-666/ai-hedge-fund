@@ -181,3 +181,8 @@ def test_the_signal_study_runs_a_dsl_detector_with_the_production_stops() -> Non
         history, sig.spec(), [DslDetector(h, sig.ROLES)], sig.START, sig.START + timedelta(hours=6)
     )
     assert [o.r_net for o in again.outcomes] == [o.r_net for o in run.outcomes]
+
+
+def test_the_detector_fingerprint_is_the_hypothesis_behaviour() -> None:
+    h = EntryHypothesis.model_validate(spec())
+    assert DslDetector(h, ROLES).params_sha256() == h.params_sha256()

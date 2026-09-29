@@ -233,6 +233,11 @@ _CTX_MIRRORS: dict[str, Mirror] = {  # full names; portfolio features are not sn
 }  # fmt: skip
 CTX_FEATURES = tuple(replace(s, mirror=_CTX_MIRRORS.get(s.name)) for s in CTX_FEATURES)
 
+NOT_YET_COMPUTED = frozenset(  # registered but always null until the news gate (roadmap 5.7b) fills them
+    {"ctx.minutes_to_next_high_impact_news", "ctx.minutes_since_last_high_impact_news"}
+)
+NEEDS_TIMEFRAME = {"ctx.dist_pdh_atr": Timeframe.D1, "ctx.dist_pdl_atr": Timeframe.D1}  # context from D1 bars
+
 PROP_FEATURES: tuple[FeatureSpec, ...] = (
     FeatureSpec(
         "prop.direction",

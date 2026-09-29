@@ -4,6 +4,14 @@
     uv run python scripts/research.py baseline                   # grid + walk-forward + gate E1 (holdout untouched)
     uv run python scripts/research.py baseline --spend-holdout   # ...and, only if the walk-forward passes, the
                                                                  #    ONE holdout evaluation this hypothesis gets
+    uv run python scripts/research.py dsl --file my_ideas.json   # operator hypotheses (a JSON list, docs/09 §5)
+    uv run python scripts/research.py llm --rounds 1             # the LLM researcher proposes, the loop judges
+                                                                 #    (needs DEEPSEEK_API_KEY, llm.pricing and a
+                                                                 #    migrated database for the llm_calls budget)
+
+``dsl`` and ``llm`` go through the research loop (docs/09 §6): walk-forward, ledger, BH over the whole ledger,
+and — for survivors, with ``--spend-holdout`` — the single holdout look. A validated hypothesis gets an evidence
+record in ``config/evidence`` (gate E1) and a DRAFT playbook card in ``<out>/drafts`` for the operator.
 
 ``baseline`` studies the ``mtf_trend_pullback`` detector over a small DECLARED parameter grid (declared here, in
 code review, not tuned after seeing results). The grid is one hypothesis: its parameters are chosen inside the
@@ -14,6 +22,7 @@ ledger (``<repo>/data/research/ledger.jsonl``); the report is printed and saved 
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 import sys
 from dataclasses import asdict
@@ -22,17 +31,27 @@ from pathlib import Path
 from typing import Any
 
 from aifund.adapters import history_store as hs
+from aifund.adapters.clock import SystemClock
+from aifund.adapters.llm.deepseek import DeepSeekClient
+from aifund.agents.prompting import load_playbook
+from aifund.agents.researcher import Researcher
 from aifund.config.loader import load_trading_config
 from aifund.config.settings import PROJECT_ROOT, Settings
 from aifund.config.trading_config import ProfileConfig, TradingConfig
 from aifund.domain.enums import Timeframe
+from aifund.persistence.db import make_engine, make_session_factory
+from aifund.research.describe import Probe
 from aifund.research.gates import e1_holdout_checks, e1_walk_forward_checks, passed, throughput
 from aifund.research.history import History
 from aifund.research.ledger import Ledger, Origin, Split, digest
+from aifund.research.loop import Evaluation, HistoryEvaluator, ResearchLoop, Window
 from aifund.research.signals import CostModel, SignalOutcome, StudySpec, run_study
 from aifund.research.stats import summarize
 from aifund.research.walkforward import choose, walk_forward
+from aifund.strategies.dsl_detector import EntryHypothesis
 from aifund.strategies.mtf_trend_pullback import MtfTrendPullback, PullbackParams
+
+PLAYBOOKS = PROJECT_ROOT / "config" / "playbooks"
 
 GRID: dict[str, PullbackParams] = {  # the first is the default (the vault note's own values)
     "default": PullbackParams(),
@@ -45,7 +64,12 @@ GRID: dict[str, PullbackParams] = {  # the first is the default (the vault note'
 
 def parse(argv: list[str]) -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("study", choices=["baseline"])
+    p.add_argument("study", choices=["baseline", "dsl", "llm"])
+    p.add_argument("--file", help="dsl: a JSON list of entry hypotheses")
+    p.add_argument(
+        "--rounds", type=int, default=1, help="llm: proposal rounds (each sees the updated ledger)"
+    )
+    p.add_argument("--evidence", default=str(PROJECT_ROOT / "config" / "evidence"))
     p.add_argument("--symbols", default="", help="comma-separated broker symbols (default: all configured)")
     p.add_argument("--context", default="H4", help="context timeframes, e.g. H4 or H4,D1 (default H4)")
     p.add_argument("--history", default=str(PROJECT_ROOT / "data" / "history"))
@@ -91,6 +115,8 @@ def study_all(
 
 def main(argv: list[str]) -> int:
     args = parse(argv)
+    if args.study != "baseline":
+        return asyncio.run(loop_main(args))
     cfg = load_config()
     rc = cfg.research
     root = Path(args.history)
@@ -210,6 +236,89 @@ def main(argv: list[str]) -> int:
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(report, indent=2, default=str))
     print(f"report: {out}\nledger: {ledger.path}")
+    return 0
+
+
+def prepare(args: argparse.Namespace) -> tuple[TradingConfig, History, ResearchLoop]:
+    """Config, history and a research loop over the same window and data fingerprint as ``baseline``."""
+    cfg = load_config()
+    rc = cfg.research
+    root = Path(args.history)
+    manifest = hs.read_manifest(root)
+    available = set(hs.read_specs(root))
+    wanted = {s.strip() for s in args.symbols.split(",") if s.strip()}
+    symbols = [s for s in cfg.symbols if s.broker in available and (not wanted or s.broker in wanted)]
+    context = [Timeframe(tf.strip()) for tf in args.context.split(",")]
+    profile = ProfileConfig(trigger_tf=Timeframe.M15, setup_tf=Timeframe.H1, context_tfs=context)
+    fingerprint = digest(
+        {"server": manifest.server, "start": manifest.start, "end": manifest.end, "rows": manifest.rows}
+    )
+    history = History.load(
+        root, [s.broker for s in symbols], [Timeframe.M1, Timeframe.M5, Timeframe.M15, Timeframe.H1, *context]
+    )
+    start = manifest.start.replace(second=0, microsecond=0)
+    end = manifest.end.replace(second=0, microsecond=0)
+    costs = CostModel(commission_per_lot=rc.commission_per_lot, slippage_points=rc.slippage_points)
+    specs = [StudySpec.from_config(cfg, s, profile=profile, costs=costs) for s in symbols]
+    loop = ResearchLoop(
+        HistoryEvaluator(history, specs), Ledger(Path(args.out) / "ledger.jsonl"), rc,
+        Window(start, end - (end - start) * float(rc.holdout_fraction), end), fingerprint=fingerprint,
+        evidence_dir=Path(args.evidence), drafts_dir=Path(args.out) / "drafts", now=lambda: datetime.now(UTC),
+    )  # fmt: skip
+    return cfg, history, loop
+
+
+def print_evaluations(evaluations: list[Evaluation]) -> None:
+    for e in evaluations:
+        h = e.hypothesis
+        print(f"\n{h.id} {h.setup_tag}: {h.mechanism}")
+        print(f"  walk-forward OOS: {e.walk_forward.summary.render()}; positive folds "
+              f"{e.walk_forward.positive_fold_share:.0%}")  # fmt: skip
+        for c in e.checks + e.holdout_checks:
+            print(f"  [{'x' if c.passed else ' '}] {c.name}: {c.detail}")
+        print(f"  -> {e.note}" + (f" (evidence {e.evidence}, draft card {e.card})" if e.validated else ""))
+
+
+async def loop_main(args: argparse.Namespace) -> int:
+    cfg, history, loop = prepare(args)
+    if args.study == "dsl":
+        if not args.file:
+            print("dsl needs --file (a JSON list of entry hypotheses)", file=sys.stderr)
+            return 2
+        docs = json.loads(Path(args.file).read_text())
+        hypotheses = [EntryHypothesis.model_validate(d) for d in (docs if isinstance(docs, list) else [docs])]
+        print_evaluations(loop.evaluate(hypotheses, Origin.OPERATOR, spend_holdout=args.spend_holdout))
+        return 0
+
+    settings = Settings()
+    if settings.DEEPSEEK_API_KEY is None:
+        print("llm needs DEEPSEEK_API_KEY in .env", file=sys.stderr)
+        return 2
+    factory = make_session_factory(make_engine(settings.DATABASE_URL))
+    client = DeepSeekClient(
+        cfg.llm, settings.DEEPSEEK_API_KEY.get_secret_value(), factory=factory, clock=SystemClock()
+    )
+    researcher = Researcher(client, cfg.llm, max_hypotheses=cfg.research.max_hypotheses_per_run)
+    playbooks = [load_playbook(PLAYBOOKS, p.stem) for p in sorted(PLAYBOOKS.glob("*.yaml"))]
+    w = loop.window
+    print("probe study for the descriptive tables (pre-holdout only) ...", flush=True)
+    evaluator = loop.evaluator
+    assert isinstance(evaluator, HistoryEvaluator)
+    probe = [
+        o
+        for spec in evaluator.specs
+        for o in run_study(history, spec, [Probe()], w.start, w.holdout_start).outcomes
+    ]
+    for n in range(1, args.rounds + 1):
+        run_id = f"research-{datetime.now(UTC):%Y%m%d%H%M%S}-{n}"
+        report = await loop.run(researcher, run_id=run_id, playbooks=playbooks, probe=probe,
+                                spend_holdout=args.spend_holdout)  # fmt: skip
+        p = report.proposal
+        print(f"\nround {n}: {len(p.hypotheses)} valid, {len(p.rejected)} rejected, cost ${p.cost_usd}"
+              + (f", provider error: {p.error}" if p.error else ""))  # fmt: skip
+        for r in p.rejected:
+            print(f"  rejected (round {r.round}): {r.reason}")
+        print_evaluations(report.evaluations)
     return 0
 
 

@@ -280,3 +280,34 @@ def mirror_predicate(p: Predicate) -> Predicate:
 
         value = [swap(v) for v in value] if isinstance(value, list) else swap(value)
     return Predicate(feature=partner, op=op, value=value)
+
+
+# ------------------------------------------------------------------ text
+
+
+def describe(cond: Condition) -> str:
+    """Compact one-line form for prompts and reports: ``m15.rsi14 in 35..50 AND (m15.nr7 == true OR ...)``."""
+
+    def pred(p: Predicate) -> str:
+        if p.op is Op.BETWEEN:
+            lo, hi = _pair(p.value)
+            return f"{p.feature} in {_text(lo)}..{_text(hi)}"
+        if isinstance(p.value, list):
+            return f"{p.feature} {p.op.value} [{', '.join(_text(v) for v in p.value)}]"
+        return f"{p.feature} {p.op.value} {_text(p.value)}"
+
+    if isinstance(cond, AnyOf):
+        return " OR ".join(pred(p) for p in cond.any_)
+    parts = [
+        "(" + " OR ".join(pred(q) for q in item.any_) + ")" if isinstance(item, AnyOf) else pred(item)
+        for item in cond.all_
+    ]
+    return " AND ".join(parts)
+
+
+def _text(v: Scalar) -> str:
+    if isinstance(v, bool):
+        return "true" if v else "false"
+    if isinstance(v, float) and v.is_integer():
+        return str(int(v))
+    return str(v)

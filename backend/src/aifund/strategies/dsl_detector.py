@@ -29,7 +29,13 @@ from aifund.domain.enums import Direction, Timeframe
 from aifund.domain.values import to_decimal
 from aifund.market import conditions as cnd
 from aifund.market.conditions import Condition
-from aifund.market.feature_registry import FeatureSource, FeatureSpec, tf_prefix
+from aifund.market.feature_registry import (
+    NEEDS_TIMEFRAME,
+    NOT_YET_COMPUTED,
+    FeatureSource,
+    FeatureSpec,
+    tf_prefix,
+)
 from aifund.strategies.base import TfRoles, num
 
 MAX_PREDICATES = 6  # per side: a hypothesis with more conditions is a curve fit, not a mechanism
@@ -39,6 +45,8 @@ SNAPSHOT_SOURCES = (FeatureSource.BARS, FeatureSource.CONTEXT)
 def entry_feature(spec: FeatureSpec) -> str | None:
     if spec.source not in SNAPSHOT_SOURCES:
         return f"{spec.name} is a {spec.source.value} feature, not in the entry snapshot"
+    if spec.name in NOT_YET_COMPUTED:
+        return f"{spec.name} is not computed yet (always null)"
     if spec.unit == "price":
         return f"{spec.name} is a raw price level (not scale-free); use an ATR-normalised feature"
     return None
@@ -111,7 +119,9 @@ class EntryHypothesis(BaseModel):
     def timeframes(self) -> set[Timeframe]:
         names = {n for c in (self.long, self.short_condition) if c is not None for n in cnd.features_of(c)}
         prefixes = {n.split(".", 1)[0] for n in names}
-        return {tf for tf in Timeframe if tf_prefix(tf) in prefixes}
+        return {tf for tf in Timeframe if tf_prefix(tf) in prefixes} | {
+            NEEDS_TIMEFRAME[n] for n in names if n in NEEDS_TIMEFRAME
+        }
 
 
 class DslDetector:
@@ -131,6 +141,9 @@ class DslDetector:
             for d, c in ((Direction.LONG, hypothesis.long), (Direction.SHORT, hypothesis.short_condition))
             if c is not None
         ]
+
+    def params_sha256(self) -> str:
+        return self.hypothesis.params_sha256()
 
     def detect(self, snapshot: FeatureSnapshot) -> list[SetupCandidate]:
         out = []

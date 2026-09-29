@@ -317,3 +317,19 @@ def test_mirrors_are_declared_for_every_snapshot_feature_and_are_mutual() -> Non
         assert found is not None, f"{name} has no declared mirror"
         partner, kind = found
         assert reg.mirror_of(partner) == (name, kind), f"{name} <-> {partner} is not mutual"
+
+
+def test_describe_is_compact() -> None:
+    cond = c(
+        {"all": [p("m15.rsi14", "between", [35, 50.5]), p("h4.ema_stack", "in", ["BULL", "MIXED"]),
+                 {"any": [p("m15.nr7", "==", True), p("m15.adx14", ">", 25.0)]}]}
+    )  # fmt: skip
+    assert cnd.describe(cond) == (
+        "m15.rsi14 in 35..50.5 AND h4.ema_stack in [BULL, MIXED] AND (m15.nr7 == true OR m15.adx14 > 25)"
+    )
+    assert cnd.describe(c({"any": [p("m15.nr7", "!=", False)]})) == "m15.nr7 != false"
+
+
+def test_a_category_without_declared_names_still_needs_a_name() -> None:
+    with pytest.raises(ConditionError, match="is a category"):
+        cnd.check(c({"all": [p("prop.setup_tag", "==", 5)]}), max_predicates=6)

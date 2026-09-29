@@ -29,6 +29,8 @@ cd backend && uv run python scripts/mt5_smoke.py   # Windows + MT5 terminal only
 cd backend && uv run python scripts/export_history.py --months 15  # Windows: bars -> <repo>/data/history (Parquet)
 cd backend && uv run python scripts/replay.py --from 2026-06-15 --to 2026-09-27   # full stack on exported history (SimBroker); --snapshot-minutes 1 for engine cadence
 cd backend && uv run python scripts/research.py baseline   # edge study: grid, walk-forward, gate E1 (docs/09); --spend-holdout once
+cd backend && uv run python scripts/research.py dsl --file ideas.json   # operator entry hypotheses (docs/09 §5) through the research loop
+cd backend && uv run python scripts/research.py llm --rounds 1   # LLM researcher proposes, the loop judges (DEEPSEEK_API_KEY, llm.pricing, migrated DB)
 cd backend && uv run python scripts/spread_report.py   # spread vs ATR per symbol: evidence for the spread gates
 cd backend && uv run python scripts/capture_deals.py  # Windows, DEMO: record deal history -> tests/fixtures/mt5_deals (READ-ONLY)
 ```
