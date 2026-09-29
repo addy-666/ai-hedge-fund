@@ -15,7 +15,7 @@ trading day. The pipeline shares the same tracker, so every decision sees the sa
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
@@ -116,7 +116,10 @@ class EquitySnapshotter:
         account_id: str,
         magic: int,
         mode: Mode,
+        halt: Callable[[str], Awaitable[object]] | None = None,
     ) -> None:
+        """``halt``: the engine's state machine (LIMIT_BREACH); without one (replay) the row is set here."""
+        self._halt = halt
         self._tracker = tracker
         self._limits = limits
         self._broker = broker
@@ -201,7 +204,7 @@ class EquitySnapshotter:
                 peak_equity=refs.peak_equity,
             )
             if alert and breach is not None:
-                if row.state is not EngineState.HALTED:
+                if self._halt is None and row.state is not EngineState.HALTED:
                     engine.set_state(self._account, EngineState.HALTED, halt_reason=breach.describe())
                 EventRepository(s, self._clock).append(
                     EventType.RISK_LIMIT_BREACH,
@@ -214,6 +217,8 @@ class EquitySnapshotter:
                 )
 
         await self._tx(write)
+        if alert and breach is not None and self._halt is not None:
+            await self._halt(breach.describe())
         if alert and breach is not None and key is not None:
             self._alerted.add(key)
             report.alerted = True
