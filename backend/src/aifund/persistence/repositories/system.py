@@ -60,6 +60,26 @@ class EngineStateRepository(_Repo):
         self._s.flush()
         return row
 
+    def save_equity_refs(self, account_id: str, **refs: Any) -> EngineStateRow:
+        """Persist the loss-limit references (day/week start, peak) so a restart keeps them."""
+        unknown = set(refs) - {
+            "day_start_at",
+            "day_start_equity",
+            "week_start_at",
+            "week_start_equity",
+            "peak_equity",
+        }
+        if unknown:
+            raise InvariantViolation(f"not equity references: {sorted(unknown)}")
+        row = self.get(account_id)
+        if row is None:
+            raise InvariantViolation(f"no engine_state row for {account_id}")
+        for key, value in refs.items():
+            setattr(row, key, value)
+        row.updated_at = self._clock.now()
+        self._s.flush()
+        return row
+
 
 class ConfigVersionRepository(_Repo):
     def record(

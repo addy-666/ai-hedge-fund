@@ -23,7 +23,7 @@ from aifund.config.loader import load_trading_config
 from aifund.config.trading_config import ProfileConfig, SymbolConfig
 from aifund.domain.decision import FeatureSnapshot, SetupCandidate
 from aifund.domain.enums import DecisionOutcome, Direction, ReasonCode, Timeframe
-from aifund.engine.equity import EquityTracker
+from aifund.engine.equity import EquitySnapshotter, EquityTracker
 from aifund.engine.pipeline import DecisionPipeline
 from aifund.engine.position_loop import PositionLoop
 from aifund.engine.replay import run_replay
@@ -90,9 +90,10 @@ async def test_baseline_stack_replay_holds_every_invariant(
     def detectors(_s: SymbolConfig, _r: TfRoles) -> list[HourlyStub]:
         return [HourlyStub()]
 
+    tracker = EquityTracker.for_engine(cfg.engine)  # shared by the pipeline and the snapshotter
     pipeline = DecisionPipeline(
         cfg, broker=broker, market=feed, factory=factory, clock=clock, executor=executor, risk=risk,
-        detectors=detectors, equity=EquityTracker(cfg.engine.trading_day_boundary_utc), account_id="acc",
+        detectors=detectors, equity=tracker, account_id="acc",
         profile_override={"intraday_m15": profile},
     )  # fmt: skip
     bar_clock = BarClock(feed, clock, [("XAUUSD", Timeframe.M15)], DecisionCursorStore(factory))
@@ -105,6 +106,17 @@ async def test_baseline_stack_replay_holds_every_invariant(
         pipeline=pipeline,
         bar_clock=bar_clock,
         position_loop=loop,
+        equity_snapshotter=EquitySnapshotter(
+            tracker,
+            cfg.risk.limits,
+            broker=broker,
+            factory=factory,
+            clock=clock,
+            notifier=NullNotifier(),
+            account_id="acc",
+            magic=cfg.engine.magic,
+            mode=cfg.engine.mode,
+        ),
         virtual_tracker=VirtualTracker(broker, feed, factory, clock),
         enricher=Enricher(
             broker,
@@ -142,6 +154,8 @@ async def test_baseline_stack_replay_holds_every_invariant(
     # guard rejections (flip-flop, cooldown, reversal rules...) get counterfactual trades; duplicates do not
     assert report.virtual is not None
     assert sum(report.virtual.values()) >= 1
+    assert report.snapshots == REPLAY_DAYS * 24 * 60  # one per minute step
+    assert report.final_equity is not None
     with factory() as s:
         ordered = s.scalars(
             select(DecisionRow.id).where(DecisionRow.outcome == DecisionOutcome.ORDERED)

@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, time, timedelta
 from decimal import Decimal
 from enum import StrEnum
+from zoneinfo import ZoneInfo
 
 from aifund.config.trading_config import LimitsConfig
 from aifund.domain.enums import ReasonCode
@@ -120,18 +121,29 @@ def _boundary(value: str) -> time:
     return time(int(hours), int(minutes))
 
 
-def trading_day_start(moment: datetime, boundary_utc: str) -> datetime:
-    """Start (UTC) of the trading day containing ``moment``; days roll over at ``boundary_utc``."""
+def trading_day_start(moment: datetime, boundary: str, tz: str) -> datetime:
+    """Start (UTC) of the trading day containing ``moment``.
+
+    Days roll over at ``boundary`` in the exchange's local time ``tz`` (17:00 New York for FX/metals/US
+    index CFDs: the broker's server midnight), so the boundary follows DST: 21:00 UTC in summer, 22:00 UTC in
+    winter, and the two DST Sundays have 23- and 25-hour trading days.
+    """
     if moment.tzinfo is None:
         raise ValueError("moment must be timezone-aware")
-    utc = moment.astimezone(UTC)  # the boundary is a UTC time, whatever zone the caller uses
-    start = datetime.combine(utc.date(), _boundary(boundary_utc), tzinfo=UTC)
-    return start if start <= utc else start - timedelta(days=1)
+    zone = ZoneInfo(tz)
+    local = moment.astimezone(zone)
+    start = datetime.combine(local.date(), _boundary(boundary), tzinfo=zone)
+    if start > local:
+        start = datetime.combine(local.date() - timedelta(days=1), _boundary(boundary), tzinfo=zone)
+    return start.astimezone(UTC)
 
 
-def trading_week_start(moment: datetime, boundary_utc: str) -> datetime:
-    """Start of the trading week: the trading-day boundary that falls on a Sunday (FX/metals week open)."""
-    start = trading_day_start(moment, boundary_utc)
+def trading_week_start(moment: datetime, boundary: str, tz: str) -> datetime:
+    """Start of the trading week: the trading-day boundary on a local Sunday (the FX/metals week open)."""
+    zone = ZoneInfo(tz)
+    start = trading_day_start(moment, boundary, tz).astimezone(zone)
     while start.weekday() != 6:  # Sunday
-        start -= timedelta(days=1)
-    return start
+        start = datetime.combine(
+            start.date() - timedelta(days=1), start.timetz().replace(tzinfo=None), tzinfo=zone
+        )
+    return start.astimezone(UTC)

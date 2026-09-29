@@ -29,7 +29,7 @@ from aifund.config.loader import load_trading_config
 from aifund.config.settings import PROJECT_ROOT, Settings
 from aifund.config.trading_config import ProfileConfig, SymbolConfig
 from aifund.domain.enums import Timeframe
-from aifund.engine.equity import EquityTracker
+from aifund.engine.equity import EquitySnapshotter, EquityTracker
 from aifund.engine.pipeline import DecisionPipeline
 from aifund.engine.position_loop import PositionLoop
 from aifund.engine.replay import run_replay
@@ -54,6 +54,10 @@ def parse(argv: list[str]) -> argparse.Namespace:
     p.add_argument("--context", default="H4", help="context timeframes, e.g. H4 or H4,D1 (default H4)")
     p.add_argument("--history", default=str(PROJECT_ROOT / "data" / "history"))
     p.add_argument("--balance", default="10000")
+    p.add_argument(
+        "--snapshot-minutes", type=int, default=5,
+        help="equity snapshot cadence in simulated minutes (the engine uses 1; 5 keeps long replays fast)",
+    )  # fmt: skip
     return p.parse_args(argv)
 
 
@@ -97,6 +101,7 @@ async def main(argv: list[str]) -> int:
     def detectors(_s: SymbolConfig, roles: TfRoles) -> list[SetupDetector]:
         return [MtfTrendPullback(roles)]
 
+    tracker = EquityTracker.for_engine(cfg.engine)  # shared by the pipeline and the snapshotter
     pipeline = DecisionPipeline(
         cfg,
         broker=broker,
@@ -106,7 +111,7 @@ async def main(argv: list[str]) -> int:
         executor=executor,
         risk=risk,
         detectors=detectors,
-        equity=EquityTracker(cfg.engine.trading_day_boundary_utc),
+        equity=tracker,
         account_id="replay",
         profile_override={s.profile: profile for s in symbols},
     )
@@ -119,6 +124,18 @@ async def main(argv: list[str]) -> int:
         pipeline=pipeline,
         bar_clock=bar_clock,
         position_loop=loop,
+        snapshot_every=timedelta(minutes=args.snapshot_minutes),
+        equity_snapshotter=EquitySnapshotter(
+            tracker,
+            cfg.risk.limits,
+            broker=broker,
+            factory=factory,
+            clock=clock,
+            notifier=NullNotifier(),
+            account_id="replay",
+            magic=cfg.engine.magic,
+            mode=cfg.engine.mode,
+        ),
         virtual_tracker=VirtualTracker(broker, feed, factory, clock),
         enricher=Enricher(
             broker,

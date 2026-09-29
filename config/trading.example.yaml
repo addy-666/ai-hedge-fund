@@ -7,7 +7,8 @@ engine:
   mode: SIM                     # SIM | PAPER | DEMO | LIVE
   allow_live: false             # must be true for LIVE (re-auth in dashboard)
   magic: 26092801
-  trading_day_boundary_utc: "21:00"
+  trading_day_boundary: "17:00"            # New York: the broker's rollover; follows DST (21:00/22:00 UTC)
+  trading_day_timezone: America/New_York
   timezone_display: "Asia/Kolkata"
   auto_resume_after_crash: false
   bar_close_grace_s: 3
