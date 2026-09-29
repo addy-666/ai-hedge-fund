@@ -15,7 +15,8 @@ takes the poller down. Handlers change engine state only through the state machi
 - RELOAD_CONFIG  validates the config file and records a new version; applies at the next restart
 - SET_MODE {mode: LIVE, confirm: true}: records the operator's LIVE confirmation (audit log); the mode itself
              comes from ``engine.mode`` in the config and changes with a restart
-- RUN_AUDIT, APPROVE_RULE, REJECT_RULE, RETIRE_RULE: the learning loop (Phase 7) — FAILED until then
+- RUN_AUDIT, APPROVE_RULE {rule_id, version?, force?}, REJECT_RULE, RETIRE_RULE {rule_id}: the learning
+             loop (engine/learning.py); FAILED when the engine runs without it (learning.enabled off)
 """
 
 from __future__ import annotations
@@ -34,6 +35,7 @@ from aifund.config.loader import ConfigError, load_trading_config
 from aifund.config.trading_config import TradingConfig
 from aifund.domain.enums import CloseReason, CommandType, EngineState, IntentStatus, Mode
 from aifund.engine.kill_switch import Flattener, trigger_tf
+from aifund.engine.learning import LearningError
 from aifund.engine.state import StateMachine, Trigger
 from aifund.execution.executor import Executor
 from aifund.persistence.db import unit_of_work
@@ -63,6 +65,7 @@ class Hooks:
     start: Callable[[], Awaitable[list[str]]]  # startup checks + reconciliation; returns problems
     resume_checks: Callable[[], Awaitable[list[str]]]  # why RUNNING would be unsafe now
     halt_flag: Callable[[], str | None]  # the Guardian EA's halt reason, if its flag file exists
+    learning: Callable[[CommandType, dict[str, Any]], Awaitable[dict[str, Any]]] | None = None
 
 
 class CommandPoller:
@@ -142,7 +145,12 @@ class CommandPoller:
             return False, {"error": f"unknown command {type_!r}"}
         try:
             if command in PHASE_7:
-                raise CommandFailed(f"{command.value} needs the learning loop (Phase 7)")
+                if self._hooks.learning is None:
+                    raise CommandFailed(f"{command.value} needs the learning loop (learning.enabled is off)")
+                try:
+                    return True, await self._hooks.learning(command, payload)
+                except LearningError as exc:
+                    raise CommandFailed(str(exc)) from exc
             return True, await self._handlers[command](payload)
         except CommandFailed as exc:
             return False, {"error": str(exc), "state": self._state.state.value}

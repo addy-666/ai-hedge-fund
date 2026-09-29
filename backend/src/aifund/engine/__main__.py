@@ -32,6 +32,8 @@ from aifund.adapters.notify.telegram import FanOut, HealthchecksPinger, LogNotif
 from aifund.adapters.sim.replay_feed import ReplayFeed
 from aifund.adapters.sim.sim_broker import SimBroker, SimConfig
 from aifund.agents.analyst import Analyst
+from aifund.agents.auditor import Auditor
+from aifund.agents.reviewer import Reviewer
 from aifund.config.evidence import load_evidence, load_g_llm
 from aifund.config.loader import ConfigError, LoadedConfig, load_trading_config
 from aifund.config.settings import PROJECT_ROOT, BrokerKind, Settings
@@ -79,6 +81,32 @@ def notifier_for(
     return LogNotifier()
 
 
+def _llm(
+    settings: Settings, cfg: TradingConfig, factory: Any, clock: ClockPort, notifier: NotifierPort,
+    client: httpx.AsyncClient,
+) -> DeepSeekClient:  # fmt: skip
+    assert settings.DEEPSEEK_API_KEY is not None
+    return DeepSeekClient(
+        cfg.llm,
+        settings.DEEPSEEK_API_KEY.get_secret_value(),
+        factory=factory,
+        clock=clock,
+        notifier=notifier,
+        http_client=client,
+    )
+
+
+def _recorder(factory: Any, clock: ClockPort) -> Any:
+    async def record(call_id: str, parsed: dict[str, Any] | None, valid: bool, error: str | None) -> None:
+        def write() -> None:
+            with unit_of_work(factory) as s:
+                LLMCallRepository(s, clock).record_parse(call_id, parsed=parsed, valid=valid, error=error)
+
+        await asyncio.to_thread(write)
+
+    return record
+
+
 def analyst_for(
     settings: Settings,
     cfg: TradingConfig,
@@ -91,25 +119,35 @@ def analyst_for(
         return None
     if settings.DEEPSEEK_API_KEY is None:
         raise StartupError("strategy.analyst_enabled needs DEEPSEEK_API_KEY in .env (or run the baseline)")
-    llm = DeepSeekClient(
-        cfg.llm,
-        settings.DEEPSEEK_API_KEY.get_secret_value(),
-        factory=factory,
-        clock=clock,
-        notifier=notifier,
-        http_client=client,
-    )
-
-    async def record(call_id: str, parsed: dict[str, Any] | None, valid: bool, error: str | None) -> None:
-        def write() -> None:
-            with unit_of_work(factory) as s:
-                LLMCallRepository(s, clock).record_parse(call_id, parsed=parsed, valid=valid, error=error)
-
-        await asyncio.to_thread(write)
-
     return Analyst(
-        llm, cfg.llm, playbooks=PLAYBOOKS, version=cfg.strategy.analyst_prompt_version, record_parse=record
+        _llm(settings, cfg, factory, clock, notifier, client),
+        cfg.llm,
+        playbooks=PLAYBOOKS,
+        version=cfg.strategy.analyst_prompt_version,
+        record_parse=_recorder(factory, clock),
     )
+
+
+def learners_for(
+    settings: Settings,
+    cfg: TradingConfig,
+    factory: Any,
+    clock: ClockPort,
+    notifier: NotifierPort,
+    client: httpx.AsyncClient,
+) -> tuple[Reviewer | None, Auditor | None]:
+    """The trade reviewer and the auditor (docs/04). Without an API key the loop still mines and validates;
+    surviving clusters become candidates directly and trades go unreviewed."""
+    if not cfg.learning.enabled:
+        return None, None
+    if settings.DEEPSEEK_API_KEY is None:
+        log.info(
+            "learning.no_llm", detail="no DEEPSEEK_API_KEY: no trade reviews, the miner proposes directly"
+        )
+        return None, None
+    llm = _llm(settings, cfg, factory, clock, notifier, client)
+    record = _recorder(factory, clock)
+    return Reviewer(llm, cfg.llm, record_parse=record), Auditor(llm, cfg.llm, record_parse=record)
 
 
 def prepare(settings: Settings, database_url: str) -> tuple[LoadedConfig, Any, bool]:
@@ -173,6 +211,7 @@ async def run_mt5(settings: Settings, loaded: LoadedConfig, factory: Any, live_c
                 evidence=load_evidence(EVIDENCE),
                 g_llm=load_g_llm(EVIDENCE),
                 analyst=analyst_for(settings, cfg, factory, clock, notifier, client),
+                learners=learners_for(settings, cfg, factory, clock, notifier, client),
                 guardian=GuardianFiles(guardian_dir),
                 calendar=CalendarFile(guardian_dir / "calendar.csv", clock),
                 healthchecks=pinger.ping if pinger is not None else None,
@@ -229,6 +268,7 @@ async def run_sim(settings: Settings, loaded: LoadedConfig, args: argparse.Names
             detectors=detector_factory(cfg, PLAYBOOKS),
             account_login=1,
             analyst=analyst_for(settings, cfg, factory, clock, notifier, client),
+            learners=learners_for(settings, cfg, factory, clock, notifier, client),
         )
         engine = Engine(
             cfg, opts, broker=broker, market=feed, factory=factory, clock=clock, notifier=notifier

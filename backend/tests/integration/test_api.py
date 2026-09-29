@@ -196,7 +196,12 @@ def test_read_contracts_on_a_seeded_database(
         False,
     )
     assert {h["component"] for h in system["heartbeats"]} == {"engine", "loop.decisions"}
-    assert system["versions"]["prompts"] == ["analyst_v1.j2", "researcher_v1.j2"]
+    assert system["versions"]["prompts"] == [
+        "analyst_v1.j2",
+        "auditor_v1.j2",
+        "researcher_v1.j2",
+        "reviewer_v1.j2",
+    ]
 
     acct = client.get("/api/account").json()
     assert (acct["equity"], acct["heat_pct"], acct["open_positions"]) == ("9950", "0.50", 1)

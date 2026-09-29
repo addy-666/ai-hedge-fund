@@ -27,6 +27,8 @@ from pathlib import Path
 from sqlalchemy.orm import Session, sessionmaker
 
 from aifund.agents.analyst import Analyst
+from aifund.agents.auditor import Auditor
+from aifund.agents.reviewer import Reviewer
 from aifund.config.evidence import EvidenceError, EvidenceRecord, GLlmSignoff
 from aifund.config.trading_config import TradingConfig
 from aifund.domain.enums import EngineState, IntentStatus
@@ -35,9 +37,11 @@ from aifund.engine.detectors import Factory
 from aifund.engine.equity import EquitySnapshotter, EquityTracker
 from aifund.engine.guardian import GuardianFiles, GuardianWatch
 from aifund.engine.kill_switch import Flattener
+from aifund.engine.learning import Learning
 from aifund.engine.news_feed import CalendarFile
 from aifund.engine.pipeline import DecisionPipeline
 from aifund.engine.position_loop import PositionLoop
+from aifund.engine.reviews import ReviewQueue
 from aifund.engine.state import (
     ENTRIES,
     LEARNING,
@@ -75,6 +79,7 @@ class Options:
     evidence: Sequence[EvidenceRecord] = ()
     g_llm: Sequence[GLlmSignoff] = ()
     analyst: Analyst | None = None
+    learners: tuple[Reviewer | None, Auditor | None] = (None, None)  # the learning loop's LLM agents
     guardian: GuardianFiles | None = None
     calendar: CalendarFile | None = None
     healthchecks: Callable[[], Awaitable[object]] | None = None  # the dead-man ping
@@ -177,10 +182,22 @@ class Engine:
             clock=clock,
             notifier=notifier,
         )
+        reviewer, auditor = opts.learners
+        self.learning = (
+            Learning(cfg, factory, clock, notifier, auditor=auditor) if cfg.learning.enabled else None
+        )
+        self.reviews = (
+            ReviewQueue(reviewer, market, factory, clock) if cfg.learning.enabled and reviewer else None
+        )
         self.commands = CommandPoller(
             cfg,
             self.state,
-            Hooks(start=self.start_checks, resume_checks=self.resume_checks, halt_flag=self.halt_flag),
+            Hooks(
+                start=self.start_checks,
+                resume_checks=self.resume_checks,
+                halt_flag=self.halt_flag,
+                learning=self.learning.handle if self.learning is not None else None,
+            ),
             broker=broker,
             market=market,
             executor=self.executor,
@@ -339,6 +356,12 @@ class Engine:
             LoopSpec("virtual", 60.0, self.virtual.run_once, runs_in=LEARNING),
             LoopSpec("enricher", 60.0, self.enricher.run_once, runs_in=LEARNING),
             LoopSpec("day_rearm", 60.0, self._day_rearm, runs_in=frozenset({EngineState.HALTED})),
+            *(
+                [LoopSpec("learning", 60.0, self.learning.run_once, runs_in=LEARNING)]
+                if self.learning is not None
+                else []
+            ),
+            *([LoopSpec("reviews", 60.0, self.reviews.run_once, runs_in=LEARNING)] if self.reviews else []),
             LoopSpec("daily_summary", 60.0, self.daily.run_once, runs_in=ALL_STATES),
             LoopSpec("healthchecks", 60.0, self._healthchecks, runs_in=ALL_STATES),
         ]

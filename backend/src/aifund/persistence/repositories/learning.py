@@ -83,6 +83,15 @@ class RuleRepository:
         stmt = select(RuleRow).where(RuleRow.rule_id == rule_id).order_by(RuleRow.version.desc())
         return self._s.scalars(stmt).all()
 
+    def set_dsl(self, rule_id: str, version: int, dsl: dict[str, Any], dsl_sha256: str) -> RuleRow:
+        """Only a CANDIDATE's DSL may change (the validator sets its action); a tried rule is immutable."""
+        row = self.require(rule_id, version)
+        if row.status is not RuleStatus.CANDIDATE:
+            raise InvariantViolation(f"{rule_id} v{version} is {row.status}: its DSL is fixed")
+        row.dsl, row.dsl_sha256 = dsl, dsl_sha256
+        self._s.flush()
+        return row
+
     def update(self, rule_id: str, version: int, **fields: Any) -> RuleRow:
         row = self.require(rule_id, version)
         for key, value in fields.items():
@@ -306,6 +315,15 @@ class OutcomeRepository:
                 True, dict(snap.features), snap.feature_set_version, confidence,
             )  # fmt: skip
         return sorted(out.values(), key=lambda o: (o.time, o.key))
+
+    def closed_since(self, since: datetime) -> int:
+        """Real trades closed at or after ``since`` (the audit's new-trades trigger)."""
+        stmt = (
+            select(func.count())
+            .select_from(TradeRow)
+            .where(TradeRow.status.in_(CLOSED_TRADES), TradeRow.close_time >= since)
+        )
+        return int(self._s.scalar(stmt) or 0)
 
     def for_decisions(self, decision_ids: Sequence[str]) -> dict[str, Decimal]:
         """R earned by each decision's own direction: its real trade, else the finished virtual trade on the
