@@ -11,9 +11,9 @@ from aifund.research.gates import (
     passed,
     throughput,
 )
-from aifund.research.stats import EMPTY, Summary
 from aifund.research.walkforward import WalkForwardResult
-from tests.unit.research.test_stats import outcome
+from aifund.stats import EMPTY, Summary
+from tests.unit.test_stats import outcome
 
 CFG = ResearchConfig()  # 200 OOS signals, 60% positive folds, q 0.10, 60 holdout signals
 

@@ -1,0 +1,4 @@
+LESSONS FROM OUR OWN TRADE HISTORY (validated statistics).
+The risk engine automatically applies the listed penalties/blocks. Do NOT lower your confidence to account
+for them yourself. Use them only to reconsider whether your thesis depends on a condition listed here.
+- [R-0001] LONG stub_hourly on XAUUSD when m15.rsi14 >= 0: 23 trades, win 26% vs 48% baseline, expectancy -0.41R vs +0.12R. Engine: block.

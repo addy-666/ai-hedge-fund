@@ -10,8 +10,8 @@ import pytest
 
 from aifund.domain.enums import CloseReason, Direction, Timeframe, VirtualStatus
 from aifund.research.signals import SignalOutcome
-from aifund.research.stats import EMPTY, summarize
 from aifund.research.walkforward import boundaries, walk_forward
+from aifund.stats import EMPTY, summarize
 
 T0 = datetime(2026, 1, 1, tzinfo=UTC)
 

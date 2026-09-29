@@ -1,4 +1,5 @@
-"""Statistics of a sample of R-multiples (docs/09 §3). Pure numpy, deterministic given the seed.
+"""Statistics of R-multiples (docs/09 §3, docs/04 §3/§6). Pure numpy, deterministic given the seed. Shared by
+research (hypotheses) and rules (the learning loop), so it sits at the bottom of the layers.
 
 - expectancy (mean R), median, win rate (R > 0), profit factor, total, max drawdown of the cumulative R curve
   in time order, mean R per calendar month;
@@ -12,7 +13,7 @@ noise it fires about 1 time in 20 — which is why the trial ledger corrects for
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
@@ -113,3 +114,16 @@ def summarize(
         p_value=p_value,
         monthly=monthly,
     )
+
+
+def benjamini_hochberg(p_values: Mapping[str, float], q: float) -> set[str]:
+    """Keys whose null is rejected at false-discovery rate ``q``."""
+    if not 0 < q < 1:
+        raise ValueError(f"q must be in (0, 1), got {q}")
+    ranked = sorted(p_values.items(), key=lambda kv: (kv[1], kv[0]))
+    m = len(ranked)
+    cutoff = 0
+    for k, (_, p) in enumerate(ranked, start=1):
+        if p <= k / m * q:
+            cutoff = k
+    return {key for key, _ in ranked[:cutoff]}

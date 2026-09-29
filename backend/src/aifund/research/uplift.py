@@ -15,7 +15,7 @@ from decimal import Decimal
 
 from aifund.config.trading_config import ResearchConfig
 from aifund.research.gates import GateCheck, passed
-from aifund.research.stats import Summary, summarize
+from aifund.stats import Summary, summarize
 
 
 @dataclass(frozen=True)

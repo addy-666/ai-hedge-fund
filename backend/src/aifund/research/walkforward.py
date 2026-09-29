@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 
 from aifund.research.signals import SignalOutcome
-from aifund.research.stats import Summary, summarize
+from aifund.stats import Summary, summarize
 
 
 @dataclass(frozen=True)

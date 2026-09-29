@@ -2,7 +2,9 @@
 
 Stages: pre-flight gates → feature snapshot → setup detection → decision → risk → execution. Phase 2 uses
 the deterministic BASELINE decision (the detector's direction at a fixed confidence, no LLM); Phase 4
-slots the analyst in at the decision stage without changing anything around it.
+slots the analyst in at the decision stage without changing anything around it. Phase 7: the learned rules
+(ACTIVE enforced, SHADOW logged) apply to whichever decision is taken, baseline or analyst, and the analyst
+sees the ACTIVE rules near its candidates as lessons.
 
 Every run writes exactly one ``decisions`` row (outcome, reason, stage, snapshot, setups, proposal,
 confidences, risk worksheet, provenance). Any exception ends the run as ERROR with no order sent.
@@ -24,7 +26,7 @@ import structlog
 from sqlalchemy.orm import Session, sessionmaker
 
 from aifund.agents.analyst import Analyst, AnalystInput, Verdict
-from aifund.agents.portfolio_manager import PortfolioManager
+from aifund.agents.portfolio_manager import PortfolioManager, with_rules
 from aifund.config.evidence import (
     Deployment,
     EvidenceRecord,
@@ -50,6 +52,7 @@ from aifund.domain.market import Bar, Position, SymbolSpec, Tick
 from aifund.domain.trade import gets_virtual_trade
 from aifund.domain.values import to_decimal
 from aifund.engine.equity import EquityTracker
+from aifund.engine.rulebook import RulebookCache
 from aifund.execution.executor import ExecutionResult, Executor
 from aifund.market.bar_clock import BarClosed
 from aifund.market.feature_registry import tf_prefix
@@ -60,6 +63,7 @@ from aifund.persistence.db import unit_of_work
 from aifund.persistence.repositories.api import BarCacheRepository
 from aifund.persistence.repositories.decisions import DecisionRepository
 from aifund.persistence.repositories.intents import IntentRepository
+from aifund.persistence.repositories.learning import RuleEvaluationRepository
 from aifund.persistence.repositories.market import FeatureSnapshotRepository
 from aifund.persistence.repositories.virtual import VirtualTradeRepository
 from aifund.ports.broker import BrokerError, BrokerPort, MarketDataPort
@@ -68,6 +72,8 @@ from aifund.reconcile.virtual import virtual_expiry
 from aifund.risk.guards import GuardAction, GuardContext
 from aifund.risk.limits import Exposure, check_loss_limits, drawdown_pct
 from aifund.risk.manager import RiskManager, RiskRequest
+from aifund.rules.dsl import RuleContext, proposal_features
+from aifund.rules.engine import RuleVerdict, lesson
 from aifund.strategies.base import SetupDetector, TfRoles
 
 log = structlog.get_logger(__name__)
@@ -97,6 +103,9 @@ class DecisionRecord:
     final_confidence: int | None = None
     risk_factor: Decimal | None = None
     rules_matched: list[str] | None = None
+    rulebook_version: int = 0
+    rule_evaluations: list[dict[str, Any]] = field(default_factory=list)
+    lessons_shown: list[str] | None = None  # rule ids shown to the analyst (None: no LLM call)
     model: str | None = None
     cost_usd: Decimal | None = None
     prompt_version: str | None = None
@@ -122,6 +131,19 @@ class _Stop(Exception):
     pass
 
 
+def _tradable(verdict: RuleVerdict, decision: FinalDecision, threshold: int) -> bool:
+    return verdict.blocked_by is None and decision.final_confidence >= threshold
+
+
+def _record_rules(record: DecisionRecord, verdict: RuleVerdict) -> None:
+    record.rules_matched = verdict.matched or None
+    record.rule_evaluations = [
+        {"rule_id": e.rule_id, "rule_version": e.rule_version, "mode": e.mode, "matched": e.matched,
+         "action_applied": e.action_applied}
+        for e in verdict.evaluations
+    ]  # fmt: skip
+
+
 class DecisionPipeline:
     def __init__(
         self,
@@ -144,6 +166,7 @@ class DecisionPipeline:
         evidence: Sequence[EvidenceRecord] = (),
         g_llm: Sequence[GLlmSignoff] = (),
         news: Callable[[], NewsCalendar | None] | None = None,
+        rulebook: RulebookCache | None = None,
     ) -> None:
         if cfg.strategy.analyst_enabled and analyst is None and not cfg.strategy.baseline_enabled:
             raise ValueError(
@@ -168,7 +191,10 @@ class DecisionPipeline:
             analyst_orders=cfg.strategy.analyst_orders and not cfg.strategy.dry_run,
         )
         self._analyst = analyst if cfg.strategy.analyst_enabled else None
-        self._portfolio = portfolio or PortfolioManager(max_total_penalty=cfg.learning.max_total_penalty)
+        self._portfolio = portfolio or PortfolioManager()
+        self._rulebook = rulebook or RulebookCache(
+            factory, clock, max_total_penalty=cfg.learning.max_total_penalty
+        )
         self._sessions = calendars(cfg.sessions)
         self._broker = broker
         self._market = market
@@ -446,10 +472,27 @@ class DecisionPipeline:
         if not isinstance(atr, float):
             self._end(record, DecisionOutcome.ERROR, ReasonCode.INSUFFICIENT_BARS, "no trigger ATR")
 
-        # 4. decision: the LLM analyst + portfolio manager, or the deterministic baseline
+        # 4. decision: the LLM analyst + portfolio manager, or the deterministic baseline; the learned rules
+        #    (docs/04 §7) apply to whichever is taken
         record.stage = "DECISION"
-        baseline, baseline_proposal = self._baseline(record.decision_id, event.symbol, candidates)
+        rules = await asyncio.to_thread(self._rulebook.current)
+        record.rulebook_version = rules.version
+
+        def rule_context(direction: Direction, setup_tag: str | None, confidence: int | None) -> RuleContext:
+            features = {
+                **snapshot.features,
+                **proposal_features(direction, setup_tag, confidence, snapshot.features),
+            }
+            return RuleContext(sym_cfg.canonical, direction, setup_tag, roles.trigger.value, features)
+
+        threshold = self._cfg.risk.confidence_threshold
+        raw_baseline, baseline_proposal = self._baseline(record.decision_id, event.symbol, candidates)
+        baseline_rules = rules.evaluate(
+            rule_context(raw_baseline.direction, raw_baseline.setup_tag, BASELINE_CONFIDENCE)
+        )
+        baseline = with_rules(raw_baseline, baseline_rules)
         verdict = None
+        taken: RuleVerdict = baseline_rules
         if self._analyst is None:
             record.confidence, record.prompt_version = BASELINE_CONFIDENCE, self._version
             record.proposal, decision = baseline_proposal, baseline
@@ -460,12 +503,23 @@ class DecisionPipeline:
                 f"drawdown {drawdown_pct(equity_state):.2f}%, "
                 f"today {account.equity - equity_state.day_start_equity:+.2f}"
             )
+            lessons = rules.lessons(
+                [
+                    rule_context(direction, c.setup_tag, None)
+                    for c in candidates
+                    for direction in (
+                        [c.direction_hint] if c.direction_hint in (Direction.LONG, Direction.SHORT)
+                        else [Direction.LONG, Direction.SHORT]
+                    )
+                ]
+            )  # fmt: skip
+            record.lessons_shown = [br.rule.rule_id for br in lessons]
             analysis = await self._analyst.analyse(
                 AnalystInput(
                     decision_id=record.decision_id, symbol=event.symbol, snapshot=snapshot, roles=roles,
                     candidates=candidates, trigger_bars=bars[roles.trigger], trigger_atr=to_decimal(atr),
-                    tick=tick,
-                    spread_points=spread_points, position=position, portfolio=portfolio,
+                    tick=tick, spread_points=spread_points, position=position, portfolio=portfolio,
+                    lessons=[lesson(br) for br in lessons],
                 )
             )  # fmt: skip
             record.model, record.cost_usd, record.prompt_version = (
@@ -475,23 +529,27 @@ class DecisionPipeline:
                 **(analysis.raw or {}), "source": "analyst", "verdict": analysis.verdict.value,
                 "prompt_version": analysis.prompt_version, "notes": analysis.notes,
             }  # fmt: skip
+            analyst_rules: RuleVerdict | None = None
             if analysis.verdict is Verdict.PROPOSAL and analysis.proposal is not None:
+                p = analysis.proposal
+                analyst_rules = rules.evaluate(rule_context(p.direction, p.setup_tag, p.confidence))
                 verdict = self._portfolio.decide(
-                    decision_id=record.decision_id,
-                    symbol=event.symbol,
-                    proposal=analysis.proposal,
-                    snapshot=snapshot,
+                    decision_id=record.decision_id, symbol=event.symbol, proposal=p, rules=analyst_rules
                 )
-            # G-LLM shadows (docs/09 §7): both decisions become virtual trades on this bar, whatever is sent
-            self._shadow(
-                record,
-                VirtualArm.SHADOW_BASELINE,
-                _Blocked(event, sym_cfg, roles, spec, tick, snapshot, baseline),
-            )
+                considered = set(p.lessons_considered) - set(record.lessons_shown)
+                if considered:
+                    log.info("lessons.mismatch", decision_id=record.decision_id, not_shown=sorted(considered))
+            # G-LLM shadows (docs/09 §7): what each arm would have traded on this bar, rules applied to both
+            if _tradable(baseline_rules, baseline, threshold):
+                self._shadow(
+                    record,
+                    VirtualArm.SHADOW_BASELINE,
+                    _Blocked(event, sym_cfg, roles, spec, tick, snapshot, baseline),
+                )
             if (
                 verdict is not None
-                and verdict.blocked_by is None
-                and verdict.decision.final_confidence >= self._cfg.risk.confidence_threshold
+                and analyst_rules is not None
+                and _tradable(analyst_rules, verdict.decision, threshold)
             ):
                 analyst_arm = _Blocked(event, sym_cfg, roles, spec, tick, snapshot, verdict.decision)
                 self._shadow(record, VirtualArm.SHADOW_ANALYST, analyst_arm)
@@ -502,10 +560,9 @@ class DecisionPipeline:
                     record.confidence = analysis.proposal.confidence
                 if analysis.verdict is Verdict.INVALID:
                     self._end(record, DecisionOutcome.INVALID, analysis.reason, analysis.detail)
-                if verdict is None:
+                if verdict is None or analyst_rules is None:
                     self._end(record, DecisionOutcome.HOLD, analysis.reason, analysis.detail)
-                decision = verdict.decision
-                record.rules_matched = list(verdict.rules_matched)
+                decision, taken = verdict.decision, analyst_rules
             elif self._cfg.strategy.baseline_enabled:  # analyst in shadow, the baseline trades
                 record.proposal = {**baseline_proposal, "shadow_analyst": analyst_proposal}
                 record.confidence, record.prompt_version = BASELINE_CONFIDENCE, self._version
@@ -514,22 +571,25 @@ class DecisionPipeline:
                 record.proposal = analyst_proposal
                 if analysis.proposal is not None:
                     record.confidence = analysis.proposal.confidence
+                if analyst_rules is not None:
+                    _record_rules(record, analyst_rules)
                 detail = f"analyst {analysis.verdict.value} in shadow (strategy.analyst_orders off: no G-LLM)"
                 self._end(record, DecisionOutcome.SHADOW, analysis.reason, detail)
+        _record_rules(record, taken)
         record.calibrated_confidence = decision.calibrated_confidence
         record.penalty_points = decision.penalty_points
         record.final_confidence = decision.final_confidence
         record.risk_factor = decision.risk_factor
         blocked = _Blocked(event, sym_cfg, roles, spec, tick, snapshot, decision)
-        if verdict is not None and verdict.blocked_by is not None:
+        if taken.blocked_by is not None:
             self._block(
-                record, blocked, DecisionOutcome.RULE_BLOCKED, ReasonCode.RULE_BLOCK, verdict.blocked_by
+                record, blocked, DecisionOutcome.RULE_BLOCKED, ReasonCode.RULE_BLOCK, taken.blocked_by
             )
-        if decision.final_confidence < self._cfg.risk.confidence_threshold:
-            threshold = f"{decision.final_confidence} < {self._cfg.risk.confidence_threshold}"
-            self._block(
-                record, blocked, DecisionOutcome.BELOW_THRESHOLD, ReasonCode.BELOW_THRESHOLD, threshold
-            )
+        if decision.final_confidence < threshold:
+            detail = f"{decision.final_confidence} < {threshold}"
+            if decision.penalty_points:
+                detail += f" (rule penalty {decision.penalty_points})"
+            self._block(record, blocked, DecisionOutcome.BELOW_THRESHOLD, ReasonCode.BELOW_THRESHOLD, detail)
 
         # 5–7. risk (guards, stops, sizing, exposure)
         record.stage = "RISK"
@@ -685,14 +745,16 @@ class DecisionPipeline:
                 final_confidence=record.final_confidence,
                 risk_factor=record.risk_factor,
                 rules_matched=record.rules_matched,
-                lessons_shown=[] if record.model is not None else None,
-                rulebook_version=0,
+                lessons_shown=record.lessons_shown,
+                rulebook_version=record.rulebook_version,
                 model=record.model,
                 cost_usd=record.cost_usd,
                 prompt_version=record.prompt_version or self._version,
                 risk_calc=record.risk_calc,
                 latency_ms=latency_ms,
             )
+            if record.rule_evaluations:
+                RuleEvaluationRepository(s).add_many(record.decision_id, record.rule_evaluations)
             planned = [{**record.virtual, "arm": VirtualArm.BLOCKED}] if record.virtual is not None else []
             for plan in planned + record.shadows:
                 VirtualTradeRepository(s, self._clock).add_pending(

@@ -46,8 +46,8 @@ from aifund.research.history import History
 from aifund.research.ledger import Ledger, Origin, Split, digest
 from aifund.research.loop import Evaluation, HistoryEvaluator, ResearchLoop, Window
 from aifund.research.signals import CostModel, SignalOutcome, StudySpec, run_study
-from aifund.research.stats import summarize
 from aifund.research.walkforward import choose, walk_forward
+from aifund.stats import summarize
 from aifund.strategies.dsl_detector import EntryHypothesis
 from aifund.strategies.mtf_trend_pullback import MtfTrendPullback, PullbackParams
 

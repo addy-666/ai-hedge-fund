@@ -34,8 +34,8 @@ from aifund.research.gates import GateCheck, e1_holdout_checks, e1_walk_forward_
 from aifund.research.history import History
 from aifund.research.ledger import Ledger, Origin, Split, Trial, digest
 from aifund.research.signals import SignalOutcome, StudySpec, run_study
-from aifund.research.stats import Summary, summarize
 from aifund.research.walkforward import WalkForwardResult, walk_forward
+from aifund.stats import Summary, summarize
 from aifund.strategies.base import TfRoles
 from aifund.strategies.dsl_detector import DslDetector, EntryHypothesis
 

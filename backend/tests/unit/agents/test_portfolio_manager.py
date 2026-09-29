@@ -1,14 +1,13 @@
-"""Confidence pipeline (roadmap 4.5, docs/03 §8): calibration, capped penalties, blocks, risk factor floor."""
+"""Confidence pipeline (roadmap 4.5 + 7.2, docs/03 §8): calibration, then the rule engine's verdict."""
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from decimal import Decimal as D
 
-from aifund.agents.portfolio_manager import PortfolioManager, RuleHit
-from aifund.domain.decision import FeatureSnapshot, TradeProposal
+from aifund.agents.portfolio_manager import PortfolioDecision, PortfolioManager, with_rules
+from aifund.domain.decision import TradeProposal
 from aifund.domain.enums import Direction
-from tests.unit.agents.inputs import SNAPSHOT
+from aifund.rules.engine import NO_RULES, RuleVerdict
 
 PROPOSAL = TradeProposal(
     direction=Direction.LONG, confidence=74, setup_tag="mtf_trend_pullback", invalidation_price=D("4138.2"),
@@ -16,22 +15,14 @@ PROPOSAL = TradeProposal(
 )  # fmt: skip
 
 
-class Rules:
-    def __init__(self, *hits: RuleHit) -> None:
-        self.hits = hits
-
-    def matches(self, symbol: str, proposal: TradeProposal, snapshot: FeatureSnapshot) -> Sequence[RuleHit]:
-        return self.hits
-
-
-def decide(pm: PortfolioManager):  # type: ignore[no-untyped-def]
+def decide(pm: PortfolioManager, rules: RuleVerdict = NO_RULES) -> PortfolioDecision:
     return pm.decide(
-        decision_id="01JAXDECISION000000000000A", symbol="XAUUSD", proposal=PROPOSAL, snapshot=SNAPSHOT
+        decision_id="01JAXDECISION000000000000A", symbol="XAUUSD", proposal=PROPOSAL, rules=rules
     )
 
 
 def test_without_rules_or_calibration_the_confidence_passes_through() -> None:
-    out = decide(PortfolioManager(max_total_penalty=40))
+    out = decide(PortfolioManager())
     d = out.decision
     assert (d.llm_confidence, d.calibrated_confidence, d.penalty_points, d.final_confidence) == (
         74,
@@ -43,35 +34,31 @@ def test_without_rules_or_calibration_the_confidence_passes_through() -> None:
     assert (out.blocked_by, out.rules_matched) == (None, ())
 
 
-def test_calibration_then_capped_penalties() -> None:
-    rules = Rules(RuleHit("R-1", penalty_points=25), RuleHit("R-2", penalty_points=30))
-    d = decide(PortfolioManager(max_total_penalty=40, calibrator=lambda p: p - 10, rules=rules)).decision
-    assert (d.calibrated_confidence, d.penalty_points, d.final_confidence) == (
-        64,
-        40,
-        24,
-    )  # 25+30 capped at 40
+def test_calibration_then_the_rule_penalty() -> None:
+    verdict = RuleVerdict(rulebook_version=3, penalty_points=40, active=("R-0001v1", "R-0002v1"))
+    out = decide(PortfolioManager(calibrator=lambda p: p - 10), verdict)
+    d = out.decision
+    assert (d.calibrated_confidence, d.penalty_points, d.final_confidence) == (64, 40, 24)
+    assert out.rules_matched == ("R-0001v1", "R-0002v1")
 
 
 def test_calibrator_output_is_clamped() -> None:
-    assert (
-        decide(
-            PortfolioManager(max_total_penalty=40, calibrator=lambda p: 140)
-        ).decision.calibrated_confidence
-        == 100
+    assert decide(PortfolioManager(calibrator=lambda p: 140)).decision.calibrated_confidence == 100
+
+
+def test_a_block_is_passed_on_and_risk_is_never_scaled_up_or_below_the_floor() -> None:
+    verdict = RuleVerdict(
+        blocked_by="R-0009v1", risk_factor=D("0.1"), active=("R-0009v1",), shadow=("R-0004v2",)
     )
+    out = decide(PortfolioManager(), verdict)
+    assert out.blocked_by == "R-0009v1"
+    assert out.rules_matched == ("R-0009v1", "R-0004v2 (shadow)")
+    assert out.decision.risk_factor == D("0.25")
+    assert decide(PortfolioManager(), RuleVerdict(risk_factor=D("1.5"))).decision.risk_factor == D(1)
 
 
-def test_a_block_rule_blocks_and_risk_scales_multiply_with_a_floor() -> None:
-    rules = Rules(
-        RuleHit("R-7", risk_scale=D("0.5")), RuleHit("R-9", block=True), RuleHit("R-3", risk_scale=D("0.4"))
-    )
-    out = decide(PortfolioManager(max_total_penalty=40, rules=rules))
-    assert out.blocked_by == "R-9"
-    assert out.rules_matched == ("R-7", "R-9", "R-3")
-    assert out.decision.risk_factor == D("0.25")  # 0.5 x 0.4 = 0.20, floored at 0.25
-
-
-def test_rules_never_scale_risk_up() -> None:
-    out = decide(PortfolioManager(max_total_penalty=40, rules=Rules(RuleHit("R-1", risk_scale=D("1.5")))))
-    assert out.decision.risk_factor == D(1)
+def test_with_rules_applies_a_verdict_to_any_decision() -> None:
+    base = decide(PortfolioManager()).decision
+    ruled = with_rules(base, RuleVerdict(penalty_points=15, risk_factor=D("0.5")))
+    assert (ruled.penalty_points, ruled.final_confidence, ruled.risk_factor) == (15, 59, D("0.5"))
+    assert with_rules(base, RuleVerdict(penalty_points=-5)).penalty_points == 0

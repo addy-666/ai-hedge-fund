@@ -29,7 +29,7 @@ from aifund.research.describe import Probe
 from aifund.research.ledger import Ledger, Origin, Split
 from aifund.research.loop import HistoryEvaluator, ResearchLoop, Window, describe_hypothesis
 from aifund.research.signals import SignalOutcome, run_study
-from aifund.research.stats import summarize
+from aifund.stats import summarize
 from aifund.strategies.base import TfRoles
 from aifund.strategies.dsl_detector import DslDetector, EntryHypothesis
 from tests.unit.research import test_signals as sig

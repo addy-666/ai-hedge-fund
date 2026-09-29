@@ -21,7 +21,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
-from aifund.research.stats import Summary
+from aifund.stats import Summary, benjamini_hochberg
 
 
 class Split(StrEnum):
@@ -79,19 +79,6 @@ class Trial:
                 "origin": Origin(raw["origin"]),
             }
         )
-
-
-def benjamini_hochberg(p_values: Mapping[str, float], q: float) -> set[str]:
-    """Keys whose null is rejected at false-discovery rate ``q``."""
-    if not 0 < q < 1:
-        raise ValueError(f"q must be in (0, 1), got {q}")
-    ranked = sorted(p_values.items(), key=lambda kv: (kv[1], kv[0]))
-    m = len(ranked)
-    cutoff = 0
-    for k, (_, p) in enumerate(ranked, start=1):
-        if p <= k / m * q:
-            cutoff = k
-    return {key for key, _ in ranked[:cutoff]}
 
 
 class Ledger:
