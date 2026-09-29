@@ -1,4 +1,4 @@
-"""A fixed analyst input (XAUUSD, M15/H1/H4, one LONG mtf_trend_pullback candidate) for prompt and agent tests."""
+"""A fixed analyst input (XAUUSD, M15/H1/H4, one LONG mtf_trend_pullback candidate) for agent tests."""
 
 from __future__ import annotations
 

@@ -263,6 +263,7 @@ class DecisionOutcome(StrEnum):
     BELOW_THRESHOLD = "BELOW_THRESHOLD"
     RISK_REJECTED = "RISK_REJECTED"
     ORDERED = "ORDERED"
+    DRY_RUN = "DRY_RUN"  # the Risk Manager approved an order; dry-run mode recorded it and sent nothing
     ERROR = "ERROR"
 
 

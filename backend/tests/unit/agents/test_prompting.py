@@ -59,7 +59,7 @@ def test_released_templates_are_immutable() -> None:
 
 def test_candles_are_atr_normalised_relative_to_the_last_close() -> None:
     candles = atr_candles(bars(3), D("2"))
-    # closes 4140.0, 4140.5, 4141.0; last close 4141.0; the last candle: open 4140 -> -0.50, high 4143 -> +1.00
+    # closes 4140.0, 4140.5, 4141.0 (the reference); the last candle: open 4140 -> -0.50, high 4143 -> +1.00
     assert [c["c"] for c in candles] == ["-0.50", "-0.25", "+0.00"]
     assert (candles[-1]["o"], candles[-1]["h"], candles[-1]["l"]) == ("-0.50", "+1.00", "-1.50")
     assert candles[-1]["close"] == "4141"
@@ -68,8 +68,8 @@ def test_candles_are_atr_normalised_relative_to_the_last_close() -> None:
 
 @pytest.mark.parametrize(
     ("value", "text"),
-    [(None, "na"), (True, "true"), (7, "7"), (4150.28, "4150.28"), (D("0.0290"), "0.029"), (0.00001234, "0.000012"),
-     ("BULL", "BULL")],
+    [(None, "na"), (True, "true"), (7, "7"), (4150.28, "4150.28"), (D("0.0290"), "0.029"),
+     (0.00001234, "0.000012"), ("BULL", "BULL")],
 )  # fmt: skip
 def test_number_formatting_is_deterministic(value: object, text: str) -> None:
     assert fmt(value) == text  # type: ignore[arg-type]  # never scientific notation

@@ -189,9 +189,12 @@ class TradeProposal(BaseModel):
 1. JSON parse + schema validation. On failure: one repair call with the validation error message; then INVALID
    (`LLM_INVALID_OUTPUT`).
 2. `direction == NONE` or `setup_tag == none` (when `require_setup`) → HOLD.
-3. `setup_tag` not among detected candidates → HOLD (`SETUP_MISMATCH`) — prevents hallucinated setups.
+3. `setup_tag` not among detected candidates → HOLD (`SETUP_MISMATCH`) — prevents hallucinated setups. A
+   candidate is its tag AND its direction hint: a LONG-detected setup cannot be taken SHORT (a candidate
+   without a direction hint accepts either).
 4. Invalidation geometry: LONG requires `invalidation < entry_ref`; SHORT requires `>`; otherwise ignore the
-   field and use the default ATR stop (logged as `INVALIDATION_IGNORED`).
+   field and use the default ATR stop (logged as `INVALIDATION_IGNORED`). A target on the wrong side is
+   dropped the same way (`TARGET_IGNORED`).
 5. The LLM never supplies volume. Any extra fields → validation error (`extra="forbid"`).
 
 ---

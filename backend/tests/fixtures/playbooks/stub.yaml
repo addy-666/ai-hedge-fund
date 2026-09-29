@@ -1,0 +1,9 @@
+# Test-only playbook card for the replay scenario's HourlyStub detector.
+id: stub
+setup_tag: stub_hourly
+summary: Synthetic setup that fires at every full hour (LONG in hours 0-1 mod 4, SHORT in 2-3 mod 4).
+long_rules:
+  - "Fires at every full hour when the hour mod 4 is 0 or 1"
+short_rules: "Hours 2-3 mod 4."
+stop: "Default ATR stop"
+target: "Default risk-reward"
