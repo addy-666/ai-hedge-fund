@@ -15,7 +15,7 @@ decimals, well within float64 precision).
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from itertools import pairwise
 from pathlib import Path
@@ -129,6 +129,8 @@ class Manifest:
     end: datetime
     rows: dict[str, dict[str, int]]
     format_version: int = FORMAT_VERSION
+    max_bars: int | None = None  # the terminal's "Max bars in chart" at export time
+    capped: list[str] = field(default_factory=list)  # "SYMBOL TF" whose history hit that cap (incomplete)
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -140,6 +142,8 @@ class Manifest:
             "start": self.start.isoformat(),
             "end": self.end.isoformat(),
             "rows": self.rows,
+            "max_bars": self.max_bars,
+            "capped": self.capped,
         }
 
 
@@ -163,6 +167,8 @@ def read_manifest(root: Path) -> Manifest:
         account_trade_mode=raw["account_trade_mode"],
         server_offset_minutes=int(raw["server_offset_minutes"]),
         start=datetime.fromisoformat(raw["start"]),
+        max_bars=raw.get("max_bars"),
+        capped=list(raw.get("capped", [])),
         end=datetime.fromisoformat(raw["end"]),
         rows=raw["rows"],
     )

@@ -4,7 +4,7 @@ import importlib.util
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 
 import pytest
 
@@ -186,3 +186,68 @@ async def test_export_warns_when_history_ends_long_before_now(tmp_path: Path) ->
     )
     await gw.close()
     assert any("looks unsynchronised" in w for w in result.warnings)
+
+
+def gateway(fake: FakeMT5) -> MT5Gateway:
+    return MT5Gateway(
+        MT5Credentials(login=12345678, password="x", server="Broker-Demo"),
+        clock=FakeClock(NOW),
+        module_loader=lambda: fake,
+    )
+
+
+async def test_a_timeframe_at_the_terminal_bar_cap_is_flagged(tmp_path: Path) -> None:
+    fake = FakeMT5()
+    fake.terminal = SimpleNamespace(connected=True, trade_allowed=True, maxbars=100)
+    start = NOW - timedelta(days=30)
+    fake.rates[("XAUUSDm", c.TIMEFRAMES[Timeframe.H1])] = _rows(Timeframe.H1, NOW - timedelta(hours=100), 100)
+    fake.rates[("XAUUSDm", c.TIMEFRAMES[Timeframe.H4])] = _rows(Timeframe.H4, start, 30)
+    gw = gateway(fake)
+    await gw.connect()
+    gw.set_server_offset(OFFSET)
+    result = await export_history(
+        gw, symbols=["XAUUSDm"], timeframes=[Timeframe.H1, Timeframe.H4], start=start, now=NOW, root=tmp_path
+    )
+    await gw.close()
+    assert any("XAUUSDm H1: CAPPED" in w and "Unlimited" in w for w in result.warnings)
+    manifest = hs.read_manifest(tmp_path)
+    assert (manifest.max_bars, manifest.capped) == (100, ["XAUUSDm H1"])
+
+
+async def test_a_date_range_export_merges_into_the_existing_one(tmp_path: Path) -> None:
+    fake = FakeMT5()
+    old_start = NOW - timedelta(days=60)
+    fake.rates[("XAUUSDm", c.TIMEFRAMES[Timeframe.H4])] = _rows(Timeframe.H4, old_start, 6 * 60)
+    gw = gateway(fake)
+    await gw.connect()
+    gw.set_server_offset(OFFSET)
+    recent = await export_history(gw, symbols=["XAUUSDm"], timeframes=[Timeframe.H4],
+                                  start=NOW - timedelta(days=20), now=NOW, root=tmp_path)  # fmt: skip
+    older = await export_history(
+        gw, symbols=["XAUUSDm"], timeframes=[Timeframe.H4], start=old_start, end=NOW - timedelta(days=20),
+        now=NOW, root=tmp_path, merge=True,
+    )  # fmt: skip
+    await gw.close()
+    bars = hs.read_bars(tmp_path, "XAUUSDm", Timeframe.H4, digits=2)
+    assert bars[0].time == old_start and len(bars) == len({b.time for b in bars})  # noqa: PT018
+    assert older.rows["XAUUSDm"]["H4"] == len(bars) > recent.rows["XAUUSDm"]["H4"]
+    manifest = hs.read_manifest(tmp_path)
+    assert (manifest.start, manifest.end, manifest.max_bars) == (old_start, NOW, None)
+    assert not older.warnings  # the range ends 20 days ago by request, not because history is stale
+
+
+async def test_merging_exports_from_different_servers_is_refused(tmp_path: Path) -> None:
+    fake = FakeMT5()
+    fake.rates[("XAUUSDm", c.TIMEFRAMES[Timeframe.H4])] = _rows(Timeframe.H4, NOW - timedelta(days=5), 30)
+    gw = gateway(fake)
+    await gw.connect()
+    gw.set_server_offset(OFFSET)
+    kw = dict(
+        symbols=["XAUUSDm"], timeframes=[Timeframe.H4], start=NOW - timedelta(days=5), now=NOW, root=tmp_path
+    )
+    await export_history(gw, **kw)  # type: ignore[arg-type]
+    manifest = hs.read_manifest(tmp_path)
+    hs.write_manifest(tmp_path, hs.Manifest(**{**manifest.__dict__, "server": "Other-Live"}))
+    with pytest.raises(ValueError, match="cannot merge"):
+        await export_history(gw, merge=True, **kw)  # type: ignore[arg-type]
+    await gw.close()

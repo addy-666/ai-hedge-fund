@@ -26,7 +26,9 @@ cd backend && uv run ruff check . && uv run ruff format --check . && uv run mypy
 cd backend && uv run alembic upgrade head          # DATABASE_URL, default <repo>/data/aifund.db
 cd backend && uv run alembic revision --autogenerate -m "<change>"   # then review the generated file
 cd backend && uv run python scripts/mt5_smoke.py   # Windows + MT5 terminal only: READ-ONLY checks on a demo account
-cd backend && uv run python scripts/export_history.py --months 15  # Windows: bars -> <repo>/data/history (Parquet)
+cd backend && uv run python scripts/export_history.py --months 24  # Windows: bars -> <repo>/data/history (Parquet); set MT5 "Max bars in chart" = Unlimited first
+cd backend && uv run python scripts/export_history.py --from 2024-01-01 --to 2024-07-01 --timeframes M1,M5 --merge   # Windows: add a date range to the export
+cd backend && uv run python scripts/data_quality.py --details 5   # quality of the export: bar caps, gaps the session calendar cannot explain, spreads
 cd backend && uv run python scripts/replay.py --from 2026-06-15 --to 2026-09-27   # full stack on exported history (SimBroker); --snapshot-minutes 1 for engine cadence
 cd backend && uv run python scripts/research.py baseline   # edge study: grid, walk-forward, gate E1 (docs/09); --spend-holdout once
 cd backend && uv run python scripts/research.py dsl --file ideas.json   # operator entry hypotheses (docs/09 §5) through the research loop
