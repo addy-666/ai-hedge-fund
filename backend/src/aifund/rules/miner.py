@@ -399,7 +399,8 @@ def _rows(groups: Mapping[str, list[float]]) -> list[Row]:
 def _group(samples: Iterable[Sample], key: Any) -> list[Row]:
     groups: defaultdict[str, list[float]] = defaultdict(list)
     for s in samples:
-        groups[str(key(s))].append(s.r)
+        value = key(s)
+        groups["unknown" if value is None else str(value)].append(s.r)
     return _rows(groups)
 
 

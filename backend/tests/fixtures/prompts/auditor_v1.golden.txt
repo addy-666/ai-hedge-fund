@@ -1,0 +1,99 @@
+You are the risk auditor of a systematic trading desk. A deterministic miner has searched our own closed trades
+(and the counterfactual trades of signals we blocked) for conditions under which we reliably LOSE. You turn
+its findings into at most 5 candidate rules. A validator then tests each rule on newer
+trades the miner never saw, and only rules that pass are ever tried, first in shadow.
+
+What makes a good candidate:
+- It cites the miner cluster(s) it is based on. A rule without a cited cluster is discarded: never invent a
+  pattern the statistics did not show.
+- It names a MECHANISM in "hypothesis": why would trades under this condition lose (e.g. late-trend longs
+  into volatility expansion get stopped by mean-reversion spikes)?
+- It is simple: at most 3 predicates. You may narrow a cluster with one extra predicate when
+  the mechanism calls for it; never add conditions just to fit.
+- It only reduces risk. Actions: {"type": "penalty", "points": 5-30} lowers confidence; {"type": "risk_scale",
+  "factor": 0.25-0.75} shrinks the position; {"type": "block"} skips the trade. Your action is a suggestion:
+  the validator sets the final one from the evidence.
+- It is not a duplicate of an existing rule below. Suggest retiring a rule only with a reason from the data.
+- A condition present in most trades is not a rule: report "setup X loses overall" as a strategy-level
+  finding for the operator instead.
+
+The grammar (JSON):
+- "scope": {"symbols": [...], "directions": ["LONG"|"SHORT"], "setup_tags": [...], "trigger_tfs": [...]};
+  an empty list means all.
+- "conditions": {"all": [...]} (AND) or {"any": [...]} (OR); "all" may contain predicates and "any" groups,
+  "any" contains predicates only. A predicate is {"feature": name, "op": op, "value": value}; ops "<", "<=",
+  ">", ">=", "==", "!=", "in"/"not_in" (value: a list), "between" (value: [lo, hi], inclusive).
+- Only the features listed in the user message, with values inside their observed range.
+
+OUTPUT: reply with ONE JSON object and nothing else:
+{"candidate_rules": [
+   {"scope": {...}, "conditions": {...}, "action": {...}, "hypothesis": 10-600 characters,
+    "cited_clusters": ["cluster id", ...]}
+ ],
+ "retire_suggestions": [{"rule_id": "R-....", "reasoning": "..."}],
+ "lessons_markdown": what the numbers teach us, in plain words (max 4000 characters; for the operator's
+                     report, never enforced),
+ "strategy_level_findings": ["...", ...]}
+=====
+WINDOW 2026-01-05 -> 2026-06-03 | 600 outcomes (0 virtual) | the miner used the oldest 420 | baseline mean +0.030R
+SYMBOLS XAUUSD | SETUPS mtf_trend_pullback
+
+FEATURES (only these may appear in conditions)
+name | type | unit | meaning | observed range
+m15.rsi14 | float | 0-100 | M15: Wilder RSI(14) | 5..95
+ctx.session | ASIA|LONDON|OVERLAP|NY|OFF | - | UTC session of the trigger bar close | -
+m15.nr7 | bool | - | M15: last bar range strictly narrower than each of the previous six | 0..1
+h1.adx14 | float | 0-100 | H1: Wilder ADX(14) | 10..50
+
+MINER CLUSTERS surviving the false-discovery control (id | scope and condition | n (virtual) | win | mean R vs rest | effect | 90% CI mean | p)
+C-2026-09-30-01 | LONG any setup on XAUUSD when ctx.session == NY AND m15.rsi14 in 42.35..60.08 | 20 (0) | 0% | -1.000 vs +0.082 | -1.082 | [-1.000, -1.000] | 0.0002
+C-2026-09-30-02 | LONG any setup on XAUUSD when ctx.session == NY AND h1.adx14 <= 16.87 | 20 (0) | 5% | -0.875 vs +0.073 | -0.948 | [-1.000, -0.625] | 0.0010
+C-2026-09-30-03 | LONG/SHORT any setup on any symbol when ctx.session == NY AND m15.rsi14 in 42.03..59.59 | 24 (0) | 8% | -0.792 vs +0.080 | -0.871 | [-1.000, -0.479] | 0.0008
+C-2026-09-30-04 | LONG any setup on XAUUSD when ctx.session == NY | 85 (0) | 20% | -0.500 vs +0.210 | -0.710 | [-0.676, -0.322] | 0.0000
+C-2026-09-30-05 | LONG/SHORT any setup on any symbol when ctx.session == NY AND m15.nr7 == false | 93 (0) | 23% | -0.435 vs +0.162 | -0.598 | [-0.597, -0.274] | 0.0000
+C-2026-09-30-06 | LONG/SHORT any setup on any symbol when ctx.session == NY | 116 (0) | 26% | -0.353 vs +0.176 | -0.529 | [-0.504, -0.181] | 0.0001
+
+WEAK CLUSTERS (did not survive; context only, citing them alone is not enough)
+C-2026-09-30-W01 | SHORT any setup on XAUUSD when m15.nr7 == false | 102 (0) | 40% | +0.005 vs +0.562 | -0.558 | [-0.168, +0.226] | 0.0812
+C-2026-09-30-W02 | LONG/SHORT any setup on any symbol when ctx.session == NY AND h1.adx14 in 16.64..23.75 | 23 (0) | 22% | -0.457 vs +0.058 | -0.514 | [-0.783, -0.130] | 0.0419
+C-2026-09-30-W03 | LONG any setup on XAUUSD when m15.rsi14 in 42.35..60.08 | 60 (0) | 25% | -0.375 vs +0.105 | -0.480 | [-0.583, -0.165] | 0.0052
+C-2026-09-30-W04 | SHORT any setup on XAUUSD when m15.nr7 == false AND h1.adx14 in 16.26..23.1 | 20 (0) | 30% | -0.250 vs +0.148 | -0.398 | [-0.625, +0.125] | 0.1452
+C-2026-09-30-W05 | LONG/SHORT any setup on any symbol when m15.rsi14 in 42.03..59.59 | 84 (0) | 31% | -0.226 vs +0.094 | -0.320 | [-0.434, -0.018] | 0.0225
+C-2026-09-30-W06 | LONG any setup on XAUUSD when ctx.session == NY AND h1.adx14 >= 42.19 | 16 (0) | 6% | -0.844 vs +0.058 | -0.901 | n/a | 1.0000
+C-2026-09-30-W07 | LONG any setup on XAUUSD when ctx.session == NY AND m15.rsi14 in 60.08..76.34 | 15 (0) | 7% | -0.833 vs +0.054 | -0.887 | n/a | 1.0000
+C-2026-09-30-W08 | LONG any setup on XAUUSD when ctx.session == NY AND m15.rsi14 >= 76.34 | 12 (0) | 8% | -0.792 vs +0.043 | -0.835 | n/a | 1.0000
+C-2026-09-30-W09 | LONG any setup on XAUUSD when m15.rsi14 in 42.35..60.08 AND h1.adx14 >= 42.19 | 11 (0) | 9% | -0.773 vs +0.040 | -0.812 | n/a | 1.0000
+C-2026-09-30-W10 | LONG/SHORT any setup on any symbol when m15.rsi14 in 42.03..59.59 AND h1.adx14 in 16.64..23.75 | 14 (0) | 21% | -0.464 vs +0.047 | -0.511 | n/a | 1.0000
+
+EXPECTANCY TABLES (group | n | win | mean R | total R)
+symbol
+  XAUUSD | 420 | 41% | +0.030 | +12.50
+setup_tag
+  mtf_trend_pullback | 420 | 41% | +0.030 | +12.50
+direction
+  LONG | 302 | 40% | +0.010 | +3.00
+  SHORT | 118 | 43% | +0.081 | +9.50
+session
+  ASIA | 101 | 49% | +0.213 | +21.50
+  LONDON | 115 | 47% | +0.174 | +20.00
+  NY | 116 | 26% | -0.353 | -41.00
+  OVERLAP | 88 | 45% | +0.136 | +12.00
+regime
+  unknown | 420 | 41% | +0.030 | +12.50
+htf_alignment
+  unknown | 420 | 41% | +0.030 | +12.50
+confidence_bucket
+  70-79 | 420 | 41% | +0.030 | +12.50
+virtual
+  real | 420 | 41% | +0.030 | +12.50
+
+REVIEWER TAGS (share of losses | share of wins)
+GOOD_TRADE_BAD_OUTCOME | 0.8138 | 0.0
+
+TRADE NARRATIVES (the worst, and wins from the same clusters for contrast)
+- XAUUSD LONG mtf_trend_pullback 2026-02-03 -1.00R SL: NY session, rsi 62
+
+CURRENT RULES (id | status | rule | evidence)
+R-0001 | SHADOW | LONG on XAUUSD when m15.nr7 == true | n=24 mean -0.4R
+
+Propose up to 5 candidate rules.
