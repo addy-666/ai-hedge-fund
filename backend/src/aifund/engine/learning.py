@@ -35,6 +35,7 @@ from aifund.agents.auditor import AuditBrief, Auditor, FeatureLine, RuleLine
 from aifund.config.trading_config import LearningConfig, TradingConfig
 from aifund.domain.enums import CommandType, Direction, RuleStatus, Side
 from aifund.engine.rulebook import rule_of
+from aifund.market import conditions as cond
 from aifund.persistence.db import unit_of_work
 from aifund.persistence.repositories.learning import (
     AuditRunRepository,
@@ -306,7 +307,24 @@ class Learning:
         repo = RuleRepository(s, self._clock)
         changes = _Changes()
         results = []
+        live = {_shape(rule_of(r)): r for r in repo.live()}
         for rule, cited in candidates:
+            same = live.get(_shape(rule))
+            if same is not None:  # proposed again: it is already being tried or enforced
+                results.append(
+                    {
+                        "rule_id": same.rule_id,
+                        "version": same.version,
+                        "text": rule.describe(),
+                        "passed": False,
+                        "failures": [f"already {same.status.value} as {same.rule_id}"],
+                        "action": {},
+                        "evidence": {},
+                        "strategy_finding": None,
+                        "duplicate_of": same.rule_id,
+                    }
+                )
+                continue
             v = self._validate(s, rule, samples)
             final = rule.model_copy(update={"action": v.action})
             target_id, version = repo.next_id(), 1
@@ -601,6 +619,12 @@ def _rule_from_cluster(cluster: Any) -> dsl.Rule:
     )
 
 
+def _shape(rule: dsl.Rule) -> str:
+    """What a rule matches (scope and condition), whatever its action or id."""
+    body = dsl.dump(rule)
+    return cond.sha256({"scope": body["scope"], "conditions": body["conditions"]})
+
+
 def _without_duplicate(v: Validation) -> Validation:
     failures = tuple(f for f in v.failures if not f.startswith("matches the same trades as"))
     return Validation(
@@ -665,7 +689,7 @@ def _report(
     lines += ["", "## Candidates"]
     for v in validations:
         verdict = "PASSED → SHADOW" if v["passed"] else "rejected: " + "; ".join(v["failures"])
-        lines.append(f"- {v['rule_id']}v{v['version']} {v['text']} ({v['action']['type']}): {verdict}")
+        lines.append(f"- {v['rule_id']}v{v['version']} {v['text']} ({v['action'].get('type', 'no action')}): {verdict}")
     if not validations:
         lines.append("- none")
     lines += ["", "## Lifecycle changes", *([f"- {c}" for c in changes] or ["- none"])]

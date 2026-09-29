@@ -41,6 +41,7 @@ def create_app(
     clock: ClockPort | None = None,
     dist: Path = DIST,
     log_file: Path = PROJECT_ROOT / "logs" / "engine.jsonl",
+    exports: Path = PROJECT_ROOT / "exports" / "vault",
 ) -> FastAPI:
     settings = settings or Settings()
     register_settings_secrets(settings)
@@ -58,6 +59,7 @@ def create_app(
     app.state.limiter = auth.LoginLimiter()
     app.state.config = ConfigSource(settings.CONFIG_PATH)
     app.state.log_file = log_file
+    app.state.exports = exports
 
     origins = [o.strip() for o in settings.API_ALLOWED_ORIGINS.split(",") if o.strip()]
     if origins:

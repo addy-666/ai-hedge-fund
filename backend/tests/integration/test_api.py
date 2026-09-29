@@ -79,7 +79,14 @@ def client(
     ]
     log.write_text("".join((json.dumps(x) if isinstance(x, dict) else x) + "\n" for x in lines))
     return TestClient(
-        create_app(settings, factory=factory, clock=clock, dist=tmp_path / "nodist", log_file=log)
+        create_app(
+            settings,
+            factory=factory,
+            clock=clock,
+            dist=tmp_path / "nodist",
+            log_file=log,
+            exports=tmp_path / "exports",
+        )
     )
 
 
@@ -625,3 +632,19 @@ def test_an_operator_rule_is_validated_as_dsl_and_stored_as_a_candidate(client: 
     unknown = {**body, "conditions": {"all": [{"feature": "m15.nope", "op": ">", "value": 1}]}}
     assert client.post("/api/rules", json=unknown, headers=headers).status_code == 422
     assert client.get("/api/rules/R-0001").json()["rule"]["origin"] == "OPERATOR"
+
+
+def test_vault_exports_are_listed_and_served(client: TestClient, tmp_path: Path) -> None:
+    login(client)
+    assert client.get("/api/exports/vault").json() == []
+    (tmp_path / "exports").mkdir()
+    for name in ("ai-fund-review-2026-W38.md", "ai-fund-review-2026-W39.md", "notes.md"):
+        (tmp_path / "exports" / name).write_text(f"# {name}\n", encoding="utf-8")
+    assert client.get("/api/exports/vault").json() == [
+        "ai-fund-review-2026-W39.md",
+        "ai-fund-review-2026-W38.md",
+    ]
+    note = client.get("/api/exports/vault/ai-fund-review-2026-W39.md")
+    assert (note.status_code, note.text) == (200, "# ai-fund-review-2026-W39.md\n")
+    assert client.get("/api/exports/vault/notes.md").status_code == 404
+    assert client.get("/api/exports/vault/ai-fund-review-2026-W40.md").status_code == 404

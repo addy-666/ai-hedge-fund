@@ -4407,6 +4407,74 @@
         ]
       }
     },
+    "/api/exports/vault": {
+      "get": {
+        "description": "Weekly review notes waiting for the Mac (scripts/pull_vault_reviews.py), newest first.",
+        "operationId": "vault_exports_api_exports_vault_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "title": "Response Vault Exports Api Exports Vault Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Vault Exports",
+        "tags": [
+          "learning"
+        ]
+      }
+    },
+    "/api/exports/vault/{name}": {
+      "get": {
+        "operationId": "vault_export_api_exports_vault__name__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Vault Export",
+        "tags": [
+          "learning"
+        ]
+      }
+    },
     "/api/features": {
       "get": {
         "description": "The rule-usable features (entry-time, known before the rules run) for the rule editor.",

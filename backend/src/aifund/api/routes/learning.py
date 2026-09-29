@@ -7,6 +7,7 @@ from __future__ import annotations
 from typing import Annotated, Any
 
 from fastapi import APIRouter, HTTPException, Query, Request, status
+from fastapi.responses import PlainTextResponse
 from sqlalchemy import select
 
 from aifund.api import context as ctx
@@ -37,6 +38,7 @@ from aifund.persistence.repositories.learning import (
 from aifund.persistence.tables import DecisionRow, RuleEvaluationRow, RuleRow
 from aifund.rules import dsl
 from aifund.rules.miner import minable
+from aifund.vault.review_exporter import NAME, listing
 
 router = APIRouter(prefix="/api", tags=["learning"])
 MAX_MATCHES = 100
@@ -213,3 +215,18 @@ def features(_s: Authenticated) -> list[FeatureOut]:
             )
         )
     return out
+
+
+@router.get("/exports/vault")
+def vault_exports(request: Request, _s: Authenticated) -> list[str]:
+    """Weekly review notes waiting for the Mac (scripts/pull_vault_reviews.py), newest first."""
+    return listing(ctx.state(request).exports)
+
+
+@router.get("/exports/vault/{name}", response_class=PlainTextResponse)
+def vault_export(request: Request, name: str, _s: Authenticated) -> str:
+    path = ctx.state(request).exports / name
+    if not NAME.match(name) or not path.is_file():
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "no such export")
+    text: str = path.read_text(encoding="utf-8")
+    return text

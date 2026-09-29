@@ -67,6 +67,7 @@ from aifund.reconcile.virtual import VirtualTracker
 from aifund.risk.limits import LimitKind, check_loss_limits, trading_day_start
 from aifund.risk.manager import RiskManager
 from aifund.risk.position_manager import PositionManager
+from aifund.vault.review_exporter import ReviewExporter
 
 LIVE = ALL_STATES - {EngineState.STOPPED}
 
@@ -80,6 +81,7 @@ class Options:
     g_llm: Sequence[GLlmSignoff] = ()
     analyst: Analyst | None = None
     learners: tuple[Reviewer | None, Auditor | None] = (None, None)  # the learning loop's LLM agents
+    vault_exporter: ReviewExporter | None = None  # weekly review notes for the TRADING BRAIN vault
     guardian: GuardianFiles | None = None
     calendar: CalendarFile | None = None
     healthchecks: Callable[[], Awaitable[object]] | None = None  # the dead-man ping
@@ -317,6 +319,10 @@ class Engine:
         if self.guardian is not None:
             await self.guardian.run_once()
 
+    async def _vault_export(self) -> None:
+        if self.opts.vault_exporter is not None:
+            await asyncio.to_thread(self.opts.vault_exporter.run_once)
+
     async def _healthchecks(self) -> None:
         if self.opts.healthchecks is not None:
             await self.opts.healthchecks()
@@ -362,6 +368,11 @@ class Engine:
                 else []
             ),
             *([LoopSpec("reviews", 60.0, self.reviews.run_once, runs_in=LEARNING)] if self.reviews else []),
+            *(
+                [LoopSpec("vault_export", 3600.0, self._vault_export, runs_in=ALL_STATES)]
+                if self.opts.vault_exporter is not None
+                else []
+            ),
             LoopSpec("daily_summary", 60.0, self.daily.run_once, runs_in=ALL_STATES),
             LoopSpec("healthchecks", 60.0, self._healthchecks, runs_in=ALL_STATES),
         ]

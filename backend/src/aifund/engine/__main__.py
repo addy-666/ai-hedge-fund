@@ -52,9 +52,11 @@ from aifund.persistence.repositories.llm import LLMCallRepository
 from aifund.persistence.repositories.system import ConfigVersionRepository
 from aifund.persistence.tables import AuditLogRow
 from aifund.ports.system import ClockPort, NotifierPort
+from aifund.vault.review_exporter import ReviewExporter
 
 PLAYBOOKS = PROJECT_ROOT / "config" / "playbooks"
 EVIDENCE = PROJECT_ROOT / "config" / "evidence"
+EXPORTS = PROJECT_ROOT / "exports" / "vault"
 log = get_logger("aifund.engine")
 
 
@@ -212,6 +214,7 @@ async def run_mt5(settings: Settings, loaded: LoadedConfig, factory: Any, live_c
                 g_llm=load_g_llm(EVIDENCE),
                 analyst=analyst_for(settings, cfg, factory, clock, notifier, client),
                 learners=learners_for(settings, cfg, factory, clock, notifier, client),
+                vault_exporter=ReviewExporter(factory, clock, out_dir=EXPORTS, playbooks=PLAYBOOKS),
                 guardian=GuardianFiles(guardian_dir),
                 calendar=CalendarFile(guardian_dir / "calendar.csv", clock),
                 healthchecks=pinger.ping if pinger is not None else None,
