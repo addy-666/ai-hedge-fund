@@ -163,9 +163,7 @@ class PositionManager:
         return quantize_to_step(level, spec.tick_size, Rounding.DOWN if side is Side.BUY else Rounding.UP)
 
     @staticmethod
-    def _tighter(new: Decimal, current: Decimal | None, side: Side) -> bool:
-        if current is None:
-            return True
+    def _tighter(new: Decimal, current: Decimal, side: Side) -> bool:
         return new > current if side is Side.BUY else new < current
 
     @staticmethod

@@ -22,6 +22,7 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
+            coverage: true
           # A run away from UTC catches naive-datetime / server-time conversion bugs.
           - os: ubuntu-latest
             tz: Asia/Kolkata
@@ -47,4 +48,11 @@ jobs:
       - name: Import contracts
         run: uv run lint-imports
       - name: Tests
+        if: ${{ !matrix.coverage }}
         run: uv run pytest -q
+      - name: Tests with branch coverage
+        if: matrix.coverage
+        run: uv run pytest -q --cov --cov-report=json
+      - name: Coverage gate (money path 100%, floors only go up)
+        if: matrix.coverage
+        run: uv run python scripts/coverage_gate.py

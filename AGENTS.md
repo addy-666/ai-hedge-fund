@@ -9,7 +9,7 @@ fully before every task, then `docs/00_INDEX.md` and the docs referenced by your
 2. Before coding: list files to create/modify and any spec ambiguity. If the spec is wrong or ambiguous, stop and
    ask, or propose a spec edit in the same change — never silently diverge.
 3. Tests first for money-path code (`risk/`, `execution/`, `reconcile/`, `rules/engine.py`).
-4. Finish with: all tests green, `ruff check`, `ruff format --check`, `mypy`, `lint-imports` clean. Update
+4. Finish with: all tests green, the coverage gate, `ruff check`, `ruff format --check`, `mypy`, `lint-imports` clean. Update
    `docs/PROGRESS.md` (what was built, deviations, follow-ups).
 5. Never edit files in `legacy/` (reference only) or anything in the TRADING BRAIN vault's `raw/` folder.
 
@@ -21,6 +21,7 @@ Working now (verified at the end of Phase 0; Python 3.12 via uv):
 cd backend && uv sync --python 3.12                # install incl. dev tools (macOS: no MT5 extra needed)
 cd backend && uv sync --python 3.12 --extra mt5    # Windows VPS only: adds the MetaTrader5 wheel
 cd backend && uv run pytest -q
+cd backend && uv run pytest -q --cov --cov-report=json && uv run python scripts/coverage_gate.py   # CI gate: money path 100%
 cd backend && uv run ruff check . && uv run ruff format --check . && uv run mypy && uv run lint-imports
 cd backend && uv run alembic upgrade head          # DATABASE_URL, default <repo>/data/aifund.db
 cd backend && uv run alembic revision --autogenerate -m "<change>"   # then review the generated file

@@ -34,6 +34,7 @@ dev = [
     "import-linter>=2.0",
     "types-PyYAML>=6.0",
     "respx>=0.21",
+    "pytest-cov>=7.1.0",
 ]
 
 [build-system]
@@ -82,6 +83,8 @@ module = [
     "aifund.rules.*",
     "aifund.config.*",
     "aifund.persistence.*",
+    "aifund.engine.*",
+    "aifund.research.*",
 ]
 strict = true
 
@@ -159,3 +162,29 @@ source_modules = [
     "aifund.adapters.sim", "aifund.adapters.llm", "aifund.adapters.notify",
 ]
 forbidden_modules = ["MetaTrader5"]
+
+# ---------------------------------------------------------------- coverage (roadmap R.0)
+[tool.coverage.run]
+branch = true
+source = ["aifund"]
+
+[tool.coverage.report]
+skip_covered = true
+show_missing = true
+
+# Enforced in CI by scripts/coverage_gate.py (statements + branches). The money path stays at 100; every
+# other floor may only go UP (raise it when coverage improves, never lower it to let a change through).
+[tool.aifund.coverage_floors]
+"aifund.risk" = 100
+"aifund.execution" = 100
+"aifund.reconcile" = 100
+"aifund.agents" = 100
+"aifund.ports" = 100
+"aifund.domain" = 99
+"aifund.config" = 98
+"aifund.strategies" = 97
+"aifund.market" = 96
+"aifund.persistence" = 93
+"aifund.adapters" = 92
+"aifund.engine" = 86
+"aifund" = 95
