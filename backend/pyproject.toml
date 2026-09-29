@@ -200,5 +200,6 @@ show_missing = true
 "aifund.persistence" = 94
 "aifund.adapters" = 93
 "aifund.engine" = 92
+"aifund.api" = 96
 "aifund.research" = 100
 "aifund" = 96

@@ -180,8 +180,8 @@ def riskier(old: TradingConfig, new: TradingConfig) -> list[str]:
     return out
 
 
-@router.put("/config", responses={422: {"model": list[FieldError]}})
-def put_config(body: ConfigIn, request: Request, session: Mutating) -> Any:
+@router.put("/config", response_model=ConfigSaved, responses={422: {"model": list[FieldError]}})
+def put_config(body: ConfigIn, request: Request, session: Mutating) -> ConfigSaved | JSONResponse:
     source = ctx.state(request).config
     try:
         new = parse_trading_config(body.yaml, source="config")

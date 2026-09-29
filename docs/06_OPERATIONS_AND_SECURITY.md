@@ -18,7 +18,7 @@
 |---|---|
 | `aifund-mt5` | `C:\aifund\mt5\terminal64.exe /portable` |
 | `aifund-engine` | `deploy\windows\run_engine.ps1` → `uv run python -m aifund.engine` (waits for terminal) |
-| `aifund-api` | `deploy\windows\run_api.ps1` → `uv run uvicorn aifund.api.app:app --host <tailscale-ip> --port 8000` |
+| `aifund-api` | `deploy\windows\run_api.ps1` → `tailscale serve --bg 8000` (HTTPS on the tailnet only) + `uv run uvicorn aifund.api.app:app --host 127.0.0.1 --port 8000` |
 | `aifund-backup` | Daily 21:30 UTC: `deploy\windows\backup.ps1` |
 
 - `run_engine.ps1` loops: start engine; on exit, log exit code, wait with backoff (5 s → 5 min), restart.

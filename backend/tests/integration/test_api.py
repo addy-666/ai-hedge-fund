@@ -3,7 +3,9 @@ config, and the event stream's resume."""
 
 from __future__ import annotations
 
+import importlib.util
 import json
+import sys
 from datetime import timedelta
 from decimal import Decimal as D
 from pathlib import Path
@@ -19,29 +21,31 @@ from aifund.adapters.clock import FakeClock
 from aifund.api.app import create_app
 from aifund.config.settings import PROJECT_ROOT, Settings
 from aifund.domain.enums import (
-    CloseReason,
     CommandType,
-    DealEntry,
-    DealReason,
-    DecisionOutcome,
     EngineState,
     Mode,
-    Side,
-    Timeframe,
-    TradeStatus,
-    VirtualArm,
-    VirtualStatus,
 )
-from aifund.domain.market import Bar
 from aifund.persistence.db import unit_of_work
-from aifund.persistence.repositories.api import BarCacheRepository
-from aifund.persistence.repositories.decisions import DecisionRepository
-from aifund.persistence.repositories.equity import EquitySnapshotRepository
+from aifund.persistence.repositories.llm import LLMCallRepository
 from aifund.persistence.repositories.system import EngineStateRepository, EventRepository, HeartbeatRepository
-from aifund.persistence.tables import AuditLogRow, CommandRow, DealRow, TradeRow, VirtualTradeRow
+from aifund.persistence.tables import AuditLogRow, CommandRow
 from aifund.ports.system import Severity
 
 from .conftest import T0
+
+SCRIPTS = Path(__file__).resolve().parents[2] / "scripts"
+
+
+def load(name: str) -> Any:
+    spec = importlib.util.spec_from_file_location(f"{name}_script", SCRIPTS / f"{name}.py")
+    assert spec is not None and spec.loader is not None  # noqa: PT018
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+seed = load("demo_api").seed  # the dashboard's demo data is also this file's fixture data
 
 PASSWORD = "correct horse battery"
 EXAMPLE = PROJECT_ROOT / "config" / "trading.example.yaml"
@@ -172,152 +176,6 @@ def test_sessions_expire(client: TestClient, clock: FakeClock) -> None:
 # ---------------------------------------------------------------- 6.2 read contracts
 
 
-def seed(factory: sessionmaker[Session], clock: FakeClock, acc: str) -> dict[str, Any]:
-    with unit_of_work(factory) as s:
-        engine = EngineStateRepository(s, clock)
-        engine.get_or_create(acc, Mode.DEMO)
-        engine.set_state(acc, EngineState.RUNNING)
-        engine.save_equity_refs(
-            acc, day_start_equity=D("10000"), week_start_equity=D("10100"), peak_equity=D("10200")
-        )
-        HeartbeatRepository(s, clock).beat("engine", "RUNNING")
-        HeartbeatRepository(s, clock).beat("loop.decisions", "ok")
-        for minutes, equity in ((0, "10000"), (1, "10010"), (10, "9950")):
-            EquitySnapshotRepository(s).add(
-                account_id=acc,
-                ts=T0 + timedelta(minutes=minutes),
-                balance=D("10000"),
-                equity=D(equity),
-                margin=D("100"),
-                free_margin=D("9900"),
-                open_risk_money=D("50"),
-                open_notional=D("1000"),
-                open_positions=1,
-                day_pnl=D(equity) - D("10000"),
-                drawdown_pct=D("2.45"),
-            )
-        decision = DecisionRepository(s, clock).add(
-            account_id=acc,
-            symbol="XAUUSD",
-            trigger_tf="M15",
-            bar_time=T0,
-            stage_reached="EXECUTION",
-            outcome=DecisionOutcome.ORDERED,
-            proposal={"thesis": "trend pullback"},
-            final_confidence=72,
-        )
-        DecisionRepository(s, clock).add(
-            account_id=acc,
-            symbol="NAS100.r",
-            trigger_tf="M15",
-            bar_time=T0,
-            stage_reached="SETUP",
-            outcome=DecisionOutcome.NO_SETUP,
-        )
-        common = dict(
-            account_id=acc,
-            symbol="XAUUSD",
-            side=Side.BUY,
-            setup_tag="mtf_trend_pullback",
-            trigger_tf="M15",
-            open_price=D("4150.00"),
-            volume_opened=D("0.10"),
-            initial_sl=D("4140.00"),
-            created_at=T0,
-            updated_at=T0,
-        )
-        s.add(
-            TradeRow(
-                id="T-CLOSED",
-                position_id=11,
-                status=TradeStatus.CLOSED,
-                open_time=T0,
-                volume_open_now=D(0),
-                close_time=T0 + timedelta(hours=1),
-                close_price_vwap=D("4170.00"),
-                close_reason=CloseReason.TP,
-                net_pnl=D("199.30"),
-                r_multiple=D("2.0"),
-                commission=D("-0.70"),
-                decision_id=decision.id,
-                **common,
-            )
-        )
-        s.add(
-            TradeRow(
-                id="T-OPEN",
-                position_id=12,
-                status=TradeStatus.OPEN,
-                open_time=T0,
-                volume_open_now=D("0.10"),
-                current_sl=D("4140.00"),
-                current_tp=D("4180.00"),
-                decision_id=decision.id,
-                **common,
-            )
-        )
-        for ticket, entry, price, profit in (
-            (1, DealEntry.IN, "4150.00", "0"),
-            (2, DealEntry.OUT, "4170.00", "200.00"),
-        ):
-            s.add(
-                DealRow(
-                    ticket=ticket,
-                    account_id=acc,
-                    order=ticket,
-                    position_id=11,
-                    time_utc=T0 + timedelta(minutes=ticket),
-                    time_server=0,
-                    side=Side.BUY,
-                    entry=entry,
-                    reason=DealReason.EXPERT,
-                    magic=1,
-                    symbol="XAUUSD",
-                    volume=D("0.10"),
-                    price=D(price),
-                    profit=D(profit),
-                    commission=D("-0.35"),
-                    swap=D(0),
-                    fee=D(0),
-                )
-            )
-        s.add(
-            VirtualTradeRow(
-                id="V1",
-                account_id=acc,
-                decision_id=decision.id,
-                arm=VirtualArm.SHADOW_BASELINE,
-                symbol="XAUUSD",
-                side=Side.BUY,
-                entry_time=T0,
-                sl_distance=D("10"),
-                tp_distance=D("20"),
-                expires_at=T0 + timedelta(hours=3),
-                expire_reason=CloseReason.TIME_STOP,
-                status=VirtualStatus.PENDING,
-                created_at=T0,
-            )
-        )
-        BarCacheRepository(s).upsert(
-            [
-                Bar(
-                    symbol="XAUUSD",
-                    timeframe=Timeframe.M15,
-                    time=T0 + timedelta(minutes=15 * i),
-                    open=D("4150"),
-                    high=D("4156"),
-                    low=D("4148"),
-                    close=D(f"{4150 + i}"),
-                    tick_volume=10,
-                    spread_points=20,
-                )
-                for i in range(4)
-            ]
-        )
-        EventRepository(s, clock).append("engine.state", Severity.INFO, {"to": "RUNNING"})
-    return {"decision": decision.id}
-
-
 def test_read_contracts_on_a_seeded_database(
     client: TestClient, factory: sessionmaker[Session], clock: FakeClock, config_path: Path
 ) -> None:
@@ -343,6 +201,10 @@ def test_read_contracts_on_a_seeded_database(
 
     curve = client.get("/api/equity", params={"from": T0.isoformat(), "granularity": 5}).json()
     assert [p["equity"] for p in curve] == ["10010", "9950"]  # 0 and 1 minute share a bucket: the last wins
+    curve = client.get("/api/equity", params={"from": T0.isoformat(), "granularity": 10}).json()
+    assert [p["equity"] for p in curve] == ["10010", "9950"]  # buckets are fixed on the clock: [:00, :10)
+    curve = client.get("/api/equity", params={"from": T0.isoformat(), "granularity": 60}).json()
+    assert [p["equity"] for p in curve] == ["9950"]
 
     (pos,) = client.get("/api/positions").json()
     assert (pos["position_id"], pos["last_price"], pos["r_now"], pos["thesis"]) == (
@@ -383,6 +245,70 @@ def test_read_contracts_on_a_seeded_database(
     logs = client.get("/api/logs", params={"level": "error"}).json()
     assert [line["event"] for line in logs] == ["failed"]
     assert [line["event"] for line in client.get("/api/logs").json()] == ["booted", "failed"]
+
+
+def test_read_filters_llm_usage_and_the_log_tail(
+    client: TestClient, factory: sessionmaker[Session], clock: FakeClock, config_path: Path, tmp_path: Path
+) -> None:
+    ids = seed(factory, clock, account(config_path))
+    with unit_of_work(factory) as s:
+        for latency, valid, cost in ((100, True, "0.01"), (300, False, None), (200, True, "0.02")):
+            LLMCallRepository(s, clock).add(
+                agent="analyst",
+                decision_id=ids["decision"],
+                model="deepseek-chat",
+                prompt_template="analyst",
+                prompt_version="v1",
+                prompt_sha256="0" * 64,
+                valid=valid,
+                prompt_tokens=1000,
+                completion_tokens=100,
+                cached_tokens=500,
+                cost_usd=None if cost is None else D(cost),
+                latency_ms=latency,
+            )
+    login(client)
+    day = {"from": T0.isoformat(), "to": (T0 + timedelta(days=1)).isoformat()}
+
+    def trade_ids(**params: str) -> list[str]:
+        return [t["id"] for t in client.get("/api/trades", params=params).json()["items"]]
+
+    assert trade_ids(symbol="XAUUSD", setup="mtf_trend_pullback", **day) == ["T-CLOSED"]
+    assert trade_ids(symbol="NAS100.r") == [] and trade_ids(outcome="LOSS") == []  # noqa: PT018
+
+    def decision_symbols(**params: str) -> list[str]:
+        return [d["symbol"] for d in client.get("/api/decisions", params=params).json()["items"]]
+
+    assert decision_symbols(symbol="NAS100.r", **day) == ["NAS100.r"]
+    assert decision_symbols(reason="SPREAD_TOO_WIDE") == []
+    assert decision_symbols(**{"to": T0.isoformat()}) == []
+
+    def virtual(**params: str) -> list[str]:
+        return [v["id"] for v in client.get("/api/virtual-trades", params=params).json()["items"]]
+
+    assert virtual(status="PENDING", symbol="XAUUSD") == ["V1"] and virtual(symbol="BTCUSD") == []  # noqa: PT018
+    clock.advance(hours=1)
+    assert len(client.get("/api/bars", params={"symbol": "XAUUSD"}).json()) == 4  # the last two days
+
+    (usage,) = client.get("/api/llm/usage").json()
+    assert (usage["calls"], usage["errors"], usage["cost_usd"], usage["cache_hit_rate"]) == (
+        3,
+        1,
+        "0.03",
+        0.5,
+    )
+    assert (usage["latency_p50_ms"], usage["latency_p95_ms"]) == (200, 300)
+
+    lines = client.get("/api/logs", params={"component": "engine", "since": "2026-09-28T09:00:00Z"}).json()
+    assert [line["event"] for line in lines] == ["failed"]
+    big = tmp_path / "engine.jsonl"  # past the 512 kB tail window: the cut first line is dropped
+    filler = json.dumps({"timestamp": "2026-09-28T08:00:00Z", "level": "debug", "event": "x" * 1000})
+    big.write_text("\n".join([filler] * 600) + "\n" + json.dumps({"event": "last"}) + "\n")
+    assert client.get("/api/logs", params={"limit": 1}).json()[0]["event"] == "last"
+    kept = client.get("/api/logs", params={"level": "debug", "limit": 500}).json()
+    assert 400 < len(kept) < 500 and all(line["event"] == "x" * 1000 for line in kept)  # noqa: PT018
+    big.unlink()
+    assert client.get("/api/logs").json() == []
 
 
 def test_analytics_on_the_seeded_trades(
@@ -515,6 +441,20 @@ def test_the_event_stream_resumes_without_gaps_or_repeats(
     assert (live["payload"]["i"], live["type"], live["severity"]) == (5, "engine.state", "critical")
 
 
+def test_a_stream_from_now_skips_history(
+    client: TestClient, factory: sessionmaker[Session], clock: FakeClock
+) -> None:
+    login(client)
+    with unit_of_work(factory) as s:
+        old = EventRepository(s, clock).append("alert", Severity.INFO, {"i": "old"})
+    with client.websocket_connect("/api/ws?since=-1") as ws:
+        start = ws.receive_json()
+        with unit_of_work(factory) as s:
+            EventRepository(s, clock).append("alert", Severity.INFO, {"i": "new"})
+        new = ws.receive_json()
+    assert (start["type"], start["seq"], new["payload"]) == ("stream.start", old, {"i": "new"})
+
+
 def test_the_event_stream_needs_a_session(client: TestClient) -> None:
     from starlette.websockets import WebSocketDisconnect
 
@@ -524,3 +464,70 @@ def test_the_event_stream_needs_a_session(client: TestClient) -> None:
 
 def test_commandtype_values_stay_in_sync() -> None:
     assert {t.value for t in CommandType} >= {"PAUSE", "FLATTEN_ALL", "RELOAD_CONFIG"}
+
+
+def test_the_committed_openapi_schema_is_current() -> None:
+    committed = PROJECT_ROOT / "frontend" / "src" / "api" / "openapi.json"
+    assert committed.read_text(encoding="utf-8") == load("export_openapi").render(), (
+        "the API changed: run `npm run gen:api` in frontend/ and commit openapi.json and openapi.d.ts"
+    )
+
+
+def test_the_demo_server_seeds_a_throwaway_database(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    demo = load("demo_api")
+    served: dict[str, Any] = {}
+    monkeypatch.setattr("tempfile.mkdtemp", lambda prefix: str(tmp_path))
+    monkeypatch.setattr("uvicorn.run", lambda app, **kw: served.update(app=app, **kw))
+    monkeypatch.setenv("DEMO_PASSWORD", PASSWORD)
+    assert demo.main(["--port", "9999"]) == 0
+    assert served["port"] == 9999
+    assert (tmp_path / "demo.db").is_file()
+    client = TestClient(served["app"])
+    headers = login(client)
+    assert headers["X-CSRF-Token"]
+    assert len(client.get("/api/trades").json()["items"]) == 1
+
+
+def test_riskier_names_every_change_that_takes_more_risk() -> None:
+    from aifund.api.routes.commands import riskier
+    from aifund.config.loader import load_trading_config
+
+    base = load_trading_config(EXAMPLE).config
+    safe = base.model_copy(
+        update={
+            "strategy": base.strategy.model_copy(update={"dry_run": True}),
+            "risk": base.risk.model_copy(
+                update={"news": base.risk.news.model_copy(update={"enabled": True})}
+            ),
+        }
+    )
+    bold = base.model_copy(
+        update={
+            "engine": base.engine.model_copy(update={"allow_live": True, "mode": Mode.DEMO}),
+            "risk": base.risk.model_copy(update={"confidence_threshold": 50}),
+        }
+    )
+    assert riskier(safe, safe) == []
+    assert riskier(safe, bold) == [
+        "risk.confidence_threshold lowered",
+        "engine.allow_live turned on",
+        "strategy.dry_run turned off",
+        "risk.news.enabled turned off",
+        "engine.mode -> DEMO",
+    ]
+    assert riskier(bold, safe) == []
+
+
+def test_the_built_dashboard_is_served_with_a_spa_fallback(db_url: str, engine: Any, tmp_path: Path) -> None:
+    dist = tmp_path / "dist"
+    (dist / "assets").mkdir(parents=True)
+    (dist / "index.html").write_text("<html>app</html>")
+    (dist / "assets" / "app.js").write_text("js")
+    (dist / "favicon.svg").write_text("<svg/>")
+    (tmp_path / "secret.txt").write_text("no")
+    client = TestClient(create_app(Settings(DATABASE_URL=db_url), dist=dist))
+    assert client.get("/assets/app.js").text == "js"
+    assert client.get("/favicon.svg").text == "<svg/>"
+    assert client.get("/journal").text == "<html>app</html>"  # client-side routes
+    assert client.get("/..%2Fsecret.txt").text == "<html>app</html>"  # nothing outside dist
+    assert client.get("/api/health").json() == {"status": "ok"}

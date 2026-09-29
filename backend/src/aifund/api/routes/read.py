@@ -158,15 +158,10 @@ def equity(
     start = start or end - timedelta(days=30)
     with ctx.read(request) as s:
         rows = DashboardQueries(s).equity(ctx.account(request), start, end)
-    out: list[EquityPoint] = []
-    step = timedelta(minutes=granularity)
-    for r in rows:  # at most one point per ``granularity`` minutes (the last in each bucket)
-        point = EquityPoint.model_validate(r)
-        if out and r.ts - out[-1].ts < step:
-            out[-1] = point
-        else:
-            out.append(point)
-    return out
+    last: dict[int, EquityPoint] = {}  # one point per ``granularity``-minute bucket: the last in it
+    for r in rows:
+        last[int(r.ts.timestamp()) // (granularity * 60)] = EquityPoint.model_validate(r)
+    return list(last.values())
 
 
 @router.get("/positions")

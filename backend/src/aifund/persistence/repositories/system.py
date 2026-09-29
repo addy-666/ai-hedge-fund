@@ -6,7 +6,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from aifund.config.loader import LoadedConfig
@@ -156,6 +156,9 @@ class EventRepository(_Repo):
         self._s.add(row)
         self._s.flush()
         return row.seq
+
+    def latest_seq(self) -> int:
+        return int(self._s.scalar(select(func.max(EventRow.seq))) or 0)
 
     def since(self, seq: int, limit: int = 500) -> Sequence[EventRow]:
         stmt = select(EventRow).where(EventRow.seq > seq).order_by(EventRow.seq).limit(limit)

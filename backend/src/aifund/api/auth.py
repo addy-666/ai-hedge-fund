@@ -48,6 +48,7 @@ class SessionInfo(BaseModel):
 
 class Me(BaseModel):
     user: str = "operator"
+    csrf_token: str  # a reloaded dashboard gets it back here (same-origin, cookie-authenticated)
     expires_at: datetime
     reauth_fresh: bool
     reauth_until: datetime
@@ -207,6 +208,7 @@ def logout(request: Request, response: Response, session: Mutating) -> None:
 def me(request: Request, session: Authenticated) -> Me:
     now = _state(request).clock.now()
     return Me(
+        csrf_token=session.csrf_token,
         expires_at=session.expires_at,
         reauth_fresh=reauth_fresh(session, now),
         reauth_until=session.reauth_at + REAUTH_WINDOW,

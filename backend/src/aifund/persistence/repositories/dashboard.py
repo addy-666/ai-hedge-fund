@@ -66,9 +66,6 @@ class DashboardQueries:
         )
         return self._s.scalars(stmt.limit(limit)).all()
 
-    def config_version(self, version_id: str) -> ConfigVersionRow | None:
-        return self._s.get(ConfigVersionRow, version_id)
-
     def latest_equity(self, account: str) -> EquitySnapshotRow | None:
         stmt = select(EquitySnapshotRow).where(EquitySnapshotRow.account_id == account)
         return self._s.scalars(stmt.order_by(EquitySnapshotRow.ts.desc()).limit(1)).first()

@@ -44,12 +44,18 @@ cd backend && uv run python scripts/spread_report.py   # spread vs ATR per symbo
 cd backend && uv run python scripts/capture_deals.py  # Windows, DEMO: record deal history -> tests/fixtures/mt5_deals (READ-ONLY)
 ```
 
-Not yet available (the phase that adds each is in brackets; update this list when it lands):
+Not yet available (the phase that adds each is in brackets; update this list when it lands): none right now.
+
+Dashboard (Phase 6):
 
 ```bash
-cd backend && uv run uvicorn aifund.api.app:app --reload        # [Phase 6] API
-cd frontend && npm ci && npm run dev | npm run build | npm test  # [Phase 6]
-cd frontend && npm run gen:api                                  # [Phase 6] regenerate OpenAPI types
+cd backend && uv run python scripts/hash_password.py          # prints ADMIN_PASSWORD_HASH=... for .env
+cd backend && uv run uvicorn aifund.api.app:app --reload        # API on 127.0.0.1:8000 (serves frontend/dist when built)
+cd frontend && npm ci && npm run dev                            # dev server; proxies /api (and the WebSocket) to :8000
+cd frontend && npm run build && npm test                        # tsc + production build; Vitest
+cd frontend && npm run e2e                                      # Playwright smoke vs scripts/demo_api.py (npx playwright install chromium once)
+cd frontend && npm run gen:api                                  # regenerate openapi.json + openapi.d.ts after any API change (a backend test checks)
+cd backend && uv run python scripts/demo_api.py --port 8765     # the API on a seeded throw-away DB (password "demo password")
 ```
 
 ## Invariants — never violate, never "temporarily" bypass

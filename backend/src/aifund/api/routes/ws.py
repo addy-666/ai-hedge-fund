@@ -1,6 +1,7 @@
 """Live events (roadmap 6.4, docs/05 §3): ``/api/ws?since=<seq>`` streams ``events`` rows as ``{seq, ts, type,
-payload}``. A client that reconnects with the last seq it saw receives every event it missed exactly once
-(``seq`` is AUTOINCREMENT: never reused). Authenticated by the session cookie; no mutation happens here."""
+severity, payload}``. A client that reconnects with the last seq it saw receives every event it missed exactly
+once (``seq`` is AUTOINCREMENT: never reused). ``since=-1`` starts from now: the first message is a
+``stream.start`` carrying the current seq. Authenticated by the session cookie; no mutation happens here."""
 
 from __future__ import annotations
 
@@ -44,6 +45,12 @@ def _events(websocket: WebSocket, since: int) -> list[dict[str, Any]]:
         ]
 
 
+def _latest(websocket: WebSocket) -> int:
+    st = websocket.app.state
+    with unit_of_work(st.factory) as s:
+        return EventRepository(s, st.clock).latest_seq()
+
+
 @router.websocket("/ws")
 async def events(websocket: WebSocket, since: int = 0) -> None:
     if not await asyncio.to_thread(_authenticated, websocket):
@@ -51,6 +58,11 @@ async def events(websocket: WebSocket, since: int = 0) -> None:
         return
     await websocket.accept()
     last = since
+    if since < 0:  # "from now": tell the client where the stream starts, so a reconnect can resume from there
+        last = await asyncio.to_thread(_latest, websocket)
+        await websocket.send_json(
+            {"seq": last, "ts": None, "type": "stream.start", "severity": "info", "payload": None}
+        )
     closed = asyncio.ensure_future(websocket.receive_text())  # completes when the client goes away
     try:
         while True:
