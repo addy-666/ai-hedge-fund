@@ -24,6 +24,7 @@ from collections.abc import Callable
 from enum import StrEnum
 from typing import Any
 
+import structlog
 from sqlalchemy.orm import Session, sessionmaker
 
 from aifund.domain.enums import AccountTradeMode, EngineState, Mode
@@ -84,6 +85,7 @@ TRANSITIONS: dict[tuple[EngineState, Trigger], EngineState] = {
 
 # what each state allows (docs/01 §9)
 ENTRIES = frozenset({S.RUNNING})
+log = structlog.get_logger(__name__)
 POSITION_MANAGEMENT = frozenset({S.RUNNING, S.PAUSED, S.HALTED, S.FLATTENING})
 RECONCILIATION = frozenset({S.RUNNING, S.PAUSED, S.HALTED, S.FLATTENING})
 LEARNING = frozenset({S.RUNNING, S.PAUSED, S.HALTED})
@@ -128,7 +130,12 @@ def mode_problems(
 
 
 class StateMachine:
-    """Persisted engine state for one account. Transitions are serialised by a lock."""
+    """Persisted engine state for one account. Transitions are serialised by a lock.
+
+    Fail closed when the database cannot be written (locked, disk full — roadmap 9.2): a transition that stops
+    new entries (anything but RUNNING) still applies in memory, alerts CRITICAL and is written by the next
+    ``flush`` (the heartbeat loop calls it); a transition INTO RUNNING that cannot be saved is refused.
+    """
 
     def __init__(
         self,
@@ -147,6 +154,7 @@ class StateMachine:
         self._notifier = notifier
         self._on_change = on_change
         self._lock = asyncio.Lock()
+        self._unsaved: tuple[Any, ...] | None = None  # a stopping transition the database refused
         with unit_of_work(factory) as s:
             row = EngineStateRepository(s, clock).get_or_create(account_id, mode)
             self._state, self._reason = row.state, row.halt_reason
@@ -179,7 +187,21 @@ class StateMachine:
                 )  # keep the original cause (a flatten after a breach, a second breach)
             else:
                 halt_reason = reason
-            await asyncio.to_thread(self._persist, before, after, trigger, halt_reason, reason, detail)
+            record = (before, after, trigger, halt_reason, reason, detail)
+            try:
+                await asyncio.to_thread(self._persist, *record)
+                self._unsaved = None
+            except Exception as exc:
+                if after in ENTRIES:
+                    raise  # never trade on a state the database does not hold
+                self._unsaved = record
+                log.critical("engine.state_not_saved", to=after.value, trigger=trigger.value, error=str(exc))
+                await self._notifier.notify(
+                    Severity.CRITICAL,
+                    f"Engine {after.value} (not saved)",
+                    f"{trigger.value}: the database refused the state change ({exc}); applied in memory, "
+                    "no new entries; it is retried every heartbeat",
+                )
             self._state, self._reason = after, halt_reason
         if after is not before:
             severity = ALERTING.get(after)
@@ -190,6 +212,20 @@ class StateMachine:
             if self._on_change is not None:
                 self._on_change(before, after, trigger)
         return after
+
+    async def flush(self) -> bool:
+        """Write a state change the database refused earlier; True when nothing is left unsaved."""
+        async with self._lock:
+            if self._unsaved is None:
+                return True
+            try:
+                await asyncio.to_thread(self._persist, *self._unsaved)
+            except Exception as exc:
+                log.error("engine.state_still_not_saved", error=str(exc))
+                return False
+            log.info("engine.state_saved", state=self._unsaved[1].value)
+            self._unsaved = None
+            return True
 
     def _persist(
         self, before: EngineState, after: EngineState, trigger: Trigger, halt_reason: str | None,

@@ -113,7 +113,10 @@ class Supervisor:
         if len(health.recent) >= spec.error_budget:
             health.recent.clear()
             health.budget_exhausted += 1
-            await self._exhausted(spec, health)
+            try:
+                await self._exhausted(spec, health)
+            except Exception as err:  # handling a failure must never take the process down (roadmap 9.2)
+                log.critical("loop.exhausted_unhandled", loop=spec.name, error=f"{type(err).__name__}: {err}")
         backoff: float = spec.interval_s * 2.0 ** min(health.consecutive, 16)
         return min(backoff, spec.max_backoff_s)
 

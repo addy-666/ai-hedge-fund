@@ -279,7 +279,7 @@ class Engine:
         return problems
 
     async def boot(self) -> EngineState:
-        persisted = self.state.state
+        persisted, cause = self.state.state, self.state.halt_reason
         await self.state.fire(Trigger.BOOT, f"engine process started (was {persisted.value})")
         await self.snapshotter.start()
         problems = await self.start_checks()
@@ -295,7 +295,8 @@ class Engine:
         if auto:
             await self.state.fire(Trigger.STARTED, "auto-resume after restart (reconciliation clean)")
         else:
-            await self.state.fire(restore_trigger(persisted), f"restart from {persisted.value}")
+            # HALTED / FLATTENING keep their original cause across restarts (the daily re-arm reads it)
+            await self.state.fire(restore_trigger(persisted), cause or f"restart from {persisted.value}")
         await self.notifier.notify(
             Severity.CRITICAL,
             "Engine restarted",
@@ -312,6 +313,8 @@ class Engine:
             await self.pipeline.run(event)
 
     async def _heartbeat(self) -> None:
+        await self.state.flush()  # a state change the database refused earlier (fail closed meanwhile)
+
         def beat() -> None:
             with unit_of_work(self.factory) as s:
                 HeartbeatRepository(s, self.clock).beat(
