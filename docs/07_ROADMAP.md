@@ -173,7 +173,7 @@ Runs on the Mac against exported history (no broker, no network), except R.8 and
 
 | # | Task | Size | DoD |
 |---|---|---|---|
-| 8.1 | **Playbook compiler**: `scripts/compile_playbooks.py` reads vault strategy notes with `automation_potential: high`, emits draft cards for human curation → `config/playbooks/*.yaml` (id, setup_tag, summary, entry conditions, invalidation, typical R, source wikilink) | M | Cards validated by schema; human-reviewed |
+| 8.1 | **Playbook compiler**: `scripts/compile_playbooks.py` reads vault notes with `type: strategy` and `automation_potential: high`, plus any note named with `--note NAME[=CARD_ID]` (the notes the detectors cite carry no `automation_potential`), and emits DRAFT cards for human curation into `data/playbooks/drafts/`; the operator approves them into `config/playbooks/*.yaml` (id, setup_tag, summary, entry conditions, invalidation, typical R, source wikilink; schema `config/playbooks.py`) | M | Cards validated by schema; human-reviewed |
 | 8.2 | **Additional detectors**: `nr7_breakout`, `failure_test_2b`, `sr_fade_range` | M each | Detector tests |
 | 8.3 | **Specialist analysts + risk critic** (`agents/specialists.py`, `critic.py`) | M | FakeLLM tests; cost per decision logged |
 | 8.4 | **Committee aggregation** in portfolio manager; runs in **shadow** alongside single-analyst for ≥ 2 weeks; compare via decisions table | M | Comparison report in Analytics |

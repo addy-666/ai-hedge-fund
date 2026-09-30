@@ -42,6 +42,8 @@ cd backend && uv run python scripts/research.py dsl --file ideas.json   # operat
 cd backend && uv run python scripts/research.py llm --rounds 1   # LLM researcher proposes, the loop judges (DEEPSEEK_API_KEY, llm.pricing, migrated DB)
 cd backend && uv run python scripts/spread_report.py   # spread vs ATR per symbol: evidence for the spread gates
 cd backend && uv run python scripts/capture_deals.py  # Windows, DEMO: record deal history -> tests/fixtures/mt5_deals (READ-ONLY)
+cd backend && uv run python scripts/compile_playbooks.py --vault "<path>/TRADING BRAIN" --note NAME=CARD_ID   # Mac: vault notes -> DRAFT cards in data/playbooks/drafts
+cd backend && uv run python scripts/compile_playbooks.py --check   # validate config/playbooks/*.yaml against the card schema
 ```
 
 Not yet available (the phase that adds each is in brackets; update this list when it lands): none right now.

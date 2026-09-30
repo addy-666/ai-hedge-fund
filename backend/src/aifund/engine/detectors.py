@@ -12,10 +12,10 @@ from __future__ import annotations
 from collections.abc import Callable
 from pathlib import Path
 
-import yaml
 from pydantic import ValidationError
 
 from aifund.config.loader import ConfigError
+from aifund.config.playbooks import CardStatus, PlaybookError, parse_card
 from aifund.config.trading_config import SymbolConfig, TradingConfig
 from aifund.strategies.base import SetupDetector, TfRoles
 from aifund.strategies.dsl_detector import DslDetector, EntryHypothesis
@@ -31,15 +31,16 @@ def load_hypothesis(playbooks: Path, detector_id: str) -> EntryHypothesis:
         raise ConfigError(
             f"strategy.detectors: {detector_id!r} is neither built in nor a playbook in {playbooks}"
         )
-    card = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    if "hypothesis" not in card:
-        raise ConfigError(f"playbook {path.name} has no DSL hypothesis: it cannot run as a detector")
-    if card.get("status") != "APPROVED":
-        raise ConfigError(
-            f"playbook {path.name} is {card.get('status', 'not approved')}: set status: APPROVED"
-        )
     try:
-        return EntryHypothesis.model_validate(card["hypothesis"])
+        card = parse_card(path)
+    except PlaybookError as exc:
+        raise ConfigError(f"playbook {exc}") from exc
+    if card.hypothesis is None:
+        raise ConfigError(f"playbook {path.name} has no DSL hypothesis: it cannot run as a detector")
+    if card.status is not CardStatus.APPROVED:
+        raise ConfigError(f"playbook {path.name} is {card.status.value}: set status: APPROVED")
+    try:
+        return EntryHypothesis.model_validate(card.hypothesis)
     except ValidationError as exc:
         raise ConfigError(f"playbook {path.name}: invalid hypothesis: {exc.errors()[0]['msg']}") from exc
 

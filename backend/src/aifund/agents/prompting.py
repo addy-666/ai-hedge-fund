@@ -21,9 +21,9 @@ from pathlib import Path
 from typing import Any
 
 import structlog
-import yaml
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
+from aifund.config.playbooks import load_card
 from aifund.domain.decision import FeatureSnapshot, FeatureValue, SetupCandidate
 from aifund.domain.market import Bar, Position
 from aifund.ports.llm import LLMMessage
@@ -159,13 +159,14 @@ class PlaybookCard:
 
 @cache
 def load_playbook(directory: Path, playbook_id: str) -> PlaybookCard:
-    """A playbook card (config/playbooks/<id>.yaml): the prompt's description of a setup."""
-    data = yaml.safe_load((directory / f"{playbook_id}.yaml").read_text(encoding="utf-8"))
+    """A playbook card (config/playbooks/<id>.yaml, schema-checked): the prompt's description of a setup."""
+    card = load_card(directory, playbook_id)
+    short = card.short_rules if isinstance(card.short_rules, str) else "; ".join(card.short_rules)
     return PlaybookCard(
-        setup_tag=data["setup_tag"],
-        summary=" ".join(str(data["summary"]).split()),
-        long_rules=tuple(str(r) for r in data.get("long_rules", [])),
-        short_rules=str(data.get("short_rules", "")),
-        stop=str(data.get("stop", "")),
-        target=str(data.get("target", "")),
+        setup_tag=card.setup_tag,
+        summary=" ".join(card.summary.split()),
+        long_rules=tuple(card.long_rules),
+        short_rules=short,
+        stop=card.stop,
+        target=card.target,
     )
