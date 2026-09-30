@@ -23,6 +23,19 @@ strategy:
                                 #   enabled). On outside SIM needs a sign-off: scripts/uplift_report.py
   analyst_prompt_version: 1     # agents/prompts/analyst_v<n>.j2
 
+committee:                      # Phase 8 (docs/03 §8): specialists per setup family + a risk critic
+  mode: "off"                   # "shadow": on every bar with a candidate, record what the committee would
+                                #   trade (SHADOW_COMMITTEE virtual trades; compare on the Analytics page).
+                                #   Never sends an order. ~2-3 extra LLM calls per candidate bar.
+  specialist_prompt_version: 1  # agents/prompts/specialist_v<n>.j2
+  critic_prompt_version: 1      # agents/prompts/critic_v<n>.j2
+  families:                     # family -> setup tags its specialist judges (a tag in at most one family)
+    trend: [mtf_trend_pullback]
+    breakout: [nr7_breakout]
+    reversal: [failure_test_2b, sr_fade_range]
+  weights: {}                   # family -> weight in the confidence average (default 1)
+  critic_penalty: {HIGH: 15, MEDIUM: 7, LOW: 0}   # confidence points per critic objection
+
 symbols:                        # canonical -> broker symbol (Vantage uses no suffix; Exness appends "m")
   - canonical: XAUUSD
     broker: XAUUSD

@@ -276,6 +276,14 @@ class MistakeTag(StrEnum):
     LUCKY_WIN = "LUCKY_WIN"
 
 
+class ObjectionSeverity(StrEnum):
+    """How much a risk-critic objection costs the committee's confidence (docs/03 §8)."""
+
+    HIGH = "HIGH"
+    MEDIUM = "MEDIUM"
+    LOW = "LOW"
+
+
 class ThesisVerdict(StrEnum):
     CORRECT = "CORRECT"
     WRONG = "WRONG"

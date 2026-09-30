@@ -12,7 +12,7 @@ from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictFloat, StrictInt, StrictStr
 
-from aifund.domain.enums import Direction, MistakeTag, ThesisVerdict, Timeframe
+from aifund.domain.enums import Direction, MistakeTag, ObjectionSeverity, ThesisVerdict, Timeframe
 from aifund.domain.values import UtcDatetime
 
 FeatureValue = StrictInt | StrictFloat | StrictBool | StrictStr | None
@@ -70,6 +70,25 @@ class TradeProposal(BaseModel):
     @property
     def is_trade(self) -> bool:
         return self.direction is not Direction.NONE and self.setup_tag != "none"
+
+
+class Objection(BaseModel):
+    """One reason the risk critic thinks the proposal is wrong, with how serious it is."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
+
+    severity: ObjectionSeverity
+    point: StrictStr = Field(min_length=1, max_length=300)
+
+
+class Critique(BaseModel):
+    """The risk critic's structured output (roadmap 8.3): the devil's advocate against the best proposal.
+    It never changes a direction or a level; its objections only cost the committee confidence (03 §8)."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
+
+    objections: list[Objection] = Field(max_length=5)
+    summary: StrictStr = Field(min_length=1, max_length=400)
 
 
 class TradeReview(BaseModel):
