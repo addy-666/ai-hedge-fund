@@ -1,6 +1,7 @@
 """Which setup detectors the engine runs (``strategy.detectors``; roadmap 5.6).
 
-An id is either a built-in detector (``mtf_trend_pullback``) or a playbook card in
+An id is either a built-in detector (``mtf_trend_pullback``, ``nr7_breakout``, ``failure_test_2b``,
+``sr_fade_range``) or a playbook card in
 ``config/playbooks/<id>.yaml`` that carries a DSL ``hypothesis`` and ``status: APPROVED`` — a research
 draft (docs/09 §6) the operator approved by copying it there and changing its status. Anything else is a
 configuration error at startup. Outside SIM every detector still needs E1 evidence (``config/evidence.py``),
@@ -19,9 +20,17 @@ from aifund.config.playbooks import CardStatus, PlaybookError, parse_card
 from aifund.config.trading_config import SymbolConfig, TradingConfig
 from aifund.strategies.base import SetupDetector, TfRoles
 from aifund.strategies.dsl_detector import DslDetector, EntryHypothesis
+from aifund.strategies.failure_test_2b import FailureTest2B
 from aifund.strategies.mtf_trend_pullback import MtfTrendPullback
+from aifund.strategies.nr7_breakout import Nr7Breakout
+from aifund.strategies.sr_fade_range import SrFadeRange
 
-BUILT_IN: dict[str, Callable[[TfRoles], SetupDetector]] = {"mtf_trend_pullback": MtfTrendPullback}
+BUILT_IN: dict[str, Callable[[TfRoles], SetupDetector]] = {
+    "mtf_trend_pullback": MtfTrendPullback,
+    "nr7_breakout": Nr7Breakout,
+    "failure_test_2b": FailureTest2B,
+    "sr_fade_range": SrFadeRange,
+}
 Factory = Callable[[SymbolConfig, TfRoles], list[SetupDetector]]
 
 

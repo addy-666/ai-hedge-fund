@@ -145,7 +145,13 @@ note in the playbook card):
 | `sr_fade_range` | RANGE regime; test of range extreme with rejection wick | `high_probability_support_resistance_fade.md` |
 
 Phase 2 ships only `mtf_trend_pullback` (also used as the **deterministic baseline strategy** that trades
-without the LLM, to prove the plumbing). Others are added in Phase 8.
+without the LLM, to prove the plumbing). Phase 8.2 adds the other three (`strategies/nr7_breakout.py`,
+`failure_test_2b.py`, `sr_fade_range.py`), each with its APPROVED card in `config/playbooks/` listing how the
+note maps onto the profile roles and what is approximated. The snapshot holds ratios, not raw prices, so a
+detector that needs a bar's high/low rebuilds it from close, ATR, range and wick ratios (`strategies/base.py`
+`candle` / `envelope`; a doji's body sign is unknown, so its widest extremes are used). They are built in
+(`strategy.detectors`) but, like any detector, run outside SIM only with E1 evidence
+(`scripts/research.py baseline --detector <id>` studies each over its declared grid).
 
 ---
 

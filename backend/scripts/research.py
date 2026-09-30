@@ -2,6 +2,7 @@
 
     cd backend
     uv run python scripts/research.py baseline                   # grid + walk-forward + gate E1 (holdout untouched)
+    uv run python scripts/research.py baseline --detector nr7_breakout   # the same for another built-in detector
     uv run python scripts/research.py baseline --spend-holdout   # ...and, only if the walk-forward passes, the
                                                                  #    ONE holdout evaluation this hypothesis gets
     uv run python scripts/research.py dsl --file my_ideas.json   # operator hypotheses (a JSON list, docs/09 §5)
@@ -13,8 +14,8 @@
 and — for survivors, with ``--spend-holdout`` — the single holdout look. A validated hypothesis gets an evidence
 record in ``config/evidence`` (gate E1) and a DRAFT playbook card in ``<out>/drafts`` for the operator.
 
-``baseline`` studies the ``mtf_trend_pullback`` detector over a small DECLARED parameter grid (declared here, in
-code review, not tuned after seeing results). The grid is one hypothesis: its parameters are chosen inside the
+``baseline`` studies a built-in detector (``--detector``, default ``mtf_trend_pullback``) over a small DECLARED
+parameter grid (declared here, in code review, not tuned after seeing results). The grid is one hypothesis: its parameters are chosen inside the
 walk-forward, so the out-of-sample result already pays for the choice. Every run is appended to the trial
 ledger (``<repo>/data/research/ledger.jsonl``); the report is printed and saved as JSON next to it.
 """
@@ -48,8 +49,12 @@ from aifund.research.loop import Evaluation, HistoryEvaluator, ResearchLoop, Win
 from aifund.research.signals import CostModel, SignalOutcome, StudySpec, run_study
 from aifund.research.walkforward import choose, walk_forward
 from aifund.stats import summarize
+from aifund.strategies.base import SetupDetector, TfRoles
 from aifund.strategies.dsl_detector import EntryHypothesis
+from aifund.strategies.failure_test_2b import FailureTest2B, FailureTestParams
 from aifund.strategies.mtf_trend_pullback import MtfTrendPullback, PullbackParams
+from aifund.strategies.nr7_breakout import Nr7Breakout, Nr7Params
+from aifund.strategies.sr_fade_range import FadeParams, SrFadeRange
 
 PLAYBOOKS = PROJECT_ROOT / "config" / "playbooks"
 
@@ -60,12 +65,43 @@ GRID: dict[str, PullbackParams] = {  # the first is the default (the vault note'
     "no_candle": PullbackParams(require_candle=False),
     "zone_0.5": PullbackParams(value_zone_atr=0.5),
 }
+# per built-in detector: (class, declared grid); the first variant is the playbook card's own values
+GRIDS: dict[str, tuple[Any, dict[str, Any]]] = {
+    "mtf_trend_pullback": (MtfTrendPullback, GRID),
+    "nr7_breakout": (Nr7Breakout, {
+        "default": Nr7Params(),
+        "volume_1.0": Nr7Params(min_rel_volume=1.0),
+        "location_0.5": Nr7Params(location_atr=0.5),
+        "target_1.5r": Nr7Params(target_r=1.5),
+    }),
+    "failure_test_2b": (FailureTest2B, {
+        "default": FailureTestParams(),
+        "overshoot_0.25": FailureTestParams(max_overshoot_atr=0.25),
+        "buffer_0.25": FailureTestParams(stop_buffer_atr=0.25),
+        "target_1.5r": FailureTestParams(min_target_r=1.5),
+    }),
+    "sr_fade_range": (SrFadeRange, {
+        "default": FadeParams(),
+        "range_3atr": FadeParams(min_range_atr=3.0),
+        "oversold_30": FadeParams(oversold=30.0, rsi_oversold=35.0),
+        "touch_0.5": FadeParams(touch_atr=0.5),
+    }),
+}  # fmt: skip
+
+
+def build(detector: str, roles: TfRoles, params: Any) -> SetupDetector:
+    cls, _ = GRIDS[detector]
+    built: SetupDetector = cls(roles, params)
+    return built
 
 
 def parse(argv: list[str]) -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("study", choices=["baseline", "dsl", "llm"])
     p.add_argument("--file", help="dsl: a JSON list of entry hypotheses")
+    p.add_argument(
+        "--detector", default="mtf_trend_pullback", choices=sorted(GRIDS), help="baseline: which one"
+    )
     p.add_argument(
         "--rounds", type=int, default=1, help="llm: proposal rounds (each sees the updated ledger)"
     )
@@ -91,8 +127,8 @@ def load_config() -> TradingConfig:
 
 
 def study_all(
-    history: History, cfg: TradingConfig, profile: ProfileConfig, symbols: list[str], params: PullbackParams,
-    start: datetime, end: datetime, costs: CostModel,
+    history: History, cfg: TradingConfig, profile: ProfileConfig, symbols: list[str], params: Any,
+    start: datetime, end: datetime, costs: CostModel, detector: str = "mtf_trend_pullback",
 ) -> tuple[list[SignalOutcome], dict[str, Any]]:  # fmt: skip
     outcomes: list[SignalOutcome] = []
     meta: dict[str, Any] = {}
@@ -100,7 +136,7 @@ def study_all(
         if sym.broker not in symbols:
             continue
         spec = StudySpec.from_config(cfg, sym, profile=profile, costs=costs)
-        result = run_study(history, spec, [MtfTrendPullback(spec.roles, params)], start, end)
+        result = run_study(history, spec, [build(detector, spec.roles, params)], start, end)
         outcomes += result.outcomes
         meta[sym.broker] = {
             "trigger_bars": result.trigger_bars,
@@ -150,15 +186,18 @@ def main(argv: list[str]) -> int:
         "holdout_start": holdout_start.isoformat(),
         "variants": {},
     }
-    for name, params in GRID.items():
-        print(f"study {name} ...", flush=True)
-        outcomes, meta = study_all(history, cfg, profile, symbols, params, start, holdout_start, costs)
+    detector_cls, grid = GRIDS[args.detector]
+    for name, params in grid.items():
+        print(f"study {args.detector} {name} ...", flush=True)
+        outcomes, meta = study_all(
+            history, cfg, profile, symbols, params, start, holdout_start, costs, args.detector
+        )
         variants[name] = outcomes
         s = summarize([o.r_net for o in outcomes], times=[o.entry_time for o in outcomes])
         hypothesis = {
             **base,
-            "detector": "mtf_trend_pullback",
-            "version": MtfTrendPullback.version,
+            "detector": args.detector,
+            "version": detector_cls.version,
             "params": asdict(params),
         }
         ledger.record(hypothesis=hypothesis, symbols=symbols, start=start, end=holdout_start, split=Split.IN_SAMPLE,
@@ -169,8 +208,8 @@ def main(argv: list[str]) -> int:
     wf = walk_forward(
         variants, start=start, end=holdout_start, folds=rc.folds, min_train_signals=rc.min_train_signals
     )
-    family = {**base, "family": "mtf_trend_pullback", "version": MtfTrendPullback.version,
-              "grid": {n: asdict(p) for n, p in GRID.items()}, "selection": f"walk-forward best mean, min {rc.min_train_signals}"}  # fmt: skip
+    family = {**base, "family": args.detector, "version": detector_cls.version,
+              "grid": {n: asdict(p) for n, p in grid.items()}, "selection": f"walk-forward best mean, min {rc.min_train_signals}"}  # fmt: skip
     ledger.record(hypothesis=family, symbols=symbols, start=start, end=holdout_start, split=Split.WALK_FORWARD,
                   origin=Origin.GRID, data_fingerprint=fingerprint, summary=wf.summary, now=now)  # fmt: skip
     survives = digest(family) in ledger.survivors(float(rc.fdr_q))
@@ -216,7 +255,7 @@ def main(argv: list[str]) -> int:
                 variants, start=start, before=holdout_start, min_train_signals=rc.min_train_signals
             )
             outcomes, meta = study_all(
-                history, cfg, profile, symbols, GRID[chosen], holdout_start, end, costs
+                history, cfg, profile, symbols, grid[chosen], holdout_start, end, costs, args.detector
             )
             hs_summary = summarize([o.r_net for o in outcomes], times=[o.entry_time for o in outcomes])
             ledger.record(hypothesis=family, symbols=symbols, start=holdout_start, end=end, split=Split.HOLDOUT,
@@ -232,7 +271,7 @@ def main(argv: list[str]) -> int:
                 "checks": [asdict(c) for c in hold],
             }
 
-    out = Path(args.out) / f"report_baseline_{now:%Y%m%d_%H%M%S}.json"
+    out = Path(args.out) / f"report_baseline_{args.detector}_{now:%Y%m%d_%H%M%S}.json"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(report, indent=2, default=str))
     print(f"report: {out}\nledger: {ledger.path}")

@@ -18,6 +18,7 @@ from aifund.config.playbooks import (
     parse_card,
 )
 from aifund.config.settings import PROJECT_ROOT
+from aifund.domain.enums import Timeframe
 
 FIXTURES = Path(__file__).resolve().parents[2] / "fixtures" / "playbooks"
 
@@ -89,3 +90,16 @@ def test_files(tmp_path: Path) -> None:
     assert any(p.startswith("bad.yaml: stop:") for p in problems)
     with pytest.raises(PlaybookError, match=r"no playbook card missing\.yaml"):
         load_card(tmp_path, "missing")
+
+
+def test_every_built_in_detector_has_its_card() -> None:
+    from aifund.engine.detectors import BUILT_IN
+    from aifund.strategies.base import TfRoles
+
+    directory = PROJECT_ROOT / "config" / "playbooks"
+    roles = TfRoles(trigger=Timeframe.M15, setup=Timeframe.H1, context=(Timeframe.H4,))
+    for detector_id, build in BUILT_IN.items():
+        detector = build(roles)
+        card = load_card(directory, detector.playbook_id)
+        assert card.setup_tag == detector.setup_tag == detector_id
+        assert card.source is not None, detector_id  # cites its vault note

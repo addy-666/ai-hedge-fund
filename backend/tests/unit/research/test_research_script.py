@@ -75,6 +75,29 @@ def test_baseline_study_records_every_trial_and_fails_honestly(
     assert data["throughput"]["too_slow"] is True
 
 
+@pytest.mark.parametrize("detector", ["nr7_breakout", "failure_test_2b", "sr_fade_range"])
+def test_baseline_studies_the_other_built_in_detectors(export: Path, tmp_path: Path, detector: str) -> None:
+    script = load()
+    out = tmp_path / "research"
+    argv = [
+        "baseline",
+        "--detector",
+        detector,
+        "--symbols",
+        "XAUUSD",
+        "--history",
+        str(export),
+        "--out",
+        str(out),
+    ]
+    assert script.main(argv) == 0
+    trials = Ledger(out / "ledger.jsonl").trials()
+    _, grid = script.GRIDS[detector]
+    assert [t.split for t in trials] == [Split.IN_SAMPLE] * len(grid) + [Split.WALK_FORWARD]
+    assert trials[-1].hypothesis["family"] == detector
+    assert len(list(out.glob(f"report_baseline_{detector}_*.json"))) == 1
+
+
 DOJI = {
     "id": "OP-1", "version": 1, "setup_tag": "doji_probe",
     "long": {"all": [{"feature": "m15.candle_dir", "op": "==", "value": "DOJI"}]}, "short": None,
