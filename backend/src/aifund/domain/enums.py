@@ -231,6 +231,7 @@ class VirtualArm(StrEnum):
     BLOCKED = "BLOCKED"  # a directional signal the rules, threshold, guards or limits blocked
     SHADOW_BASELINE = "SHADOW_BASELINE"  # what the deterministic baseline would have traded on this bar
     SHADOW_ANALYST = "SHADOW_ANALYST"  # what the analyst would have traded on this bar
+    SHADOW_COMMITTEE = "SHADOW_COMMITTEE"  # what the Phase 8 committee would have traded (roadmap 8.4)
 
 
 class CloseReason(StrEnum):
@@ -337,6 +338,10 @@ class ReasonCode(StrEnum):
     LLM_ERROR = "LLM_ERROR"
     SETUP_MISMATCH = "SETUP_MISMATCH"
     ANALYST_HOLD = "ANALYST_HOLD"
+    # committee (docs/03 §8, roadmap 8.4)
+    COMMITTEE_HOLD = "COMMITTEE_HOLD"  # no specialist proposed a trade
+    COMMITTEE_SPLIT = "COMMITTEE_SPLIT"  # specialists proposed opposite directions
+    CRITIC_UNAVAILABLE = "CRITIC_UNAVAILABLE"  # no critique (provider trouble or invalid output): fail closed
     # rules / portfolio
     RULE_BLOCK = "RULE_BLOCK"
     BELOW_THRESHOLD = "BELOW_THRESHOLD"

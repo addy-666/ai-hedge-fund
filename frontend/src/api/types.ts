@@ -17,6 +17,7 @@ export type LogLine = S["LogLine"];
 export type Summary = S["Summary"];
 export type BreakdownRow = S["BreakdownRow"];
 export type Costs = S["Costs"];
+export type CommitteeComparison = S["CommitteeComparison"];
 export type CommandOut = S["CommandOut"];
 export type ConfigOut = S["ConfigOut"];
 export type ConfigSaved = S["ConfigSaved"];

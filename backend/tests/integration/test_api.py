@@ -206,8 +206,10 @@ def test_read_contracts_on_a_seeded_database(
     assert system["versions"]["prompts"] == [
         "analyst_v1.j2",
         "auditor_v1.j2",
+        "critic_v1.j2",
         "researcher_v1.j2",
         "reviewer_v1.j2",
+        "specialist_v1.j2",
     ]
 
     acct = client.get("/api/account").json()
@@ -346,6 +348,34 @@ def test_analytics_on_the_seeded_trades(
     assert client.get("/api/analytics/breakdown", params={"dim": "session"}).json()[0]["key"] == "unknown"
     assert client.get("/api/analytics/breakdown", params={"dim": "nope"}).status_code == 422
     assert client.get("/api/analytics/costs").json()["commission"] == "-0.70"
+
+
+def test_the_committee_comparison(
+    client: TestClient, factory: sessionmaker[Session], clock: FakeClock, config_path: Path
+) -> None:
+    login(client)
+    empty = client.get("/api/analytics/committee").json()
+    assert (empty["bars"], empty["mode"], empty["risk_usd"], empty["vs_analyst"]) == (0, "off", None, None)
+    acc = account(config_path)
+    seed(factory, clock, acc)  # equity 9950 -> one trade risks 0.5% = 49.75
+    load("demo_api").seed_committee(factory, clock, acc, clock.now())
+    out = client.get("/api/analytics/committee").json()
+    assert (out["bars"], out["days"], out["risk_usd"]) == (6, 0.21, "49.75")
+    arms = {a["arm"]: a for a in out["arms"]}
+    assert (arms["baseline"]["trades"], arms["baseline"]["total_r"]) == (6, "3.0")
+    assert (arms["analyst"]["trades"], arms["analyst"]["total_r"], arms["analyst"]["cost_usd"]) == (
+        5,
+        "0.5",
+        "0.0060",
+    )
+    assert (arms["committee"]["trades"], arms["committee"]["total_r"], arms["committee"]["win_rate"]) == (
+        4,
+        "3.5",
+        0.75,
+    )
+    assert out["agreement"] == 0.8  # 4 of the 5 bars where either traded (the same side here)
+    assert out["vs_analyst"]["n"] == 6
+    assert out["vs_analyst"]["mean_r"] == round((3.5 - 0.5) / 6 - (0.003 - 0.001) / 49.75, 4)
 
 
 # ---------------------------------------------------------------- 6.3 commands and config

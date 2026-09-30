@@ -228,3 +228,10 @@ def test_committee_defaults_and_helpers(base: dict[str, Any]) -> None:
 def test_committee_validation(base: dict[str, Any], path: str, value: Any, error: str) -> None:
     with pytest.raises(ValidationError, match=error):
         TradingConfig.model_validate(_mutated(base, path, value))
+
+
+def test_the_committee_runs_beside_the_analyst(base: dict[str, Any]) -> None:
+    raw = _mutated(_mutated(base, "committee.mode", "shadow"), "strategy.analyst_enabled", False)
+    raw["strategy"]["baseline_enabled"] = True
+    with pytest.raises(ValidationError, match="runs beside the analyst"):
+        TradingConfig.model_validate(raw)

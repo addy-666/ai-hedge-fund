@@ -221,6 +221,36 @@ def seed(
     return {"decision": decision.id}
 
 
+def seed_committee(factory: sessionmaker[Session], clock: ClockPort, acc: str, t0: datetime) -> None:
+    """Six hourly bars the committee deliberated on in shadow beside the analyst (roadmap 8.4), each with
+    finished shadow trades: (baseline R, analyst R, committee R or None when it stayed out)."""
+    outcomes = [("-1", "-1", None), ("2", "2", "2"), ("1", "-1", "1"), ("0.5", None, None),
+                ("-1", "-1", "-1"), ("1.5", "1.5", "1.5")]  # fmt: skip
+    with unit_of_work(factory) as s:
+        for i, (base, analyst, committee) in enumerate(outcomes):
+            bar = t0 - timedelta(hours=len(outcomes) - i)
+            record = {"combined": 72, "confidence": 65, "critic_penalty": 7, "tradable": committee is not None,
+                      "cost_usd": "0.0030", "calls": 2, "proposer": "trend", "specialists": {}}  # fmt: skip
+            d = DecisionRepository(s, clock).add(
+                account_id=acc, symbol="XAUUSD", trigger_tf="M15", bar_time=bar, stage_reached="DECISION",
+                outcome=DecisionOutcome.SHADOW, setups=[{"setup_tag": "mtf_trend_pullback"}], model="deepseek-chat",
+                cost_usd=D("0.0010"), proposal={"source": "analyst", "committee": record},
+            )  # fmt: skip
+            for arm, r in ((VirtualArm.SHADOW_BASELINE, base), (VirtualArm.SHADOW_ANALYST, analyst),
+                           (VirtualArm.SHADOW_COMMITTEE, committee)):  # fmt: skip
+                if r is None:
+                    continue
+                s.add(
+                    VirtualTradeRow(
+                        id=f"VC{i}{arm.value[7]}", account_id=acc, decision_id=d.id, arm=arm, symbol="XAUUSD",
+                        side=Side.BUY, entry_time=bar + timedelta(minutes=15), sl_distance=D("10"),
+                        tp_distance=D("20"), expires_at=bar + timedelta(hours=3),
+                        expire_reason=CloseReason.TIME_STOP, status=VirtualStatus.CLOSED, created_at=bar,
+                        entry_price=D("4150"), r_multiple=D(r),
+                    )
+                )  # fmt: skip
+
+
 def seed_learning(factory: sessionmaker[Session], clock: ClockPort, decision_id: str) -> None:
     """A rule in every lifecycle column, two rulebook versions, one audit run and one rule match."""
     t0 = clock.now()
@@ -370,6 +400,7 @@ def main(argv: list[str]) -> int:
     account = app.state.config.current().config.engine.account_label
     ids = seed(factory, clock, account, t0=clock.now() - timedelta(hours=2))
     seed_learning(factory, clock, ids["decision"])
+    seed_committee(factory, clock, account, clock.now() - timedelta(hours=2))
     stop = threading.Event()
     worker = threading.Thread(
         target=serve_commands, args=(factory, clock, app.state.config.current().config, stop)

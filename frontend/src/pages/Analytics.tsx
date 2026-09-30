@@ -1,11 +1,39 @@
 import { useState } from "react";
-import { useBreakdown, useCosts, useSummary } from "../api/queries";
+import { useBreakdown, useCommittee, useCosts, useSummary } from "../api/queries";
+import type { CommitteeComparison } from "../api/types";
 import { KpiTile } from "../components/KpiTile";
 import { Card, Empty, Loading, Select, Table, Td } from "../components/ui";
 import { money, r, signed, tone } from "../lib/format";
 
 const DIMS = ["symbol", "setup_tag", "session", "regime", "direction", "confidence_bucket", "rulebook_version"];
 const ratio = (v: number | null | undefined, digits = 2) => (v === null || v === undefined ? "–" : v.toFixed(digits));
+const pct = (v: number | null | undefined) => (v === null || v === undefined ? "–" : `${(v * 100).toFixed(0)}%`);
+const uplift = (u: CommitteeComparison["vs_analyst"]) =>
+  !u ? "–" : `${u.mean_r >= 0 ? "+" : ""}${u.mean_r.toFixed(3)}R [${ratio(u.ci_low, 3)}, ${ratio(u.ci_high, 3)}]`;
+
+export function CommitteeCard({ data }: { data: CommitteeComparison | undefined }) {
+  if (!data) return <Loading />;
+  if (data.bars === 0)
+    return <Empty>No committee shadow yet{data.mode === "off" ? " (committee.mode is off)" : ""}.</Empty>;
+  return (
+    <div className="space-y-2">
+      <p className="text-sm text-slate-400">
+        {data.bars} paired bars over {data.days.toFixed(1)} days (mode {data.mode}); an arm that stayed out earned 0R.
+        Agreement {pct(data.agreement)}.
+      </p>
+      <Table head={["Arm", "Trades", "Total", "R / trade", "Win rate", "LLM cost"]}>
+        {data.arms.map((a) => (
+          <tr key={a.arm}><Td>{a.arm}</Td><Td>{a.trades}</Td><Td className={tone(a.total_r)}>{r(a.total_r)}</Td>
+            <Td>{ratio(a.mean_r_per_trade, 3)}</Td><Td>{pct(a.win_rate)}</Td><Td>{money(a.cost_usd)}</Td></tr>
+        ))}
+      </Table>
+      <p className="text-sm">
+        Committee uplift per bar, net of LLM cost (90% CI): vs analyst <span data-testid="vs-analyst">{uplift(data.vs_analyst)}</span>,
+        vs baseline {uplift(data.vs_baseline)}{data.risk_usd ? ` (1R = ${money(data.risk_usd)})` : " (no equity yet: cost not in R)"}.
+      </p>
+    </div>
+  );
+}
 
 export function Analytics() {
   const [days, setDays] = useState(90);
@@ -13,6 +41,7 @@ export function Analytics() {
   const summary = useSummary(days);
   const rows = useBreakdown(dim, days);
   const costs = useCosts(days);
+  const committee = useCommittee(days);
   const s = summary.data;
   return (
     <div className="space-y-4">
@@ -37,6 +66,9 @@ export function Analytics() {
             ))}
           </Table>
         )}
+      </Card>
+      <Card title="Committee vs analyst (shadow)">
+        <CommitteeCard data={committee.data} />
       </Card>
       <div className="grid gap-4 md:grid-cols-2">
         <Card title="Costs">

@@ -28,6 +28,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from aifund.agents.analyst import Analyst
 from aifund.agents.auditor import Auditor
+from aifund.agents.committee import Committee
 from aifund.agents.reviewer import Reviewer
 from aifund.config.evidence import EvidenceError, EvidenceRecord, GLlmSignoff
 from aifund.config.trading_config import TradingConfig
@@ -80,6 +81,7 @@ class Options:
     evidence: Sequence[EvidenceRecord] = ()
     g_llm: Sequence[GLlmSignoff] = ()
     analyst: Analyst | None = None
+    committee: Committee | None = None  # the Phase 8 committee in shadow (committee.mode)
     learners: tuple[Reviewer | None, Auditor | None] = (None, None)  # the learning loop's LLM agents
     vault_exporter: ReviewExporter | None = None  # weekly review notes for the TRADING BRAIN vault
     guardian: GuardianFiles | None = None
@@ -134,6 +136,7 @@ class Engine:
                 account_id=self.account,
                 trading_enabled=self.entries_allowed,
                 analyst=opts.analyst,
+                committee=opts.committee,
                 evidence=opts.evidence,
                 g_llm=opts.g_llm,
                 news=opts.calendar.current if opts.calendar is not None else None,

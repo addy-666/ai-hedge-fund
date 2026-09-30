@@ -2,7 +2,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "./client";
 import type {
-  AccountOut, BreakdownRow, CommandOut, ConfigOut, ConfigSaved, ConfigVersionOut, Costs, DecisionDossier,
+  AccountOut, BreakdownRow, CommandOut, CommitteeComparison, ConfigOut, ConfigSaved, ConfigVersionOut, Costs, DecisionDossier,
   DecisionOut, EquityPoint, LLMUsageRow, LogLine, Me, Page, PositionOut, Summary, SystemOut, TradeDossier,
   TradeOut, VirtualTradeOut, RuleOut, RuleDetail, RuleIn, RuleCreated, RulebookVersionOut, RulebookDiff,
   AuditRunOut, AuditRunDetail, FeatureOut,
@@ -80,6 +80,14 @@ export const useCosts = (days: number) =>
     queryKey: ["costs", days],
     queryFn: () =>
       api.get<Costs>("/api/analytics/costs", { from: new Date(Date.now() - days * 86_400_000).toISOString() }),
+  });
+export const useCommittee = (days: number) =>
+  useQuery({
+    queryKey: ["committee", days],
+    queryFn: () =>
+      api.get<CommitteeComparison>("/api/analytics/committee", {
+        from: new Date(Date.now() - days * 86_400_000).toISOString(),
+      }),
   });
 export const useConfig = () => useQuery({ queryKey: ["config"], queryFn: () => api.get<ConfigOut>("/api/config") });
 export const useConfigVersions = () =>

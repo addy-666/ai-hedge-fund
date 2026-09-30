@@ -50,6 +50,7 @@
 | GET | `/api/analytics/summary?from&to` | Net P&L, R, expectancy, win rate, profit factor, max DD, Sharpe (daily), trades/day, avg costs |
 | GET | `/api/analytics/breakdown?dim=symbol\|setup_tag\|session\|regime\|direction\|confidence_bucket\|rulebook_version` | Expectancy tables |
 | GET | `/api/analytics/calibration` | Reliability bins, Brier history, active calibration model |
+| GET | `/api/analytics/committee?from&to` | Committee vs analyst vs baseline in shadow (8.4): paired bars, per-arm trades/R/win rate/LLM cost, agreement, committee uplift per bar net of LLM cost with its 90% CI |
 | GET | `/api/analytics/costs` | Spread/commission/swap/slippage totals and per trade |
 | GET | `/api/llm/usage?from&to` | Calls, tokens, cache hit rate, cost, latency p50/p95, error rate per agent/model |
 | GET | `/api/bars?symbol&tf&from&to` | Bars for charts, from `bar_cache` (the pipeline upserts the closed bars it reads; the API never asks MT5) |

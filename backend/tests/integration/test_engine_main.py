@@ -18,6 +18,7 @@ from aifund.adapters import history_store as hs
 from aifund.adapters.clock import FakeClock
 from aifund.adapters.notify.telegram import FanOut, LogNotifier
 from aifund.agents.analyst import Analyst
+from aifund.agents.committee import Committee
 from aifund.config.loader import ConfigError, load_trading_config
 from aifund.config.settings import PROJECT_ROOT, BrokerKind
 from aifund.domain.enums import Timeframe
@@ -118,6 +119,14 @@ async def test_notifier_and_analyst_wiring(
             }
         )
         assert main.analyst_for(keyed, off, factory, clock, LogNotifier(), client) is None
+        # the committee (roadmap 8.4): only in shadow mode, and only with a key
+        assert main.committee_for(keyed, cfg, factory, clock, LogNotifier(), client) is None
+        shadow = cfg.model_copy(update={"committee": cfg.committee.model_copy(update={"mode": "shadow"})})
+        with pytest.raises(main.StartupError, match="DEEPSEEK_API_KEY"):
+            main.committee_for(settings(tmp_path), shadow, factory, clock, LogNotifier(), client)
+        built = main.committee_for(keyed, shadow, factory, clock, LogNotifier(), client)
+        assert isinstance(built, Committee)
+        assert [sp.family for sp in built._specialists] == ["trend", "breakout", "reversal"]
 
 
 # ---------------------------------------------------------------- SIM and MT5 runs

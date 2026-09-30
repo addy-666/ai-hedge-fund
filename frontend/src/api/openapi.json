@@ -139,6 +139,60 @@
         "title": "AccountOut",
         "type": "object"
       },
+      "ArmStat": {
+        "properties": {
+          "arm": {
+            "title": "Arm",
+            "type": "string"
+          },
+          "cost_usd": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Cost Usd",
+            "type": "string"
+          },
+          "mean_r_per_trade": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mean R Per Trade"
+          },
+          "total_r": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Total R",
+            "type": "string"
+          },
+          "trades": {
+            "title": "Trades",
+            "type": "integer"
+          },
+          "win_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Win Rate"
+          }
+        },
+        "required": [
+          "arm",
+          "trades",
+          "total_r",
+          "mean_r_per_trade",
+          "win_rate",
+          "cost_usd"
+        ],
+        "title": "ArmStat",
+        "type": "object"
+      },
       "AuditRunDetail": {
         "properties": {
           "candidates": {
@@ -532,6 +586,111 @@
           "finished_at"
         ],
         "title": "CommandOut",
+        "type": "object"
+      },
+      "CommitteeComparison": {
+        "description": "Committee vs analyst vs baseline in shadow (roadmap 8.4): paired bars, net of LLM cost in R.",
+        "properties": {
+          "agreement": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agreement"
+          },
+          "arms": {
+            "items": {
+              "$ref": "#/components/schemas/ArmStat"
+            },
+            "title": "Arms",
+            "type": "array"
+          },
+          "bars": {
+            "title": "Bars",
+            "type": "integer"
+          },
+          "days": {
+            "title": "Days",
+            "type": "number"
+          },
+          "first": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First"
+          },
+          "last": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last"
+          },
+          "mode": {
+            "title": "Mode",
+            "type": "string"
+          },
+          "risk_usd": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Risk Usd"
+          },
+          "vs_analyst": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UpliftStat"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "vs_baseline": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UpliftStat"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "mode",
+          "bars",
+          "first",
+          "last",
+          "days",
+          "arms",
+          "agreement",
+          "risk_usd",
+          "vs_analyst",
+          "vs_baseline"
+        ],
+        "title": "CommitteeComparison",
         "type": "object"
       },
       "ConfigIn": {
@@ -3295,6 +3454,48 @@
         "title": "TradeReviewOut",
         "type": "object"
       },
+      "UpliftStat": {
+        "properties": {
+          "ci_high": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ci High"
+          },
+          "ci_low": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ci Low"
+          },
+          "mean_r": {
+            "title": "Mean R",
+            "type": "number"
+          },
+          "n": {
+            "title": "N",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "n",
+          "mean_r",
+          "ci_low",
+          "ci_high"
+        ],
+        "title": "UpliftStat",
+        "type": "object"
+      },
       "ValidationError": {
         "properties": {
           "ctx": {
@@ -3607,6 +3808,74 @@
           }
         },
         "summary": "Breakdown",
+        "tags": [
+          "analytics"
+        ]
+      }
+    },
+    "/api/analytics/committee": {
+      "get": {
+        "description": "The committee's shadow record beside the analyst and the baseline (roadmap 8.4).",
+        "operationId": "committee_api_analytics_committee_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommitteeComparison"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Committee",
         "tags": [
           "analytics"
         ]

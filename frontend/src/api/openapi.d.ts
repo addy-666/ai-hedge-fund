@@ -38,6 +38,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/analytics/committee": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Committee
+         * @description The committee's shadow record beside the analyst and the baseline (roadmap 8.4).
+         */
+        get: operations["committee_api_analytics_committee_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/analytics/costs": {
         parameters: {
             query?: never;
@@ -690,6 +710,21 @@ export interface components {
             /** Open Risk Money */
             open_risk_money: string | null;
         };
+        /** ArmStat */
+        ArmStat: {
+            /** Arm */
+            arm: string;
+            /** Cost Usd */
+            cost_usd: string;
+            /** Mean R Per Trade */
+            mean_r_per_trade: number | null;
+            /** Total R */
+            total_r: string;
+            /** Trades */
+            trades: number;
+            /** Win Rate */
+            win_rate: number | null;
+        };
         /** AuditRunDetail */
         AuditRunDetail: {
             /** Candidates */
@@ -834,6 +869,30 @@ export interface components {
             status: string;
             /** Type */
             type: string;
+        };
+        /**
+         * CommitteeComparison
+         * @description Committee vs analyst vs baseline in shadow (roadmap 8.4): paired bars, net of LLM cost in R.
+         */
+        CommitteeComparison: {
+            /** Agreement */
+            agreement: number | null;
+            /** Arms */
+            arms: components["schemas"]["ArmStat"][];
+            /** Bars */
+            bars: number;
+            /** Days */
+            days: number;
+            /** First */
+            first: string | null;
+            /** Last */
+            last: string | null;
+            /** Mode */
+            mode: string;
+            /** Risk Usd */
+            risk_usd: string | null;
+            vs_analyst: components["schemas"]["UpliftStat"] | null;
+            vs_baseline: components["schemas"]["UpliftStat"] | null;
         };
         /** ConfigIn */
         ConfigIn: {
@@ -1670,6 +1729,17 @@ export interface components {
             /** Thesis Verdict */
             thesis_verdict: string;
         };
+        /** UpliftStat */
+        UpliftStat: {
+            /** Ci High */
+            ci_high: number | null;
+            /** Ci Low */
+            ci_low: number | null;
+            /** Mean R */
+            mean_r: number;
+            /** N */
+            n: number;
+        };
         /** ValidationError */
         ValidationError: {
             /** Context */
@@ -1777,6 +1847,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BreakdownRow"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    committee_api_analytics_committee_get: {
+        parameters: {
+            query?: {
+                from?: string | null;
+                to?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommitteeComparison"];
                 };
             };
             /** @description Validation Error */

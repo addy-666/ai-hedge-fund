@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
@@ -13,10 +14,12 @@ from sqlalchemy.orm import Session
 from aifund.domain.enums import VirtualArm, VirtualStatus
 from aifund.domain.errors import InvariantViolation
 from aifund.domain.ids import new_id
+from aifund.domain.trade import CommitteeBar
 from aifund.persistence.tables import DecisionRow, VirtualTradeRow
 from aifund.ports.system import ClockPort
 
 ACTIVE = (VirtualStatus.PENDING, VirtualStatus.OPEN)
+SHADOW_ARMS = (VirtualArm.SHADOW_BASELINE, VirtualArm.SHADOW_ANALYST, VirtualArm.SHADOW_COMMITTEE)
 _TRANSITIONS = {
     VirtualStatus.PENDING: {
         VirtualStatus.OPEN,
@@ -48,6 +51,10 @@ def _earned(row: VirtualTradeRow | None) -> Decimal:
     if row is None or row.r_multiple is None:
         return Decimal(0)  # no trade on that arm, or NO_ENTRY
     return row.r_multiple
+
+
+def _traded(row: VirtualTradeRow | None) -> bool:
+    return row is not None and row.r_multiple is not None
 
 
 class VirtualTradeRepository:
@@ -114,3 +121,54 @@ class VirtualTradeRepository:
                 )
             )
         return sorted(out, key=lambda p: (p.bar_time, p.symbol))
+
+    def committee_bars(self, account_id: str, start: datetime, end: datetime) -> list[CommitteeBar]:
+        """Bars in [start, end) where the committee deliberated beside the analyst (roadmap 8.4) and every
+        shadow arm has finished, oldest first: what each arm earned (0 when it did not trade) and its cost."""
+        decisions = self._s.scalars(
+            select(DecisionRow).where(
+                DecisionRow.account_id == account_id,
+                DecisionRow.bar_time >= start,
+                DecisionRow.bar_time < end,
+                DecisionRow.setups.is_not(None),
+                DecisionRow.proposal.is_not(None),
+            )
+        ).all()
+        deliberated = {
+            d.id: d for d in decisions if isinstance(d.proposal, dict) and d.proposal.get("committee")
+        }
+        if not deliberated:
+            return []
+        rows = self._s.scalars(
+            select(VirtualTradeRow).where(
+                VirtualTradeRow.decision_id.in_(list(deliberated)), VirtualTradeRow.arm.in_(SHADOW_ARMS)
+            )
+        ).all()
+        arms: dict[str, dict[VirtualArm, VirtualTradeRow]] = {}
+        for row in rows:
+            arms.setdefault(row.decision_id, {})[row.arm] = row
+        out = []
+        for decision_id, d in deliberated.items():
+            mine = arms.get(decision_id, {})
+            if any(r.status in ACTIVE for r in mine.values()):
+                continue
+            base, analyst, committee = (mine.get(a) for a in SHADOW_ARMS)
+            record = d.proposal["committee"] if isinstance(d.proposal, dict) else {}
+            out.append(
+                CommitteeBar(
+                    decision_id=decision_id,
+                    symbol=d.symbol,
+                    bar_time=d.bar_time,
+                    baseline_r=_earned(base),
+                    analyst_r=_earned(analyst),
+                    committee_r=_earned(committee),
+                    baseline_traded=_traded(base),
+                    analyst_traded=_traded(analyst),
+                    committee_traded=_traded(committee),
+                    analyst_direction=analyst.side.value if _traded(analyst) and analyst else None,
+                    committee_direction=committee.side.value if _traded(committee) and committee else None,
+                    analyst_cost_usd=d.cost_usd or Decimal(0),
+                    committee_cost_usd=Decimal(str(record.get("cost_usd") or 0)),
+                )
+            )
+        return sorted(out, key=lambda b: (b.bar_time, b.symbol))

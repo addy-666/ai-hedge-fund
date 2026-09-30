@@ -219,6 +219,20 @@ risk_factor  = Π(rule risk_scale factors) × regime/drawdown scalers   (floor 0
 With the Phase 8 committee, `p_raw` becomes a weighted combination of specialist proposals that agree on
 direction, minus critic penalties (`HIGH` objection = −15, `MEDIUM` = −7); disagreeing directions → HOLD.
 
+Implementation (8.3–8.4, `agents/committee.py`, `committee:` config): a specialist per family
+(`committee.families` maps setup tags to trend / breakout / reversal) is asked only when a candidate of its
+family exists; specialists that answer NONE abstain; any specialist with no readable answer (INVALID) holds the
+committee (fail closed: its view is unknown). `p_raw` = the weighted mean (`committee.weights`, default 1) of the
+proposing specialists' confidences, rounded half up, minus the critic's penalty (`committee.critic_penalty`,
+LOW = 0); the setup, invalidation and target are the most confident proposal's; no critique → HOLD
+(`CRITIC_UNAVAILABLE`). The committee has its own calibrator and is then ruled exactly like the analyst. It
+runs **only in shadow** (`committee.mode: shadow`, which needs `strategy.analyst_enabled`), concurrently with the
+analyst: its deliberation is stored under `decisions.proposal.committee` and, when its decision would pass the
+rules and the threshold, a `SHADOW_COMMITTEE` virtual trade with the same stop planner. Its LLM spend is kept
+out of `decisions.cost_usd` (which G-LLM charges to the analyst) and recorded in the deliberation. A failure
+inside the committee is logged and never touches the real decision. No setting lets it send an order: that
+would need its own sign-off gate (a follow-up).
+
 ---
 
 ## 9. Duplicate & reversal guards (`risk/guards.py`)

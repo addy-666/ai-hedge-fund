@@ -19,6 +19,7 @@ from aifund.domain.enums import CloseReason, DecisionOutcome, Side, VirtualArm, 
 from aifund.persistence.db import unit_of_work
 from aifund.persistence.repositories.decisions import DecisionRepository
 from aifund.persistence.repositories.virtual import VirtualTradeRepository
+from aifund.persistence.tables import DecisionRow
 from aifund.research.gates import GateCheck
 from aifund.research.uplift import UpliftReport
 
@@ -115,3 +116,29 @@ def test_the_report_script_refuses_a_sign_off_that_did_not_pass(
         (0.05, 0.33),
         "op",
     )
+
+
+def test_committee_bars_need_a_deliberation_and_finished_arms(
+    factory: sessionmaker[Session], clock: FakeClock
+) -> None:
+    B, A, C = VirtualArm.SHADOW_BASELINE, VirtualArm.SHADOW_ANALYST, VirtualArm.SHADOW_COMMITTEE
+    window = (T0 - timedelta(days=1), T0 + timedelta(days=1))
+    with factory() as s:
+        assert VirtualTradeRepository(s, clock).committee_bars("acc", *window) == []
+    done = decided(factory, clock, 0, {B: (VirtualStatus.CLOSED, "-1"), C: (VirtualStatus.CLOSED, "2")})
+    busy = decided(factory, clock, 15, {B: (VirtualStatus.CLOSED, "1"), C: (VirtualStatus.OPEN, None)})
+    plain = decided(factory, clock, 30, {B: (VirtualStatus.CLOSED, "1"), A: (VirtualStatus.CLOSED, "1")})
+    with unit_of_work(factory) as s:
+        for decision_id in (done, busy):
+            d = s.get(DecisionRow, decision_id)
+            assert d is not None
+            d.setups = [{"setup_tag": "stub"}]
+            d.proposal = {"source": "analyst", "committee": {"cost_usd": "0.004"}}
+        other = s.get(DecisionRow, plain)
+        assert other is not None
+        other.setups, other.proposal = [{"setup_tag": "stub"}], {"source": "analyst"}  # no committee ran
+    with factory() as s:
+        (bar,) = VirtualTradeRepository(s, clock).committee_bars("acc", *window)
+    assert (bar.decision_id, bar.baseline_r, bar.analyst_r, bar.committee_r) == (done, D(-1), D(0), D(2))
+    assert (bar.analyst_traded, bar.committee_traded, bar.committee_direction) == (False, True, "BUY")
+    assert (bar.analyst_cost_usd, bar.committee_cost_usd) == (D("0.002"), D("0.004"))

@@ -244,6 +244,10 @@ def _check_virtual(report: ReplayReport, factory: sessionmaker[Session]) -> None
             report.violations.append(f"{v.arm} {v.id} on a decision without an analyst or a setup")
         elif v.arm is VirtualArm.SHADOW_ANALYST and _analyst_verdict(d.proposal) != "PROPOSAL":
             report.violations.append(f"{v.arm} {v.id} although the analyst did not propose a trade")
+        elif v.arm is VirtualArm.SHADOW_COMMITTEE and not ((d.proposal or {}).get("committee") or {}).get(
+            "tradable"
+        ):
+            report.violations.append(f"{v.arm} {v.id} although the committee did not decide a trade")
         if v.r_multiple is None:
             continue
         finished.append(v.r_multiple)

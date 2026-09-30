@@ -14,9 +14,20 @@ from fastapi import APIRouter, Query, Request
 
 from aifund.api import context as ctx
 from aifund.api.auth import Authenticated
-from aifund.api.schemas import BreakdownRow, Costs, Summary
+from aifund.api.schemas import (
+    ArmStat,
+    BreakdownRow,
+    CommitteeComparison,
+    Costs,
+    Summary,
+    UpliftStat,
+)
 from aifund.persistence.repositories.dashboard import DashboardQueries
+from aifund.persistence.repositories.equity import EquitySnapshotRepository
+from aifund.persistence.repositories.virtual import VirtualTradeRepository
 from aifund.persistence.tables import DecisionRow, FeatureSnapshotRow, TradeRow
+from aifund.research.committee import compare
+from aifund.stats import Summary as Stats
 
 router = APIRouter(prefix="/api/analytics", tags=["analytics"])
 From = Annotated[datetime | None, Query(alias="from")]
@@ -168,4 +179,46 @@ def costs(request: Request, _s: Authenticated, start: From = None, end: To = Non
         per_trade=((commission + swap + fee) / len(trades)).quantize(Decimal("0.01")) if trades else None,
         avg_entry_slippage_points=round(sum(entry) / len(entry), 2) if entry else None,
         avg_exit_slippage_points=round(sum(exit_) / len(exit_), 2) if exit_ else None,
+    )
+
+
+def _uplift(stats: Stats | None) -> UpliftStat | None:
+    if stats is None:
+        return None
+    return UpliftStat(n=stats.n, mean_r=round(stats.mean, 4), ci_low=stats.ci_low, ci_high=stats.ci_high)
+
+
+@router.get("/committee")
+def committee(request: Request, _s: Authenticated, start: From = None, end: To = None) -> CommitteeComparison:
+    """The committee's shadow record beside the analyst and the baseline (roadmap 8.4)."""
+    start, end = _window(request, start, end)
+    cfg = ctx.state(request).config.current().config
+    account = ctx.account(request)
+    with ctx.read(request) as s:
+        bars = VirtualTradeRepository(s, ctx.clock(request)).committee_bars(account, start, end)
+        latest = EquitySnapshotRepository(s).latest(account)
+    risk_usd = latest.equity * cfg.risk.risk_per_trade_pct / 100 if latest is not None else None
+    report = compare(bars, risk_usd=risk_usd if risk_usd and risk_usd > 0 else None)
+    days = (report.last - report.first).total_seconds() / 86400 if report.first and report.last else 0.0
+    return CommitteeComparison(
+        mode=cfg.committee.mode,
+        bars=report.bars,
+        first=report.first,
+        last=report.last,
+        days=round(days, 2),
+        arms=[
+            ArmStat(
+                arm=a.name,
+                trades=a.trades,
+                total_r=a.total_r,
+                mean_r_per_trade=a.mean_r_per_trade,
+                win_rate=a.win_rate,
+                cost_usd=a.cost_usd,
+            )
+            for a in report.arms
+        ],
+        agreement=report.agreement,
+        risk_usd=report.risk_usd.quantize(Decimal("0.01")) if report.risk_usd is not None else None,
+        vs_analyst=_uplift(report.vs_analyst),
+        vs_baseline=_uplift(report.vs_baseline),
     )

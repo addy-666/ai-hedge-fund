@@ -33,7 +33,10 @@ from aifund.adapters.sim.replay_feed import ReplayFeed
 from aifund.adapters.sim.sim_broker import SimBroker, SimConfig
 from aifund.agents.analyst import Analyst
 from aifund.agents.auditor import Auditor
+from aifund.agents.committee import Committee
+from aifund.agents.critic import Critic
 from aifund.agents.reviewer import Reviewer
+from aifund.agents.specialists import Specialist
 from aifund.config.evidence import load_evidence, load_g_llm
 from aifund.config.loader import ConfigError, LoadedConfig, load_trading_config
 from aifund.config.settings import PROJECT_ROOT, BrokerKind, Settings
@@ -130,6 +133,31 @@ def analyst_for(
     )
 
 
+def committee_for(
+    settings: Settings,
+    cfg: TradingConfig,
+    factory: Any,
+    clock: ClockPort,
+    notifier: NotifierPort,
+    client: httpx.AsyncClient,
+) -> Committee | None:
+    """The Phase 8 committee in shadow (committee.mode): a specialist per family and the risk critic."""
+    if cfg.committee.mode != "shadow":
+        return None
+    if settings.DEEPSEEK_API_KEY is None:
+        raise StartupError("committee.mode shadow needs DEEPSEEK_API_KEY in .env")
+    llm = _llm(settings, cfg, factory, clock, notifier, client)
+    record = _recorder(factory, clock)
+    c = cfg.committee
+    specialists = [
+        Specialist(family, tags, llm, cfg.llm, playbooks=PLAYBOOKS, record_parse=record,
+                   version=c.specialist_prompt_version)
+        for family, tags in c.families.items()
+    ]  # fmt: skip
+    critic = Critic(llm, cfg.llm, playbooks=PLAYBOOKS, record_parse=record, version=c.critic_prompt_version)
+    return Committee(specialists, critic, c)
+
+
 def learners_for(
     settings: Settings,
     cfg: TradingConfig,
@@ -213,6 +241,7 @@ async def run_mt5(settings: Settings, loaded: LoadedConfig, factory: Any, live_c
                 evidence=load_evidence(EVIDENCE),
                 g_llm=load_g_llm(EVIDENCE),
                 analyst=analyst_for(settings, cfg, factory, clock, notifier, client),
+                committee=committee_for(settings, cfg, factory, clock, notifier, client),
                 learners=learners_for(settings, cfg, factory, clock, notifier, client),
                 vault_exporter=ReviewExporter(factory, clock, out_dir=EXPORTS, playbooks=PLAYBOOKS),
                 guardian=GuardianFiles(guardian_dir),
@@ -271,6 +300,7 @@ async def run_sim(settings: Settings, loaded: LoadedConfig, args: argparse.Names
             detectors=detector_factory(cfg, PLAYBOOKS),
             account_login=1,
             analyst=analyst_for(settings, cfg, factory, clock, notifier, client),
+            committee=committee_for(settings, cfg, factory, clock, notifier, client),
             learners=learners_for(settings, cfg, factory, clock, notifier, client),
         )
         engine = Engine(

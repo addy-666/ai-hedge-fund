@@ -315,6 +315,37 @@ class BreakdownRow(BaseModel):
     win_rate: float | None
 
 
+class UpliftStat(BaseModel):
+    n: int
+    mean_r: float
+    ci_low: float | None
+    ci_high: float | None
+
+
+class ArmStat(BaseModel):
+    arm: str  # baseline / analyst / committee
+    trades: int
+    total_r: Decimal
+    mean_r_per_trade: float | None
+    win_rate: float | None
+    cost_usd: Decimal
+
+
+class CommitteeComparison(BaseModel):
+    """Committee vs analyst vs baseline in shadow (roadmap 8.4): paired bars, net of LLM cost in R."""
+
+    mode: str  # committee.mode now
+    bars: int
+    first: datetime | None
+    last: datetime | None
+    days: float
+    arms: list[ArmStat]
+    agreement: float | None
+    risk_usd: Decimal | None
+    vs_analyst: UpliftStat | None
+    vs_baseline: UpliftStat | None
+
+
 class Costs(BaseModel):
     trades: int
     commission: Decimal

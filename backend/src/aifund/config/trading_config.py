@@ -501,6 +501,8 @@ class TradingConfig(_Strict):
                 raise ValueError(f"symbol {s.canonical}: undefined session {s.session!r}")
         if not (self.strategy.analyst_enabled or self.strategy.baseline_enabled):
             raise ValueError("strategy: enable analyst_enabled and/or baseline_enabled")
+        if self.committee.mode == "shadow" and not self.strategy.analyst_enabled:
+            raise ValueError("committee.mode shadow runs beside the analyst: enable strategy.analyst_enabled")
         if self.strategy.analyst_enabled and self.engine.mode is not Mode.SIM:
             for field in ("analyst_model", "auditor_model"):
                 model = getattr(self.llm, field)
