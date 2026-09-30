@@ -118,3 +118,17 @@ def test_an_orphan_trade_without_a_snapshot_still_renders() -> None:
     assert ctx["thesis"].startswith("none recorded")
     assert (ctx["stop_atr"], ctx["key_risks"]) == ("na", "none")
     assert ctx["risk"].endswith("(no stop: 1 ATR)")
+
+
+async def test_calls_are_billed_and_their_verdicts_recorded() -> None:
+    from tests.unit.agents.test_researcher import Billed
+
+    parses: list[tuple[str, bool]] = []
+
+    async def record(call_id: str, parsed: Any, valid: bool, error: str | None) -> None:
+        parses.append((call_id, valid))
+
+    llm = Billed(review(tags=["NOPE"]), review())
+    result = await Reviewer(llm, CFG, record_parse=record).review(INPUT)  # type: ignore[arg-type]
+    assert result.review is not None and str(result.cost_usd) == "0.02"  # noqa: PT018
+    assert parses == [("call-1", False), ("call-0", True)]

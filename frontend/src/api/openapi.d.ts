@@ -1591,6 +1591,9 @@ export interface components {
             position_id: number;
             /** R Multiple */
             r_multiple: string | null;
+            review?: components["schemas"]["TradeReviewOut"] | null;
+            /** Review Status */
+            review_status: string;
             /** Setup Tag */
             setup_tag: string | null;
             /** Side */
@@ -1647,6 +1650,25 @@ export interface components {
             symbol: string;
             /** Volume Opened */
             volume_opened: string;
+        };
+        /**
+         * TradeReviewOut
+         * @description The trade reviewer's verdict (docs/04 §2): explanations, never rule conditions.
+         */
+        TradeReviewOut: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Execution Quality */
+            execution_quality: number;
+            /** Lesson */
+            lesson: string;
+            /** Tags */
+            tags: string[];
+            /** Thesis Verdict */
+            thesis_verdict: string;
         };
         /** ValidationError */
         ValidationError: {

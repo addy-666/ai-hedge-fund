@@ -43,6 +43,7 @@ test("the trade dossier shows the chart and the decision", async ({ page }) => {
   await page.getByRole("navigation").first().getByRole("link", { name: "Journal", exact: true }).click();
   await page.getByRole("row", { name: /XAUUSD/ }).first().click();
   await expect(page.getByText("Decision", { exact: true })).toBeVisible();
+  await expect(page.getByText("The pullback held the EMA50 zone; the target was realistic.")).toBeVisible();
   await expect(page.locator("canvas").first()).toBeVisible();
 });
 

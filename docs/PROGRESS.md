@@ -4,15 +4,15 @@ Updated by the coding agent at the end of every task.
 
 ## Current position
 
-- Phase: 6 — API & dashboard (Milestone M3), code complete (6.1–6.9). Phase R and Phase 5 are merged;
-  the Guardian EA install and the other Phase 5 operator steps are done (operator, 2026-09-29).
-- Next task: 5.8 — the demo 24/7 run (operator, 3.6 folded in), now watchable from the dashboard
-  (`deploy/windows/run_api.ps1`, then Tailscale); then Phase 7 (self-learning loop).
+- Phase: 7 — Self-learning loop (Milestone M4), code complete (7.1–7.11). Phase 6 is merged (PR #15).
+- Next task: 5.8 — the demo 24/7 run (operator, 3.6 folded in). The learning loop runs with it
+  (`learning.enabled: true`): it needs ≥ 20 matching outcomes before a rule can exist, so expect the first
+  audits to find nothing — correctly. Then Phase 8 (committee, playbooks, calibration).
 - Rollout level: L0 (SIM). `python -m aifund.engine` now runs the whole engine on MT5 (DEMO/LIVE) or in SIM;
   outside SIM it refuses to start without E1 evidence for its detectors (none has any yet: run DEMO with
   `strategy.dry_run: true` or the analyst in shadow).
-- Tests: backend 1,158 passing + 1 Windows-only (MQL5 constant cross-check against the real MetaTrader5
-  package); frontend 11 Vitest + 4 Playwright.
+- Tests: backend 1,259 passing + 1 Windows-only (MQL5 constant cross-check against the real MetaTrader5
+  package); frontend 13 Vitest + 7 Playwright.
 - History: 15-month export (2025-07-05 → 2026-09-28) for XAUUSD, NAS100.r, BTCUSD (EURUSD files remain but
   the symbol was dropped from the config on 2026-09-28). M1 is capped at 99,999 bars per symbol by the
   terminal's max-bars setting (~70 days) → R.8 (kept for now, operator decision). D1 has 317–447 bars, so D1-context snapshots start only
@@ -95,6 +95,17 @@ Updated by the coding agent at the end of every task.
 | 2026-09-29 | 6.8 Settings + System + Agents | YAML editor with server-side validation, field errors and the re-auth prompt, version history; system (engine controls START / RESUME / STOP / REARM with re-auth where required and the command result, heartbeats, versions, log tail with level filter); LLM usage per agent/model | Editing is a textarea (no schema form yet) | — |
 | 2026-09-29 | 6.9 Analytics | Summary (net, expectancy, PF, win rate, max DD, Sharpe on daily P&L), breakdowns by symbol / setup / session / regime / direction / confidence bucket / rulebook version, costs; calibration placeholder until Phase 8 | — | — |
 | 2026-09-29 | 6.x tests & deploy | API: 20 integration tests (auth gates, contracts on a seeded DB, filters, commands, config round-trip, WS resume, SPA fallback, OpenAPI freshness); frontend: Vitest (format, trace math, event invalidations, kill-switch confirm, settings field errors + re-auth, REARM re-auth) and a Playwright smoke (login, every page, dossier chart, pause) against `scripts/demo_api.py` (real API on a seeded throw-away DB); CI job `frontend`; coverage floor `aifund.api` 96%; `run_api.ps1` binds 127.0.0.1 and publishes over `tailscale serve` (HTTPS, so the Secure cookie works), `aifund-api` scheduled task | The spec'd bind to the Tailscale IP over plain HTTP would have dropped the Secure session cookie | Visual check on the Windows machine against the real engine DB |
+| 2026-09-30 | 7.1 Rule DSL | `rules/dsl.py` over the shared condition grammar (`market/conditions.py`): scope (canonical symbols, directions, setups, trigger TFs), penalty-only actions (penalty 5–30, risk_scale 0.25–0.75, block), validation (registry, scope values, observed ranges), behaviour hash, near-match for lessons, `prop.*` features | `prop.sl_atr_multiple` / `prop.rr_target` refused: they exist only after the stop plan, i.e. after the rules run | — |
+| 2026-09-30 | 7.2 Rule engine + pipeline | `rules/engine.py` (ACTIVE enforced: capped penalty, floored risk scale, block → RULE_BLOCKED + virtual trade; SHADOW logged; missing features recorded), `engine/rulebook.py` (reload on rulebook version), lessons in the fixed docs/03 wording (golden file), `rule_evaluations`, `rulebook_version`, `lessons_shown` on every decision | Rules apply to the BASELINE too (it is what trades until G-LLM) and to both G-LLM shadow arms; the portfolio manager takes the verdict instead of evaluating rules itself | — |
+| 2026-09-30 | 7.3 Trade reviewer | `agents/reviewer.py` + released `reviewer_v1.j2` (fixed MistakeTag taxonomy, one repair), candles and R path from the entry; `engine/reviews.py` queue (3 per pass; provider trouble waits, invalid output → FAILED for the operator); the Journal shows the verdict | — | — |
+| 2026-09-30 | 7.4 Pattern miner | `rules/miner.py`: discovery split only; scopes (ALL, symbol, setup, × direction; duplicates of a broader scope dropped), quintile / value bins, pairwise conjunctions of the 10 strongest, bootstrap CIs, BH over every tested bin; descriptive tables and reviewer-tag frequencies; planted pattern found, 20 noise datasets → 0 survivors | p-value: exact permutation variance + normal tail + continuity correction instead of 1,000 Monte Carlo permutations (see decisions log); statistics moved to `aifund.stats` (shared with research) | — |
+| 2026-09-30 | 7.5 Auditor agent | `agents/auditor.py` + released `auditor_v1.j2`: ≤ 5 candidates, each must cite a SURVIVING cluster and pass the DSL/scope/observed-range checks, one repair, retire suggestions, lessons, findings | Without an LLM key the surviving clusters are the candidates directly | — |
+| 2026-09-30 | 7.6 Validator | `rules/validator.py`: every docs/04 §6 check incl. the ×1.5 virtual rule, coverage → strategy-level finding, counterfactual, Jaccard dedup; severity bands | — | — |
+| 2026-09-30 | 7.7 Lifecycle | `rules/lifecycle.py` + `engine/learning.py`: CANDIDATE → SHADOW/REJECTED, shadow promotion from live matches (real + virtual) with approval for blocks, scales and big penalties, reviews (two strikes), expiry, active cap, new versions for stronger duplicates (supersede on activation); rulebook version + event + notice per transition | The audit skips a candidate already live under the same scope and condition | — |
+| 2026-09-30 | 7.8 Scheduler + audit runs | nightly / new-trades (cooldown) / RUN_AUDIT triggers, audit run persistence, report markdown, APPROVE/REJECT/RETIRE_RULE through the command poller; `learning.enabled` | — | — |
+| 2026-09-30 | 7.9 Learning Lab | API (rules, detail with matches and R, actions with re-auth for blocks and force, operator rules, rulebook versions and diffs, audits, features) and UI (board, detail, audit reports, rule editor, rulebook diff); Playwright: approve the shadow block → ACTIVE in rulebook v3 | "Visible in the next decision" is proven by the pipeline tests (7.2), not in the browser (the demo server has no engine) | — |
+| 2026-09-30 | 7.10 Vault exporter | `vault/review_exporter.py` (weekly `ai-fund-review-YYYY-Www.md`, full SCHEMA.md frontmatter, links only to strategy notes the playbooks cite; checked against the real vault when present), `/api/exports/vault`, `scripts/pull_vault_reviews.py` (Mac; never over an edited note) | — | Operator: run the pull script on the Mac after the first weekly export |
+| 2026-09-30 | 7.11 Learning simulation | `tests/integration/test_learning_simulation.py`: 12 signals a day through the real rule engine; the loop discovers the planted condition (shadow day 7), the operator approves the block (active day 19), it keeps measuring through virtual trades after the regime change (day 45) and retires on day 108 after two failed reviews | Signals are generated, not replayed through SimBroker: a random-walk market cannot plant a losing condition | — |
 
 ## Decisions log
 
@@ -115,6 +126,8 @@ Updated by the coding agent at the end of every task.
 | 2026-09-28 | EURUSD dropped from the config | Vantage demo spread ≈ 26% of an M15 ATR (1.4 vs ~4.9 pips), far above `max_spread_to_atr`; revisit with a raw-spread account or on H1 (commit 4526f13) | config example |
 | 2026-09-29 | Keep the 15-month export and the M1 cap for now (operator) | Enough history for the M15/H1/H4 research that exists; M1 is only used for spread studies. Re-export with Max bars = Unlimited when M1/M5 research starts | PROGRESS (R.8) |
 | 2026-09-29 | Dashboard without shadcn/ui | shadcn is a code generator over Radix + class-variance tooling; the pages need only buttons, tables, cards, a dialog and a select, written once in `components/ui.tsx` (fewer dependencies in the only process reachable over the network) | 07 (6.5) |
+| 2026-09-30 | Miner p-values from the exact permutation variance (normal tail, continuity correction) | 1,000 Monte Carlo permutations cannot produce p < 0.001, but Benjamini-Hochberg over ~150–2,000 mined bins needs p ≤ q/m for its first discovery: no pattern could ever survive. The closed form is deterministic, matches brute-force relabelling within noise and errs conservative at k ≥ 20 | 04 §3 |
+| 2026-09-30 | Learned rules also rule the baseline | Until G-LLM passes the baseline is what trades; rules that only touched the analyst would never act | 04 §7 |
 | 2026-09-29 | Re-plan: Phase R (edge research & evidence gates) before the analyst trades and before Phases 5–9 continue; Guardian EA, news gate and `verify_ledger.py` moved into Phase 5; branch-coverage gate in CI | Audit: the architecture made the system safe but nothing tested whether any strategy has an edge; the baseline fires ~9×/month, so its trades alone can never be evidence; no gate required the LLM to beat the baseline (operator request) | ADR 0001, 00, 01, 07, 09 |
 
 

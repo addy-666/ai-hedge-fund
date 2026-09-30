@@ -232,8 +232,8 @@ class Auditor:
             reason = "; ".join(f"{'.'.join(str(x) for x in e['loc'])}: {e['msg']}" for e in exc.errors()[:4])
             result.rejected.append(Rejected(attempt, text[:2000], reason))
             return [reason[:500]]
-        if attempt == 1 or out.lessons_markdown:
-            result.lessons_markdown = out.lessons_markdown or result.lessons_markdown
+        if out.lessons_markdown:  # a repair reply may leave the lessons out: keep the first ones
+            result.lessons_markdown = out.lessons_markdown
         known = {r.rule_id for r in result.retire_suggestions}
         result.retire_suggestions += [r for r in out.retire_suggestions if r.rule_id not in known]
         result.findings += [f for f in out.strategy_level_findings if f not in result.findings]

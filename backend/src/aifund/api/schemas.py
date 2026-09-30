@@ -225,6 +225,16 @@ class BarOut(Row):
     tick_volume: int
 
 
+class TradeReviewOut(Row):
+    """The trade reviewer's verdict (docs/04 §2): explanations, never rule conditions."""
+
+    tags: list[str]
+    thesis_verdict: str
+    execution_quality: int
+    lesson: str
+    created_at: datetime
+
+
 class TradeDossier(TradeOut):
     initial_sl: Decimal | None
     initial_tp: Decimal | None
@@ -236,6 +246,8 @@ class TradeDossier(TradeOut):
     entry_slippage_points: int | None
     exit_slippage_points: int | None
     bars_held: int | None
+    review_status: str
+    review: TradeReviewOut | None = None
     decision: DecisionDossier | None = None
     deals: list[DealOut] = Field(default_factory=list)
     bars: list[BarOut] = Field(default_factory=list)

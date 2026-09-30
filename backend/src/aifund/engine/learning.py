@@ -689,7 +689,8 @@ def _report(
     lines += ["", "## Candidates"]
     for v in validations:
         verdict = "PASSED → SHADOW" if v["passed"] else "rejected: " + "; ".join(v["failures"])
-        lines.append(f"- {v['rule_id']}v{v['version']} {v['text']} ({v['action'].get('type', 'no action')}): {verdict}")
+        action = v["action"].get("type", "no action")
+        lines.append(f"- {v['rule_id']}v{v['version']} {v['text']} ({action}): {verdict}")
     if not validations:
         lines.append("- none")
     lines += ["", "## Lifecycle changes", *([f"- {c}" for c in changes] or ["- none"])]

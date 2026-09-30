@@ -2978,6 +2978,20 @@
             ],
             "title": "R Multiple"
           },
+          "review": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TradeReviewOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "review_status": {
+            "title": "Review Status",
+            "type": "string"
+          },
           "setup_tag": {
             "anyOf": [
               {
@@ -3048,7 +3062,8 @@
           "fee",
           "entry_slippage_points",
           "exit_slippage_points",
-          "bars_held"
+          "bars_held",
+          "review_status"
         ],
         "title": "TradeDossier",
         "type": "object"
@@ -3240,6 +3255,44 @@
           "decision_id"
         ],
         "title": "TradeOut",
+        "type": "object"
+      },
+      "TradeReviewOut": {
+        "description": "The trade reviewer's verdict (docs/04 \u00a72): explanations, never rule conditions.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "execution_quality": {
+            "title": "Execution Quality",
+            "type": "integer"
+          },
+          "lesson": {
+            "title": "Lesson",
+            "type": "string"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tags",
+            "type": "array"
+          },
+          "thesis_verdict": {
+            "title": "Thesis Verdict",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tags",
+          "thesis_verdict",
+          "execution_quality",
+          "lesson",
+          "created_at"
+        ],
+        "title": "TradeReviewOut",
         "type": "object"
       },
       "ValidationError": {

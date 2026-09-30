@@ -70,9 +70,6 @@ class RuleRepository:
     def live(self) -> Sequence[RuleRow]:
         return self.with_status(*LIVE)
 
-    def by_sha(self, dsl_sha256: str) -> Sequence[RuleRow]:
-        return self._s.scalars(select(RuleRow).where(RuleRow.dsl_sha256 == dsl_sha256)).all()
-
     def all(self, status: RuleStatus | None = None) -> Sequence[RuleRow]:
         stmt = select(RuleRow)
         if status is not None:
@@ -163,10 +160,6 @@ class RuleEvaluationRepository:
             stmt = stmt.where(DecisionRow.created_at >= since)
         return list(dict.fromkeys(self._s.scalars(stmt).all()))
 
-    def for_decision(self, decision_id: str) -> Sequence[RuleEvaluationRow]:
-        stmt = select(RuleEvaluationRow).where(RuleEvaluationRow.decision_id == decision_id)
-        return self._s.scalars(stmt.order_by(RuleEvaluationRow.id)).all()
-
 
 class AuditRunRepository:
     def __init__(self, session: Session, clock: ClockPort) -> None:
@@ -192,13 +185,9 @@ class AuditRunRepository:
     def get(self, run_id: str) -> AuditRunRow | None:
         return self._s.get(AuditRunRow, run_id)
 
-    def last(self, status: str | None = None) -> AuditRunRow | None:
-        stmt = select(AuditRunRow)
-        if status is not None:
-            stmt = stmt.where(AuditRunRow.status == status)
-        return self._s.scalars(
-            stmt.order_by(AuditRunRow.created_at.desc(), AuditRunRow.id.desc()).limit(1)
-        ).first()
+    def last(self) -> AuditRunRow | None:
+        stmt = select(AuditRunRow).order_by(AuditRunRow.created_at.desc(), AuditRunRow.id.desc())
+        return self._s.scalars(stmt.limit(1)).first()
 
     def recent(self, limit: int = 50) -> Sequence[AuditRunRow]:
         stmt = select(AuditRunRow).order_by(AuditRunRow.created_at.desc(), AuditRunRow.id.desc()).limit(limit)

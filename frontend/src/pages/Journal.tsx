@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useTrade, useTrades, useVirtualTrades } from "../api/queries";
 import { PriceChart } from "../components/Charts";
 import { DecisionTrace } from "../components/DecisionTrace";
-import { Button, Card, Empty, ErrorNote, Loading, Select, Table, Td } from "../components/ui";
+import { Badge, Button, Card, Empty, ErrorNote, Loading, Select, Table, Td } from "../components/ui";
 import { money, r, signed, tone, utc } from "../lib/format";
 
 export function Journal() {
@@ -71,7 +71,21 @@ function TradeDossierView({ id }: { id: string }) {
           {deals.map((d) => <tr key={d.ticket}><Td>{d.ticket}</Td><Td>{utc(d.time_utc)}</Td><Td>{d.entry}</Td><Td>{d.volume}</Td><Td>{money(d.price)}</Td><Td>{money(d.profit)}</Td></tr>)}
         </Table>
       </Card>
-      <Card title="Decision">{data.decision ? <DecisionTrace d={data.decision} /> : <Empty>Orphan: no decision.</Empty>}</Card>
+      <div className="space-y-4">
+        <Card title="Review (thesis vs outcome)">
+          {data.review ? (
+            <div className="space-y-1 text-sm">
+              <p>
+                <Badge tone={data.review.thesis_verdict === "CORRECT" ? "green" : data.review.thesis_verdict === "WRONG" ? "red" : "zinc"}>{data.review.thesis_verdict}</Badge>{" "}
+                execution {data.review.execution_quality}/5
+              </p>
+              <p>{data.review.tags.map((t) => <Badge key={t}>{t}</Badge>)}</p>
+              <p className="text-zinc-300">{data.review.lesson}</p>
+            </div>
+          ) : <Empty>Review {data.review_status.toLowerCase()}.</Empty>}
+        </Card>
+        <Card title="Decision">{data.decision ? <DecisionTrace d={data.decision} /> : <Empty>Orphan: no decision.</Empty>}</Card>
+      </div>
     </div>
   );
 }

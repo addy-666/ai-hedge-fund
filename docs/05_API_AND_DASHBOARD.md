@@ -42,7 +42,7 @@
 | GET | `/api/decisions/{id}` | Decision dossier |
 | GET | `/api/virtual-trades?...` | Counterfactuals |
 | GET | `/api/rules?status` / `/api/rules/{rule_id}` | Rules with versions and evidence; matched decisions |
-| POST | `/api/rules/{rule_id}/approve\|reject\|retire` | Commands (approve/force need re-auth per §2) |
+| POST | `/api/rules/{rule_id}/approve\|reject\|retire` | Commands; `approve?force=true` activates a CANDIDATE without validation (audit-logged); approving a block or forcing needs re-auth (§2) |
 | POST | `/api/rules` | Operator-authored rule (DSL) → CANDIDATE |
 | GET | `/api/rulebook/versions` / `/api/rulebook/versions/{v}/diff` | Rulebook history and diffs |
 | GET | `/api/audits` / `/api/audits/{id}` | Audit runs with miner output, candidates, validation results, report |
@@ -56,6 +56,7 @@
 | GET | `/api/config` / PUT `/api/config` | Current YAML + schema; PUT validates, versions, audit-logs, sends `RELOAD_CONFIG` |
 | GET | `/api/config/versions` | History and diffs |
 | GET | `/api/exports/vault` / `/api/exports/vault/{name}` | Weekly vault review files |
+| GET | `/api/features` | Rule-usable registry features (name, type, unit, categories, bounds) for the rule editor |
 | GET | `/api/logs?level&component&since` | Tail of structured logs (read-only) |
 | WS | `/api/ws` | Live events (below) |
 
@@ -64,7 +65,7 @@
 Server pushes `{seq, ts, type, severity, payload}`; client resumes with `?since=<seq>` after reconnect.
 `?since=-1` starts from now: the first message is `stream.start` with the latest `seq` (the page has just
 loaded its data fresh). The socket authenticates with the session cookie (close code 1008 without one).
-Implemented so far (Phase 6): `engine.state`, `command.updated`, `trade.*` (opened, orphan, partial_close,
+Implemented so far (Phases 6–7): `engine.state`, `command.updated`, `rule.status_changed`, `trade.*` (opened, orphan, partial_close,
 closed, vanished), `risk.limit_breach`; the rest arrive with the phases that produce them.
 
 `engine.state_changed`, `heartbeat`, `decision.created`, `intent.updated`, `trade.opened`, `trade.updated`
@@ -106,8 +107,8 @@ Overview, Positions and the kill switch.
 9. **System** — heartbeats per loop, error budgets, server-time offset, gateway queue depth, disk space,
    backup status, log tail.
 
-Phase 6 builds pages 1–4 and 6–9; the Learning Lab (5) arrives with Phase 7 (7.9), the calibration diagram with
-Phase 8 (8.5). Engine controls (START / RESUME / STOP / REARM, with re-auth where §2 requires it) are on the
+Phase 6 built pages 1–4 and 6–9 and Phase 7 the Learning Lab (5); the calibration diagram comes with Phase 8
+(8.5). The trade dossier shows the reviewer's verdict, tags and lesson. Engine controls (START / RESUME / STOP / REARM, with re-auth where §2 requires it) are on the
 System page. Components are a few own Tailwind primitives (`components/ui.tsx`), not shadcn/ui.
 
 Frontend structure:

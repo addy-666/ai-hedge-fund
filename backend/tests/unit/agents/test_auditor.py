@@ -127,3 +127,26 @@ async def test_bad_shapes_and_provider_errors() -> None:
     assert len(result.rejected) == 1  # the shape; "not json" is an LLMInvalidOutput, not an item
     result, _ = await run(LLMError("HTTP 500"))
     assert result.error == "HTTP 500"
+
+
+async def test_calls_are_billed_and_their_verdicts_recorded() -> None:
+    from tests.unit.agents.test_researcher import Billed
+
+    parses: list[tuple[str, Any, bool, str | None]] = []
+
+    async def record(call_id: str, parsed: Any, valid: bool, error: str | None) -> None:
+        parses.append((call_id, parsed, valid, error))
+
+    llm = Billed(
+        reply(candidate(cited_clusters=["C-x"])),
+        "not json",
+    )
+    result = await Auditor(llm, CFG, record_parse=record).audit(brief())  # type: ignore[arg-type]
+    assert (result.call_ids, str(result.cost_usd)) == (["call-1", "call-0"], "0.02")
+    assert [(c, v) for c, _, v, _ in parses] == [("call-1", False), ("call-0", False)]
+    assert parses[0][1]["lessons_markdown"] == "NY longs lose." and parses[1][1] is None  # noqa: PT018
+
+
+async def test_a_repair_without_lessons_keeps_the_first_ones() -> None:
+    result, _ = await run(reply(candidate(cited_clusters=[])), reply(candidate(), lessons_markdown=""))
+    assert (len(result.candidates), result.lessons_markdown) == (1, "NY longs lose.")

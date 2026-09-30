@@ -55,6 +55,7 @@ from aifund.persistence.repositories.learning import (
     RulebookRepository,
     RuleEvaluationRepository,
     RuleRepository,
+    TradeReviewRepository,
 )
 from aifund.persistence.repositories.system import (
     CommandRepository,
@@ -262,6 +263,10 @@ def seed_learning(factory: sessionmaker[Session], clock: ClockPort, decision_id:
                 dsl=dsl.dump(r), dsl_sha256=dsl.dsl_sha256(r), hypothesis="Late-trend longs get stopped out.",
                 evidence=ev, origin="AUDITOR", audit_run_id=run.id, shadow_started_at=t0 - timedelta(days=20),
             )  # fmt: skip
+        TradeReviewRepository(s, clock).add(
+            "T-CLOSED", tags=["GOOD_TRADE_GOOD_OUTCOME"], thesis_verdict="CORRECT", execution_quality=4,
+            lesson="The pullback held the EMA50 zone; the target was realistic.",
+        )  # fmt: skip
         RulebookRepository(s, clock).record("R-0001v1 CANDIDATE->SHADOW")
         repo.update("R-0001", 1, status=RuleStatus.ACTIVE, activated_at=t0, review_at=t0 + timedelta(days=30),
                     expires_at=t0 + timedelta(days=90))  # fmt: skip
