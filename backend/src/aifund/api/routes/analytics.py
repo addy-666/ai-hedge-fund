@@ -17,16 +17,23 @@ from aifund.api.auth import Authenticated
 from aifund.api.schemas import (
     ArmStat,
     BreakdownRow,
+    CalibrationBin,
+    CalibrationModelOut,
+    CalibrationOut,
+    CalibrationSourceOut,
     CommitteeComparison,
     Costs,
     Summary,
     UpliftStat,
 )
+from aifund.domain.enums import CalibrationStatus
+from aifund.persistence.repositories.calibration import SOURCES, CalibrationRepository
 from aifund.persistence.repositories.dashboard import DashboardQueries
 from aifund.persistence.repositories.equity import EquitySnapshotRepository
 from aifund.persistence.repositories.virtual import VirtualTradeRepository
-from aifund.persistence.tables import DecisionRow, FeatureSnapshotRow, TradeRow
+from aifund.persistence.tables import CalibrationModelRow, DecisionRow, FeatureSnapshotRow, TradeRow
 from aifund.research.committee import compare
+from aifund.rules.calibration import IsotonicMap, Sample, brier, reliability
 from aifund.stats import Summary as Stats
 
 router = APIRouter(prefix="/api/analytics", tags=["analytics"])
@@ -221,4 +228,53 @@ def committee(request: Request, _s: Authenticated, start: From = None, end: To =
         risk_usd=report.risk_usd.quantize(Decimal("0.01")) if report.risk_usd is not None else None,
         vs_analyst=_uplift(report.vs_analyst),
         vs_baseline=_uplift(report.vs_baseline),
+    )
+
+
+def _model(row: CalibrationModelRow) -> CalibrationModelOut:
+    improvement = (row.details or {}).get("improvement")
+    return CalibrationModelOut(
+        version=row.version, source=row.source, method=row.method, status=row.status.value,
+        n_samples=row.n_samples, brier_before=row.brier_before, brier_after=row.brier_after,
+        improvement=round(improvement, 4) if isinstance(improvement, float) else None,
+        points=[[float(x), float(y)] for x, y in (row.params or {}).get("points", [])],
+        created_at=row.created_at, decided_by=row.decided_by, decided_at=row.decided_at,
+    )  # fmt: skip
+
+
+@router.get("/calibration")
+def calibration(request: Request, _s: Authenticated) -> CalibrationOut:
+    """Reliability per source over every finished sample, the active and waiting models, the Brier history."""
+    cfg = ctx.state(request).config.current().config
+    account = ctx.account(request)
+    sources = []
+    with ctx.read(request) as s:
+        repo = CalibrationRepository(s, ctx.clock(request))
+        for source in SOURCES:
+            data = [Sample(c, r > 0, t) for c, r, t in repo.outcomes(account, source)]
+            active = repo.active(source)
+            waiting = repo.with_status(source, CalibrationStatus.CANDIDATE)
+            model = IsotonicMap.from_params(active.params) if active is not None and active.params else None
+            bins = [
+                CalibrationBin(
+                    **vars(b),
+                    calibrated=model(round(b.mean_confidence))
+                    if model and b.mean_confidence is not None
+                    else None,
+                )
+                for b in reliability(data)
+            ]
+            sources.append(
+                CalibrationSourceOut(
+                    source=source, n=len(data), reliability=bins,
+                    brier_raw=round(brier([x.confidence / 100 for x in data], [x.win for x in data]), 6)
+                    if data else None,
+                    active=_model(active) if active is not None else None,
+                    candidate=_model(waiting[-1]) if waiting else None,
+                )
+            )  # fmt: skip
+        models = [_model(r) for r in repo.history()]
+    cal = cfg.learning.calibration
+    return CalibrationOut(
+        activation=cal.activation, min_samples=cal.min_samples, sources=sources, models=models
     )

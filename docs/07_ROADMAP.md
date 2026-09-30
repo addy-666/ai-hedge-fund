@@ -177,7 +177,7 @@ Runs on the Mac against exported history (no broker, no network), except R.8 and
 | 8.2 | **Additional detectors**: `nr7_breakout`, `failure_test_2b`, `sr_fade_range` | M each | Detector tests |
 | 8.3 | **Specialist analysts + risk critic** (`agents/specialists.py`, `critic.py`) | M | FakeLLM tests; cost per decision logged |
 | 8.4 | **Committee aggregation** in portfolio manager; runs in **shadow** alongside single-analyst for ≥ 2 weeks; compare via decisions table (`SHADOW_COMMITTEE` virtual trades; `/api/analytics/committee`) | M | Comparison report in Analytics |
-| 8.5 | **Calibrator** (isotonic, activation criteria) + reliability UI | M | Synthetic miscalibrated data corrected; Brier improves |
+| 8.5 | **Calibrator** (isotonic, activation criteria; per source analyst/committee; `learning.calibration.activation: approve\|auto`) + reliability UI | M | Synthetic miscalibrated data corrected; Brier improves |
 | 8.6 | *(moved to 5.7b)* | — | — |
 | 8.7 | **Researcher at scale**: scheduled research runs (weekly) over new history, ledger-wide FDR, holdout rolled forward only with new data (the old holdout joins the walk-forward history) | S | Trigger tests; holdout never reused for the same hypothesis |
 

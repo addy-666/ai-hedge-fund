@@ -17,6 +17,8 @@ takes the poller down. Handlers change engine state only through the state machi
              comes from ``engine.mode`` in the config and changes with a restart
 - RUN_AUDIT, APPROVE_RULE {rule_id, version?, force?}, REJECT_RULE, RETIRE_RULE {rule_id}: the learning
              loop (engine/learning.py); FAILED when the engine runs without it (learning.enabled off)
+- FIT_CALIBRATION, APPROVE_CALIBRATION / REJECT_CALIBRATION {version}: confidence calibration
+             (engine/calibration.py, run by the learning loop)
 """
 
 from __future__ import annotations
@@ -51,7 +53,10 @@ from aifund.risk.position_manager import PositionManager
 
 log = structlog.get_logger(__name__)
 LIVE_CONFIRMATION = "CONFIRM_LIVE"
-PHASE_7 = {CommandType.RUN_AUDIT, CommandType.APPROVE_RULE, CommandType.REJECT_RULE, CommandType.RETIRE_RULE}
+PHASE_7 = {
+    CommandType.RUN_AUDIT, CommandType.APPROVE_RULE, CommandType.REJECT_RULE, CommandType.RETIRE_RULE,
+    CommandType.FIT_CALIBRATION, CommandType.APPROVE_CALIBRATION, CommandType.REJECT_CALIBRATION,
+}  # fmt: skip
 
 
 class CommandFailed(Exception):

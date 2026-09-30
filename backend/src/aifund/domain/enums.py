@@ -154,8 +154,21 @@ class CommandType(StrEnum):
     APPROVE_RULE = "APPROVE_RULE"
     REJECT_RULE = "REJECT_RULE"
     RETIRE_RULE = "RETIRE_RULE"
+    FIT_CALIBRATION = "FIT_CALIBRATION"
+    APPROVE_CALIBRATION = "APPROVE_CALIBRATION"
+    REJECT_CALIBRATION = "REJECT_CALIBRATION"
     RELOAD_CONFIG = "RELOAD_CONFIG"
     SET_MODE = "SET_MODE"
+
+
+class CalibrationStatus(StrEnum):
+    """A calibration model's lifecycle (roadmap 8.5): CANDIDATE → ACTIVE (auto or operator) or REJECTED;
+    an ACTIVE model is RETIRED when the next one of its source activates."""
+
+    CANDIDATE = "CANDIDATE"
+    ACTIVE = "ACTIVE"
+    REJECTED = "REJECTED"
+    RETIRED = "RETIRED"
 
 
 class CommandStatus(StrEnum):

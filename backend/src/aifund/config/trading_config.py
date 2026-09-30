@@ -408,6 +408,21 @@ class LLMConfig(_Strict):
     pricing: dict[str, ModelPricing] = Field(default_factory=dict)  # model id -> prices (for cost and budget)
 
 
+class CalibrationConfig(_Strict):
+    """Confidence calibration (docs/04 §9, roadmap 8.5), fitted weekly per source (analyst, committee)."""
+
+    # approve: a model that passes waits as a CANDIDATE for the operator (it can RAISE confidences above the
+    # threshold, i.e. trade more); auto: it activates at once. Either way the operator is notified.
+    activation: Literal["approve", "auto"] = "approve"
+    min_samples: int = Field(default=150, ge=30)
+    holdout_fraction: Decimal = Field(default=Decimal("0.30"), ge=Decimal("0.1"), le=Decimal("0.5"))
+    min_brier_improvement: Decimal = Field(default=Decimal("0.05"), gt=0, lt=1)
+    fit_weekday: int = Field(default=0, ge=0, le=6)  # Monday
+    fit_utc: str = "01:00"
+
+    _hhmm = field_validator("fit_utc")(_check_hhmm)
+
+
 class LearningConfig(_Strict):
     enabled: bool = True  # the audit, rule lifecycle and trade reviews (docs/04); rules only ever reduce risk
     audit_schedule_utc: str = "00:30"
@@ -428,6 +443,7 @@ class LearningConfig(_Strict):
     auto_promote_max_penalty: int = Field(default=15, ge=0, le=30)
     review_after_days: int = Field(default=30, ge=1)
     expire_after_days: int = Field(default=90, ge=1)
+    calibration: CalibrationConfig = CalibrationConfig()
 
     _hhmm = field_validator("audit_schedule_utc")(_check_hhmm)
 

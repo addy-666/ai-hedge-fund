@@ -34,6 +34,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from aifund.agents.auditor import AuditBrief, Auditor, FeatureLine, RuleLine
 from aifund.config.trading_config import LearningConfig, TradingConfig
 from aifund.domain.enums import CommandType, Direction, RuleStatus, Side
+from aifund.engine.calibration import CALIBRATION_COMMANDS, Calibration, CalibrationError
 from aifund.engine.rulebook import rule_of
 from aifund.market import conditions as cond
 from aifund.persistence.db import unit_of_work
@@ -137,6 +138,7 @@ class Learning:
         self._canonical = {s.broker: s.canonical for s in cfg.symbols}
         self._last_lifecycle: datetime | None = None
         self._lock = asyncio.Lock()
+        self.calibration = Calibration(cfg, factory, clock, notifier)  # docs/04 §9, weekly (roadmap 8.5)
 
     # ------------------------------------------------------------------ the dataset
 
@@ -516,6 +518,11 @@ class Learning:
     async def handle(self, command: CommandType, payload: dict[str, Any]) -> dict[str, Any]:
         if command is CommandType.RUN_AUDIT:
             return await self.run_audit("manual")
+        if command in CALIBRATION_COMMANDS:
+            try:
+                return await self.calibration.handle(command, payload)
+            except CalibrationError as exc:
+                raise LearningError(str(exc)) from exc
         rule_id = payload.get("rule_id")
         if not isinstance(rule_id, str):
             raise LearningError(f"{command.value} needs a rule_id")
@@ -585,6 +592,8 @@ class Learning:
         return None
 
     async def run_once(self) -> None:
+        if await asyncio.to_thread(self.calibration.due):
+            await self.calibration.fit_all("weekly")
         trigger = await asyncio.to_thread(self.due)
         if trigger is not None:
             await self.run_audit(trigger)

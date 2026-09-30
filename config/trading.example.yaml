@@ -196,6 +196,15 @@ learning:                      # the self-learning loop (docs/04): penalty-only 
   auto_promote_max_penalty: 15
   review_after_days: 30
   expire_after_days: 90
+  calibration:                  # confidence -> win probability (docs/04 §9), fitted weekly per source
+    activation: approve         # approve: a passing model waits for the operator (Analytics page or
+                                #   APPROVE_CALIBRATION); auto: it activates at once. Calibration can RAISE a
+                                #   confidence over the threshold (more trades), hence approve by default.
+    min_samples: 150            # identity below this (the reliability chart still shows the data)
+    holdout_fraction: 0.30      # newest share of the samples kept out of the fit to judge it
+    min_brier_improvement: 0.05 # the fit must cut the held-out Brier score by >= 5%
+    fit_weekday: 0              # Monday
+    fit_utc: "01:00"
 
 alerts:
   telegram: false

@@ -346,6 +346,48 @@ class CommitteeComparison(BaseModel):
     vs_baseline: UpliftStat | None
 
 
+class CalibrationBin(BaseModel):
+    lo: int
+    hi: int
+    n: int
+    mean_confidence: float | None
+    win_rate: float | None
+    calibrated: int | None  # what the ACTIVE model maps the bin's mean confidence to
+
+
+class CalibrationModelOut(BaseModel):
+    version: int
+    source: str
+    method: str
+    status: str
+    n_samples: int
+    brier_before: float | None
+    brier_after: float | None
+    improvement: float | None
+    points: list[list[float]]
+    created_at: datetime
+    decided_by: str | None
+    decided_at: datetime | None
+
+
+class CalibrationSourceOut(BaseModel):
+    source: str  # analyst / committee
+    n: int
+    reliability: list[CalibrationBin]
+    brier_raw: float | None  # of the raw confidence over every sample
+    active: CalibrationModelOut | None
+    candidate: CalibrationModelOut | None
+
+
+class CalibrationOut(BaseModel):
+    """Confidence calibration (roadmap 8.5, docs/04 §9): reliability per source, models and Brier history."""
+
+    activation: str  # approve / auto
+    min_samples: int
+    sources: list[CalibrationSourceOut]
+    models: list[CalibrationModelOut]  # newest first
+
+
 class Costs(BaseModel):
     trades: int
     commission: Decimal

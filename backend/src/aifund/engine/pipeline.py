@@ -52,6 +52,7 @@ from aifund.domain.ids import new_id
 from aifund.domain.market import Bar, Position, SymbolSpec, Tick
 from aifund.domain.trade import gets_virtual_trade
 from aifund.domain.values import to_decimal
+from aifund.engine.calibration import CalibrationCache
 from aifund.engine.equity import EquityTracker
 from aifund.engine.rulebook import RulebookCache
 from aifund.execution.executor import ExecutionResult, Executor
@@ -170,6 +171,7 @@ class DecisionPipeline:
         news: Callable[[], NewsCalendar | None] | None = None,
         rulebook: RulebookCache | None = None,
         committee: Committee | None = None,
+        calibration: CalibrationCache | None = None,
     ) -> None:
         if cfg.committee.mode == "shadow" and committee is None:
             raise ValueError("committee.mode shadow needs the committee (specialists and critic: an LLM)")
@@ -196,9 +198,13 @@ class DecisionPipeline:
             analyst_orders=cfg.strategy.analyst_orders and not cfg.strategy.dry_run,
         )
         self._analyst = analyst if cfg.strategy.analyst_enabled else None
+        # confidence calibration per source (docs/04 §9): identity until a model is ACTIVE
+        self._calibration = calibration or CalibrationCache(factory, clock)
         # the committee runs in shadow beside the analyst (config requires the analyst for it): never orders
         self._committee = committee if cfg.committee.mode == "shadow" and self._analyst is not None else None
-        self._portfolio = portfolio or PortfolioManager()
+        self._portfolio = portfolio or PortfolioManager(calibrator=self._calibration.calibrator("analyst"))
+        if self._committee is not None:
+            self._committee.use_calibrator(self._calibration.calibrator("committee"))
         self._rulebook = rulebook or RulebookCache(
             factory, clock, max_total_penalty=cfg.learning.max_total_penalty
         )
@@ -492,6 +498,7 @@ class DecisionPipeline:
         #    (docs/04 §7) apply to whichever is taken
         record.stage = "DECISION"
         rules = await asyncio.to_thread(self._rulebook.current)
+        await asyncio.to_thread(self._calibration.refresh)
         record.rulebook_version = rules.version
 
         def rule_context(direction: Direction, setup_tag: str | None, confidence: int | None) -> RuleContext:

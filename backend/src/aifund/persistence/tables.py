@@ -28,6 +28,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from aifund.domain.enums import (
+    CalibrationStatus,
     CloseReason,
     CommandStatus,
     DealEntry,
@@ -541,13 +542,20 @@ class RuleEvaluationRow(Base):
 
 
 class CalibrationModelRow(Base):
+    """A fitted confidence calibration (docs/04 §9, roadmap 8.5), per source (analyst / committee)."""
+
     __tablename__ = "calibration_models"
+    __table_args__ = (Index("ix_calibration_models_source_status", "source", "status"),)
 
     version: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
+    source: Mapped[str] = mapped_column(String(16))
     method: Mapped[str] = mapped_column(String(16))
+    status: Mapped[CalibrationStatus] = mapped_column(_enum(CalibrationStatus))
     params: Mapped[dict[str, Any] | None]
     n_samples: Mapped[int]
     brier_before: Mapped[float | None] = mapped_column(Float)
     brier_after: Mapped[float | None] = mapped_column(Float)
-    active: Mapped[bool] = mapped_column(Boolean, default=False)
+    details: Mapped[dict[str, Any] | None]  # train/test sizes, improvement, the reliability of the fit data
     created_at: Mapped[datetime]
+    decided_by: Mapped[str | None] = mapped_column(String(64))  # "auto" or the operator
+    decided_at: Mapped[datetime | None]

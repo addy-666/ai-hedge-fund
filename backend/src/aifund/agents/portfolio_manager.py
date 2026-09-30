@@ -31,7 +31,7 @@ from aifund.rules.engine import NO_RULES, RISK_FACTOR_FLOOR, RuleVerdict
 
 
 class Calibrator(Protocol):
-    def __call__(self, p_raw: int) -> int: ...
+    def __call__(self, p_raw: int, /) -> int: ...
 
 
 def identity(p_raw: int) -> int:

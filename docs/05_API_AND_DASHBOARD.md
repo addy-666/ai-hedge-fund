@@ -49,7 +49,8 @@
 | POST | `/api/audits/run` | Command `RUN_AUDIT` |
 | GET | `/api/analytics/summary?from&to` | Net P&L, R, expectancy, win rate, profit factor, max DD, Sharpe (daily), trades/day, avg costs |
 | GET | `/api/analytics/breakdown?dim=symbol\|setup_tag\|session\|regime\|direction\|confidence_bucket\|rulebook_version` | Expectancy tables |
-| GET | `/api/analytics/calibration` | Reliability bins, Brier history, active calibration model |
+| GET | `/api/analytics/calibration` | Per source (analyst, committee): reliability bins (with the active map's value), raw Brier, the active and the waiting model; every model (Brier history) |
+| POST | `/api/calibration/{version}/approve\|reject`, `/api/calibration/fit` | Commands `APPROVE_CALIBRATION` (re-auth: it can raise confidences over the threshold), `REJECT_CALIBRATION`, `FIT_CALIBRATION` |
 | GET | `/api/analytics/committee?from&to` | Committee vs analyst vs baseline in shadow (8.4): paired bars, per-arm trades/R/win rate/LLM cost, agreement, committee uplift per bar net of LLM cost with its 90% CI |
 | GET | `/api/analytics/costs` | Spread/commission/swap/slippage totals and per trade |
 | GET | `/api/llm/usage?from&to` | Calls, tokens, cache hit rate, cost, latency p50/p95, error rate per agent/model |
@@ -108,8 +109,8 @@ Overview, Positions and the kill switch.
 9. **System** — heartbeats per loop, error budgets, server-time offset, gateway queue depth, disk space,
    backup status, log tail.
 
-Phase 6 built pages 1–4 and 6–9 and Phase 7 the Learning Lab (5); the calibration diagram comes with Phase 8
-(8.5). The trade dossier shows the reviewer's verdict, tags and lesson. Engine controls (START / RESUME / STOP / REARM, with re-auth where §2 requires it) are on the
+Phase 6 built pages 1–4 and 6–9 and Phase 7 the Learning Lab (5); Phase 8 added the calibration diagram (8.5) and the committee comparison (8.4) to Analytics.
+The trade dossier shows the reviewer's verdict, tags and lesson. Engine controls (START / RESUME / STOP / REARM, with re-auth where §2 requires it) are on the
 System page. Components are a few own Tailwind primitives (`components/ui.tsx`), not shadcn/ui.
 
 Frontend structure:

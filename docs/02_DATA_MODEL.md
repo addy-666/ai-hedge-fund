@@ -173,8 +173,9 @@ risk of open engine positions; orphans count 0), `open_notional` (Σ broker marg
 `n_virtual`, `miner_output JSON`, `candidates JSON`, `validation JSON`, `lessons_md`,
 `status`, `created_at`, `finished_at`.
 
-**`calibration_models`**: `version`, `method` (IDENTITY/ISOTONIC), `params JSON`, `n_samples`,
-`brier_before`, `brier_after`, `created_at`, `active bool`.
+**`calibration_models`**: `version`, `source` (analyst/committee), `method` (IDENTITY/ISOTONIC), `status`
+(CANDIDATE/ACTIVE/REJECTED/RETIRED), `params JSON` (fitted points), `n_samples`, `brier_before`, `brier_after`
+(held-out), `details JSON`, `created_at`, `decided_by`, `decided_at`.
 
 ---
 

@@ -21,11 +21,13 @@ from aifund.adapters.clock import FakeClock
 from aifund.api.app import create_app
 from aifund.config.settings import PROJECT_ROOT, Settings
 from aifund.domain.enums import (
+    CalibrationStatus,
     CommandType,
     EngineState,
     Mode,
 )
 from aifund.persistence.db import unit_of_work
+from aifund.persistence.repositories.calibration import CalibrationRepository
 from aifund.persistence.repositories.llm import LLMCallRepository
 from aifund.persistence.repositories.system import EngineStateRepository, EventRepository, HeartbeatRepository
 from aifund.persistence.tables import AuditLogRow, CommandRow
@@ -644,6 +646,49 @@ def test_rule_actions_are_engine_commands_with_reauth_for_blocks_and_force(
         ("RETIRE_RULE", {"rule_id": "R-0001"}), ("REJECT_RULE", {"rule_id": "R-0003"}),
         ("APPROVE_RULE", {"rule_id": "R-0002"}), ("RUN_AUDIT", None),
     ]  # fmt: skip
+
+
+def test_calibration_view_and_actions(
+    client: TestClient, factory: sessionmaker[Session], clock: FakeClock, config_path: Path
+) -> None:
+    headers = login(client)
+    empty = client.get("/api/analytics/calibration").json()
+    assert (empty["activation"], empty["min_samples"], empty["models"]) == ("approve", 150, [])
+    assert [(src["source"], src["n"], src["brier_raw"]) for src in empty["sources"]] == [
+        ("analyst", 0, None), ("committee", 0, None),
+    ]  # fmt: skip
+    load("demo_api").seed_calibration(factory, clock, account(config_path), clock.now())
+    out = client.get("/api/analytics/calibration").json()
+    analyst = out["sources"][0]
+    assert analyst["n"] == 200
+    assert analyst["active"] is None
+    assert (analyst["candidate"]["version"], analyst["candidate"]["improvement"]) == (2, 0.1447)
+    assert sum(b["n"] for b in analyst["reliability"]) == 200
+    assert all(b["calibrated"] is None for b in analyst["reliability"])  # nothing active yet
+    assert [(m["version"], m["status"]) for m in out["models"]] == [(2, "CANDIDATE"), (1, "REJECTED")]
+    assert out["models"][1]["points"] == [[45.0, 0.25], [95.0, 0.7]]
+
+    clock.advance(minutes=6)  # the login no longer counts as a fresh password
+    assert client.post("/api/calibration/2/approve", headers=headers).status_code == 403
+    assert client.post("/api/calibration/1/approve", headers=headers).status_code == 409  # not a candidate
+    assert client.post("/api/calibration/9/reject", headers=headers).status_code == 404
+    assert client.post("/api/calibration/2/reject", headers=headers).status_code == 202
+    assert client.post("/api/calibration/fit", headers=headers).status_code == 202
+    assert client.post("/api/auth/reauth", json={"password": PASSWORD}, headers=headers).status_code == 200
+    assert client.post("/api/calibration/2/approve", headers=headers).status_code == 202
+    with factory() as s:
+        queued = [(c.type, c.payload) for c in s.scalars(select(CommandRow).order_by(CommandRow.created_at))]
+    assert queued == [
+        ("REJECT_CALIBRATION", {"version": 2}), ("FIT_CALIBRATION", None),
+        ("APPROVE_CALIBRATION", {"version": 2}),
+    ]  # fmt: skip
+    with unit_of_work(factory) as s:  # what the engine does with the approval
+        CalibrationRepository(s, clock).decide(2, CalibrationStatus.ACTIVE, "operator")
+    active = client.get("/api/analytics/calibration").json()["sources"][0]
+    assert active["active"]["version"] == 2
+    top = next(b for b in active["reliability"] if b["lo"] == 80)
+    assert top["calibrated"] is not None
+    assert top["calibrated"] < top["mean_confidence"]
 
 
 def test_an_operator_rule_is_validated_as_dsl_and_stored_as_a_candidate(client: TestClient) -> None:

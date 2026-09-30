@@ -27,6 +27,7 @@ from aifund.agents.analyst import AnalystInput, AnalystResult, Verdict
 from aifund.agents.critic import Critic, CriticInput, CriticResult
 from aifund.agents.portfolio_manager import (
     Ballot,
+    Calibrator,
     PortfolioDecision,
     PortfolioManager,
     Vote,
@@ -108,6 +109,10 @@ class Committee:
         self._critic = critic
         self._cfg = cfg
         self._portfolio = portfolio or PortfolioManager()
+
+    def use_calibrator(self, calibrator: Calibrator) -> None:
+        """The committee's own calibration (docs/04 §9): its confidences are mapped by its own model."""
+        self._portfolio = PortfolioManager(calibrator=calibrator)
 
     async def deliberate(self, inp: AnalystInput, rules: RuleFn) -> Deliberation:
         out = Deliberation()
