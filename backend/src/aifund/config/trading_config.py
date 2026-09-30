@@ -483,6 +483,10 @@ class ResearchConfig(_Strict):
     commission_per_lot: Decimal = Field(default=Decimal(0), ge=0)  # round turn, account currency
     slippage_points: int = Field(default=0, ge=0)
     max_hypotheses_per_run: int = Field(default=5, ge=1, le=20)
+    # roadmap 8.7: the holdout window is fixed in <research>/holdout.json and rolls forward onto new data only
+    holdout_roll_days: int = Field(default=90, ge=30)  # new data needed before the holdout moves forward
+    schedule_days: int = Field(default=7, ge=1)  # scheduled runs: at most this often, and only on new history
+    scheduled_llm_rounds: int = Field(default=1, ge=0, le=10)  # LLM researcher rounds per run (needs a key)
 
 
 class TradingConfig(_Strict):

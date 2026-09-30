@@ -6,6 +6,8 @@
     uv run python scripts/research.py baseline --spend-holdout   # ...and, only if the walk-forward passes, the
                                                                  #    ONE holdout evaluation this hypothesis gets
     uv run python scripts/research.py dsl --file my_ideas.json   # operator hypotheses (a JSON list, docs/09 §5)
+    uv run python scripts/research.py scheduled                  # the weekly run (roadmap 8.7): only on new history
+                                                                 #    and >= research.schedule_days apart; --force
     uv run python scripts/research.py llm --rounds 1             # the LLM researcher proposes, the loop judges
                                                                  #    (needs DEEPSEEK_API_KEY, llm.pricing and a
                                                                  #    migrated database for the llm_calls budget)
@@ -13,6 +15,14 @@
 ``dsl`` and ``llm`` go through the research loop (docs/09 §6): walk-forward, ledger, BH over the whole ledger,
 and — for survivors, with ``--spend-holdout`` — the single holdout look. A validated hypothesis gets an evidence
 record in ``config/evidence`` (gate E1) and a DRAFT playbook card in ``<out>/drafts`` for the operator.
+
+Every study uses ONE holdout window, fixed in ``<out>/holdout.json`` on the first run (the last
+``holdout_fraction`` of the export then) and rolled forward only onto ``holdout_roll_days`` of new data
+(``research/holdout.py``); the ledger allows one holdout look per hypothesis per window.
+
+``scheduled`` (a weekly Windows task after ``export_history.py --update``): when due, the ``baseline`` study of
+every built-in detector in ``strategy.detectors`` and ``research.scheduled_llm_rounds`` researcher rounds (with
+a DeepSeek key), all with ``--spend-holdout``; BH always runs over the whole ledger.
 
 ``baseline`` studies a built-in detector (``--detector``, default ``mtf_trend_pullback``) over a small DECLARED
 parameter grid (declared here, in code review, not tuned after seeing results). The grid is one hypothesis: its parameters are chosen inside the
@@ -44,6 +54,7 @@ from aifund.persistence.db import make_engine, make_session_factory
 from aifund.research.describe import Probe
 from aifund.research.gates import e1_holdout_checks, e1_walk_forward_checks, passed, throughput
 from aifund.research.history import History
+from aifund.research.holdout import HoldoutState, ScheduleState, due, plan
 from aifund.research.ledger import Ledger, Origin, Split, digest
 from aifund.research.loop import Evaluation, HistoryEvaluator, ResearchLoop, Window
 from aifund.research.signals import CostModel, SignalOutcome, StudySpec, run_study
@@ -97,7 +108,8 @@ def build(detector: str, roles: TfRoles, params: Any) -> SetupDetector:
 
 def parse(argv: list[str]) -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("study", choices=["baseline", "dsl", "llm"])
+    p.add_argument("study", choices=["baseline", "dsl", "llm", "scheduled"])
+    p.add_argument("--force", action="store_true", help="scheduled: run even if not due")
     p.add_argument("--file", help="dsl: a JSON list of entry hypotheses")
     p.add_argument(
         "--detector", default="mtf_trend_pullback", choices=sorted(GRIDS), help="baseline: which one"
@@ -149,8 +161,61 @@ def study_all(
     return sorted(outcomes, key=lambda o: o.entry_time), meta
 
 
+def holdout_window(
+    args: argparse.Namespace, manifest: hs.Manifest, rc: Any
+) -> tuple[datetime, datetime, datetime]:
+    """(history start, holdout start, holdout end) from the recorded holdout, rolled forward when due."""
+    start = manifest.start.replace(second=0, microsecond=0)
+    end = manifest.end.replace(second=0, microsecond=0)
+    path = Path(args.out) / "holdout.json"
+    state = HoldoutState.load(path)
+    window, changed = plan(
+        state, data_start=start, data_end=end, fraction=rc.holdout_fraction, roll_days=rc.holdout_roll_days,
+        now=datetime.now(UTC),
+    )  # fmt: skip
+    if changed:
+        state.save(path)
+        what = "set" if window.generation == 1 else "ROLLED FORWARD (the old holdout joins the walk-forward)"
+        print(
+            f"holdout {what}: generation {window.generation} [{window.start:%Y-%m-%d}, {window.end:%Y-%m-%d})"
+        )
+    return start, window.start, window.end
+
+
+def scheduled(args: argparse.Namespace) -> int:
+    cfg = load_config()
+    rc = cfg.research
+    manifest = hs.read_manifest(Path(args.history))
+    fingerprint = digest(
+        {"server": manifest.server, "start": manifest.start, "end": manifest.end, "rows": manifest.rows}
+    )
+    path = Path(args.out) / "schedule.json"
+    now = datetime.now(UTC)
+    run, why = due(ScheduleState.load(path), fingerprint=fingerprint, now=now, every_days=rc.schedule_days)
+    if not run and not args.force:
+        print(f"scheduled research not due: {why}")
+        return 0
+    print(f"scheduled research: {why if run else 'forced'}", flush=True)
+    holdout_window(args, manifest, rc)  # roll the holdout before anything is studied
+    common = ["--symbols", args.symbols, "--context", args.context, "--history", args.history, "--out", args.out,
+              "--evidence", args.evidence, "--spend-holdout"]  # fmt: skip
+    codes = []
+    for detector in [d for d in cfg.strategy.detectors if d in GRIDS]:
+        print(f"\n=== baseline --detector {detector}", flush=True)
+        codes.append(main(["baseline", "--detector", detector, *common]))
+    if rc.scheduled_llm_rounds and Settings().DEEPSEEK_API_KEY is not None:
+        print(f"\n=== llm --rounds {rc.scheduled_llm_rounds}", flush=True)
+        codes.append(main(["llm", "--rounds", str(rc.scheduled_llm_rounds), *common]))
+    elif rc.scheduled_llm_rounds:
+        print("\nno DEEPSEEK_API_KEY: the LLM researcher is skipped")
+    ScheduleState(now, fingerprint).save(path)
+    return max(codes, default=0)
+
+
 def main(argv: list[str]) -> int:
     args = parse(argv)
+    if args.study == "scheduled":
+        return scheduled(args)
     if args.study != "baseline":
         return asyncio.run(loop_main(args))
     cfg = load_config()
@@ -167,9 +232,7 @@ def main(argv: list[str]) -> int:
     )
     print(f"loading {symbols} from {root} ({manifest.start:%Y-%m-%d} -> {manifest.end:%Y-%m-%d})", flush=True)
     history = History.load(root, symbols, [Timeframe.M1, Timeframe.M5, Timeframe.M15, Timeframe.H1, *context])
-    start = manifest.start.replace(second=0, microsecond=0)
-    end = manifest.end.replace(second=0, microsecond=0)
-    holdout_start = end - (end - start) * float(rc.holdout_fraction)
+    start, holdout_start, end = holdout_window(args, manifest, rc)
     costs = CostModel(commission_per_lot=rc.commission_per_lot, slippage_points=rc.slippage_points)
     ledger = Ledger(Path(args.out) / "ledger.jsonl")
     now = datetime.now(UTC)
@@ -248,8 +311,8 @@ def main(argv: list[str]) -> int:
             print(
                 "holdout NOT spent: the walk-forward part of E1 failed (it stays clean for a better hypothesis)"
             )
-        elif ledger.holdout_spent(family):
-            print("holdout NOT spent: this hypothesis already had its one look")
+        elif ledger.holdout_spent(family, holdout_start, end):
+            print("holdout NOT spent: this hypothesis already had its one look at this holdout window")
         else:
             chosen, _ = choose(
                 variants, start=start, before=holdout_start, min_train_signals=rc.min_train_signals
@@ -295,13 +358,12 @@ def prepare(args: argparse.Namespace) -> tuple[TradingConfig, History, ResearchL
     history = History.load(
         root, [s.broker for s in symbols], [Timeframe.M1, Timeframe.M5, Timeframe.M15, Timeframe.H1, *context]
     )
-    start = manifest.start.replace(second=0, microsecond=0)
-    end = manifest.end.replace(second=0, microsecond=0)
+    start, holdout_start, end = holdout_window(args, manifest, rc)
     costs = CostModel(commission_per_lot=rc.commission_per_lot, slippage_points=rc.slippage_points)
     specs = [StudySpec.from_config(cfg, s, profile=profile, costs=costs) for s in symbols]
     loop = ResearchLoop(
         HistoryEvaluator(history, specs), Ledger(Path(args.out) / "ledger.jsonl"), rc,
-        Window(start, end - (end - start) * float(rc.holdout_fraction), end), fingerprint=fingerprint,
+        Window(start, holdout_start, end), fingerprint=fingerprint,
         evidence_dir=Path(args.evidence), drafts_dir=Path(args.out) / "drafts", now=lambda: datetime.now(UTC),
     )  # fmt: skip
     return cfg, history, loop

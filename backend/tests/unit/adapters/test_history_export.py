@@ -166,6 +166,12 @@ async def test_script_end_to_end_with_explicit_offset(
     assert "XAUUSDm H4:" in out
     assert (tmp_path / "XAUUSDm" / "H4.parquet").is_file()
     assert not {"order_send", "order_check"} & set(fake.names())
+    # --update (roadmap 8.7): only the bars since the export's end, merged in
+    base = ["--timeframes", "H4", "--symbols", "XAUUSDm", "--server-offset-hours", "3"]
+    assert await script.main([*base, "--out", str(tmp_path), "--update"]) == 0
+    assert "XAUUSDm H4:" in capsys.readouterr().out
+    assert await script.main([*base, "--out", str(tmp_path / "none"), "--update"]) == 1
+    assert "--update needs an existing export" in capsys.readouterr().out
 
 
 async def test_export_warns_when_history_ends_long_before_now(tmp_path: Path) -> None:

@@ -5,6 +5,8 @@
     uv run python scripts/export_history.py --months 12 --timeframes M15,H1,H4,D1
     uv run python scripts/export_history.py --from 2024-01-01 --to 2024-07-01 --timeframes M1,M5 --merge
                                                                   # a date range added to the existing export
+    uv run python scripts/export_history.py --update              # the bars since the last export, merged in
+                                                                  #   (the weekly research task, roadmap 8.7)
     uv run python scripts/export_history.py --server-offset-hours 3   # weekends: no live tick to detect it
 
 BEFORE a long export set MT5 Tools > Options > Charts > "Max bars in chart" to Unlimited and restart the
@@ -25,6 +27,7 @@ import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+from aifund.adapters import history_store as hs
 from aifund.adapters.clock import SystemClock
 from aifund.adapters.mt5.export import export_history
 from aifund.adapters.mt5.gateway import GatewayError, MT5Credentials, MT5Gateway
@@ -46,6 +49,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         "--to", dest="date_to", default=None, help="end date YYYY-MM-DD (UTC, exclusive; default now)"
     )
     p.add_argument("--merge", action="store_true", help="add to the existing export instead of replacing it")
+    p.add_argument(
+        "--update",
+        action="store_true",
+        help="merge the bars since the existing export's end (2 days overlap)",
+    )
     p.add_argument("--timeframes", default=DEFAULT_TFS, help=f"comma-separated (default {DEFAULT_TFS})")
     p.add_argument(
         "--symbols", default="", help="comma-separated broker symbols (default: from trading.yaml)"
@@ -57,6 +65,13 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
 
 def _date(text: str) -> datetime:
     return datetime.strptime(text, "%Y-%m-%d").replace(tzinfo=UTC)
+
+
+def update_start(root: Path) -> datetime:
+    """Where an ``--update`` starts: two days before the existing export ends (duplicates are dropped)."""
+    if not (root / "manifest.json").is_file():
+        raise GatewayError(f"--update needs an existing export in {root}: run a full export first")
+    return hs.read_manifest(root).end - timedelta(days=2)
 
 
 async def main(argv: list[str]) -> int:
@@ -103,6 +118,8 @@ async def main(argv: list[str]) -> int:
             print(f"server time = UTC{offset / timedelta(hours=1):+.2f}h")
         now = datetime.now(UTC)
         start = _date(args.date_from) if args.date_from else now - timedelta(days=30 * args.months)
+        if args.update:
+            start, args.merge = update_start(Path(args.out)), True
         end = _date(args.date_to) if args.date_to else None
         result = await export_history(
             gw,

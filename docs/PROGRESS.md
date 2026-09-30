@@ -4,15 +4,17 @@ Updated by the coding agent at the end of every task.
 
 ## Current position
 
-- Phase: 7 — Self-learning loop (Milestone M4), code complete (7.1–7.11). Phase 6 is merged (PR #15).
-- Next task: 5.8 — the demo 24/7 run (operator, 3.6 folded in). The learning loop runs with it
-  (`learning.enabled: true`): it needs ≥ 20 matching outcomes before a rule can exist, so expect the first
-  audits to find nothing — correctly. Then Phase 8 (committee, playbooks, calibration).
+- Phase: 8 — Multi-agent committee, playbooks, calibration: code complete (8.1–8.5, 8.7). Phase 7 is merged
+  (PR #16).
+- Next: Phase 9 (hardening & go-live). Operator steps waiting (with 5.8, the demo 24/7 run): review the three
+  new playbook cards; `committee.mode: shadow` for ≥ 2 weeks and read Analytics → "Committee vs analyst";
+  approve (or set `auto`) the first calibration once 150 analyst trades exist; `install_tasks.ps1` again for
+  the weekly `aifund-research` task.
 - Rollout level: L0 (SIM). `python -m aifund.engine` now runs the whole engine on MT5 (DEMO/LIVE) or in SIM;
   outside SIM it refuses to start without E1 evidence for its detectors (none has any yet: run DEMO with
   `strategy.dry_run: true` or the analyst in shadow).
-- Tests: backend 1,259 passing + 1 Windows-only (MQL5 constant cross-check against the real MetaTrader5
-  package); frontend 13 Vitest + 7 Playwright.
+- Tests: backend 1,398 passing + 1 Windows-only (MQL5 constant cross-check against the real MetaTrader5
+  package); frontend 16 Vitest + 9 Playwright.
 - History: 15-month export (2025-07-05 → 2026-09-28) for XAUUSD, NAS100.r, BTCUSD (EURUSD files remain but
   the symbol was dropped from the config on 2026-09-28). M1 is capped at 99,999 bars per symbol by the
   terminal's max-bars setting (~70 days) → R.8 (kept for now, operator decision). D1 has 317–447 bars, so D1-context snapshots start only
@@ -111,6 +113,7 @@ Updated by the coding agent at the end of every task.
 | 2026-09-30 | 8.3 Specialists + critic | `agents/specialists.py`: the analyst class narrowed to one family (`committee.families`), its own released `specialist_v1.j2` (family brief first), no call without a candidate of its family, agent `specialist_<family>` in `llm_calls`; `agents/critic.py` + released `critic_v1.j2`: strict `Critique` (≤ 5 objections HIGH/MEDIUM/LOW + summary), one repair, no critique on provider failure (the committee then holds); `committee:` config (mode off/shadow, families, weights, critic penalties 15/7/0); each result carries its cost; golden prompts | The analyst class takes `prompt`/`agent` so the specialists reuse its validation unchanged; specialists and critic use `llm.analyst_model` | — |
 | 2026-09-30 | 8.4 Committee in shadow | `agents/committee.py` (specialists concurrently, fail-closed hold on an INVALID specialist, `ballot`: abstain / split / weighted mean, critic → `decide_committee` with the committee's own portfolio manager and calibrator, the learned rules); in the pipeline beside the analyst (concurrent, a failure is logged and ignored), deliberation in `decisions.proposal.committee`, `SHADOW_COMMITTEE` virtual trade (migration `c3a8e1f25d70`); `research/committee.py` + `VirtualTradeRepository.committee_bars` + `/api/analytics/committee` + Analytics card (per-arm R, agreement, uplift vs analyst and vs baseline net of LLM cost); demo seed; replay invariant for the new arm | Shadow only, and only beside the analyst (`committee.mode: shadow` requires `strategy.analyst_enabled`: G-LLM's analyst-vs-baseline pairs stay unchanged); the committee's spend is not in `decisions.cost_usd` | Operator: run `committee.mode: shadow` ≥ 2 weeks on DEMO and read the Analytics report; a promotion gate for committee orders (like G-LLM) is not built |
 | 2026-09-30 | 8.5 Calibrator | `rules/calibration.py` (PAV isotonic, time-ordered 70/30, held-out Brier, ≥ 150 samples, ≥ 5% better, reliability bins; outside the fitted range a map only lowers), `engine/calibration.py` (weekly fit per source analyst/committee, CANDIDATE → ACTIVE by the operator or `activation: auto`, supersede/retire, events + notices; the pipeline's cache feeds both portfolio managers), samples from real trades and shadow/blocked virtual trades, migration `d91f4b6a2e08` (source, status, details, decided_by/at), commands FIT/APPROVE/REJECT_CALIBRATION, `/api/analytics/calibration` + approve (re-auth) / reject / fit, Analytics: reliability diagrams with the active map, the waiting candidate, model history; tests: an overconfident analyst corrected (Brier ≥ 5% better), a calibrated one left alone, replay decides on the calibrated confidence; Playwright | Activation mode is configurable, default `approve` (operator decision: calibration can raise confidence over the threshold); own PAV instead of scikit-learn; `calibration_models.active` replaced by `status` (the table had never been written) | Operator: approve (or set `auto`) once 150 analyst trades exist |
+| 2026-09-30 | 8.7 Researcher at scale | `research/holdout.py`: the holdout is a FIXED window in `data/research/holdout.json` (set on the first run, never drifting with the export), rolled forward only onto `research.holdout_roll_days` (90) of new data — the new window is exactly the unseen bars, the old one joins the walk-forward; an export that no longer covers it stops research; the ledger allows one holdout look per hypothesis per (overlapping) window; `research.py scheduled` (due on new history and ≥ `schedule_days` apart, or `--force`): baseline study of every built-in configured detector + `scheduled_llm_rounds` researcher rounds, holdout spend on, BH over the whole ledger; `export_history.py --update`; Windows task `aifund-research` (Tuesdays 03:00 UTC) | Every research command now reads the recorded window instead of recomputing `holdout_fraction` from the export's current length (it drifted into bars already judged); a hypothesis may face each NEW window once | Operator: re-run `install_tasks.ps1` on Windows |
 
 ## Decisions log
 

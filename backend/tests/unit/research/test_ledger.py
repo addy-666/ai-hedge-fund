@@ -99,3 +99,24 @@ def test_the_holdout_is_spent_once(tmp_path: Path) -> None:
     assert not added
     with pytest.raises(HoldoutSpent):
         record(ledger, h, 0.01, split=Split.HOLDOUT, data_fingerprint="data-2")  # a second look is refused
+
+
+def test_one_holdout_look_per_hypothesis_per_window(tmp_path: Path) -> None:
+    """Roadmap 8.7: the holdout rolls forward onto new data; a hypothesis gets one look per window."""
+    ledger = Ledger(tmp_path / "ledger.jsonl")
+    h = {"detector": "x", "params": {}}
+    first = (datetime(2026, 3, 1, tzinfo=UTC), datetime(2026, 6, 1, tzinfo=UTC))
+    record(ledger, h, 0.01, Split.HOLDOUT, start=first[0], end=first[1])
+    assert ledger.holdout_spent(h)
+    assert ledger.holdout_spent(h, *first)
+    overlapping = (datetime(2026, 5, 1, tzinfo=UTC), datetime(2026, 9, 1, tzinfo=UTC))
+    assert ledger.holdout_spent(h, *overlapping)
+    with pytest.raises(HoldoutSpent, match="this holdout"):
+        record(
+            ledger, h, 0.01, Split.HOLDOUT, start=overlapping[0], end=overlapping[1], data_fingerprint="d2"
+        )
+    rolled = (first[1], datetime(2026, 9, 1, tzinfo=UTC))  # the next window: only new bars
+    assert not ledger.holdout_spent(h, *rolled)
+    _, added = record(ledger, h, 0.01, Split.HOLDOUT, start=rolled[0], end=rolled[1], data_fingerprint="d2")
+    assert added
+    assert not ledger.holdout_spent({"detector": "y"}, *rolled)

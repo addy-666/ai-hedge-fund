@@ -249,7 +249,9 @@ class ResearchLoop:
                 e.note = "failed the walk-forward part of E1; holdout kept clean"
             elif not spend_holdout:
                 e.note = "passed the walk-forward part; holdout not requested"
-            elif self.ledger.holdout_spent(self.document(e.hypothesis)):
+            elif self.ledger.holdout_spent(
+                self.document(e.hypothesis), self.window.holdout_start, self.window.end
+            ):
                 e.note = "holdout already spent on this hypothesis"
             else:
                 self._holdout(e)  # 3. the one look

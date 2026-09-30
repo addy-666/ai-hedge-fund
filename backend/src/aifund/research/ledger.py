@@ -7,7 +7,9 @@ of hypothesis + symbols + window + split + data fingerprint, so re-running the s
 - ``survivors(q)``: Benjamini–Hochberg at level q over ONE p-value per distinct hypothesis (its latest
   walk-forward trial) across the WHOLE ledger. A grid whose parameters are chosen inside the walk-forward is
   one hypothesis (its out-of-sample result already pays for the choice); every LLM idea is one more.
-- The holdout is single-use: ``record`` refuses a second ``holdout`` trial of a hypothesis (``HoldoutSpent``).
+- The holdout is single-use: ``record`` refuses a second ``holdout`` trial of a hypothesis on the same holdout
+  window (``HoldoutSpent``). The window rolls forward only onto new data (``research/holdout.py``), so a
+  hypothesis gets at most one look per window and never sees the same holdout bars twice.
 """
 
 from __future__ import annotations
@@ -116,9 +118,10 @@ class Ledger:
             if t.trial_id == trial_id:
                 return t, False
         if split is Split.HOLDOUT and any(
-            t.hypothesis_id == hypothesis_id and t.split is Split.HOLDOUT for t in existing
+            t.hypothesis_id == hypothesis_id and t.split is Split.HOLDOUT and _overlaps(t.window, window)
+            for t in existing
         ):
-            raise HoldoutSpent(f"hypothesis {hypothesis_id} was already evaluated on the holdout")
+            raise HoldoutSpent(f"hypothesis {hypothesis_id} was already evaluated on this holdout")
         trial = Trial(
             trial_id=trial_id,
             hypothesis_id=hypothesis_id,
@@ -140,9 +143,18 @@ class Ledger:
             fh.write(trial.to_json() + "\n")
         return trial, True
 
-    def holdout_spent(self, hypothesis: Mapping[str, Any]) -> bool:
+    def holdout_spent(
+        self, hypothesis: Mapping[str, Any], start: datetime | None = None, end: datetime | None = None
+    ) -> bool:
+        """Was the hypothesis judged on a holdout overlapping ``[start, end)`` (on any, without a window)?"""
         hid = digest(hypothesis)
-        return any(t.hypothesis_id == hid and t.split is Split.HOLDOUT for t in self.trials())
+        window = (start.isoformat(), end.isoformat()) if start is not None and end is not None else None
+        return any(
+            t.hypothesis_id == hid
+            and t.split is Split.HOLDOUT
+            and (window is None or _overlaps(t.window, window))
+            for t in self.trials()
+        )
 
     def latest_walk_forward(self) -> dict[str, Trial]:
         latest: dict[str, Trial] = {}
@@ -154,3 +166,10 @@ class Ledger:
     def survivors(self, q: float) -> set[str]:
         """Hypothesis ids that survive BH at ``q`` against every hypothesis in the ledger."""
         return benjamini_hochberg({h: t.p_value for h, t in self.latest_walk_forward().items()}, q)
+
+
+def _overlaps(a: tuple[str, str], b: tuple[str, str]) -> bool:
+    """Two [start, end) ISO windows share time (UTC offsets compare correctly as datetimes)."""
+    a0, a1 = datetime.fromisoformat(a[0]), datetime.fromisoformat(a[1])
+    b0, b1 = datetime.fromisoformat(b[0]), datetime.fromisoformat(b[1])
+    return a0 < b1 and b0 < a1
