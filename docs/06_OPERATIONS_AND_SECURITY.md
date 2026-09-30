@@ -20,6 +20,8 @@
 | `aifund-engine` | `deploy\windows\run_engine.ps1` → `uv run python -m aifund.engine` (waits for terminal) |
 | `aifund-api` | `deploy\windows\run_api.ps1` → `tailscale serve --bg 8000` (HTTPS on the tailnet only) + `uv run uvicorn aifund.api.app:app --host 127.0.0.1 --port 8000` |
 | `aifund-backup` | Daily 21:30 UTC: `deploy\windows\backup.ps1` |
+| `aifund-ledger` | Daily 22:15 UTC: `deploy\windows\verify_ledger.ps1` → `verify_ledger.py --days 3 --alert` (9.3) |
+| `aifund-research` | Tuesdays 03:00 UTC: `deploy\windows\research_weekly.ps1` (8.7) |
 
 - `run_engine.ps1` loops: start engine; on exit, log exit code, wait with backoff (5 s → 5 min), restart.
 - Engine start always lands in `PAUSED` after an unclean exit; auto-resume to `RUNNING` only if
@@ -64,16 +66,22 @@ The engine resolves the `Common\Files` path via `terminal_info().commondata_path
 
 ## 6. Security checklist
 
-- [ ] Dashboard/API reachable only via Tailscale (Windows firewall blocks 8000 on public NIC).
-- [ ] RDP restricted (Tailscale only, or IP allowlist) with strong password + NLA.
-- [ ] Login rate-limited; session cookies Secure/HttpOnly/SameSite=Strict; CSRF on mutations.
-- [ ] Re-auth for LIVE, risk increases, drawdown re-arm, block-rule approval.
-- [ ] No endpoint can place an arbitrary order; the only trading mutations are close/pause/flatten commands.
-- [ ] Prompt-injection surface: LLM prompts contain only numeric market data, curated playbooks and the engine's
+Reviewed in 9.4: `docs/security_review.md` holds the evidence (tests, CI jobs) per item and the operator steps.
+
+- [x] Dashboard/API reachable only via Tailscale (uvicorn on 127.0.0.1 + `tailscale serve`; operator: firewall
+      rule blocking 8000 as well).
+- [ ] RDP restricted (Tailscale only, or IP allowlist) with strong password + NLA. *(operator, Windows host)*
+- [x] Login rate-limited; session cookies Secure/HttpOnly/SameSite=Strict; CSRF on mutations (every route
+      tested, `test_api_security.py`).
+- [x] Re-auth for LIVE, risk increases, drawdown re-arm, block-rule approval (and calibration approval).
+- [x] No endpoint can place an arbitrary order; the only trading mutations are close/pause/flatten commands
+      (source check + import-linter contract).
+- [x] Prompt-injection surface: LLM prompts contain only numeric market data, curated playbooks and the engine's
       own rules — no external free text (news headlines, web content) in v1. If headlines are added later,
       they go in a clearly delimited data block and cannot change the output schema or bypass the Risk Manager.
-- [ ] Dependency audit (`pip-audit`, `npm audit`) in CI.
-- [ ] Backups encrypted at rest in the remote store.
+- [x] Dependency audit (`pip-audit`, `npm audit`) in CI (job `audit`).
+- [x] Backups encrypted at rest in the remote store (`backup_db.py` uploads only to an rclone `crypt` remote;
+      operator: configure it).
 
 ## 7. Observability
 

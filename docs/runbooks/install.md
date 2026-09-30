@@ -75,7 +75,8 @@ powershell -ExecutionPolicy Bypass -File C:\aifund\ai-hedge-fund\deploy\windows\
 | `aifund-mt5` | `C:\aifund\mt5\terminal64.exe /portable` | at logon; restarted on failure every minute |
 | `aifund-engine` | `deploy\windows\run_engine.ps1`: waits for the terminal, runs `python -m aifund.engine`, restarts it with backoff 5 s → 5 min | at logon |
 | `aifund-api` | `deploy\windows\run_api.ps1`: `tailscale serve --bg 8000` (tailnet-only HTTPS) + uvicorn on `127.0.0.1:8000` serving the API and `frontend\dist` | at logon; restarted on failure every minute |
-| `aifund-backup` | `deploy\windows\backup.ps1` → `scripts\backup_db.py` (online backup, gzip, 30 daily + 12 monthly; set user variable `AIFUND_BACKUP_REMOTE=gdrive:aifund` to upload with rclone) | daily 21:30 UTC |
+| `aifund-backup` | `deploy\windows\backup.ps1` → `scripts\backup_db.py` (online backup, gzip, 30 daily + 12 monthly; set user variable `AIFUND_BACKUP_REMOTE=secret:aifund` to upload with rclone — it must be an rclone `crypt` remote wrapping the cloud one, or the upload is refused) | daily 21:30 UTC |
+| `aifund-ledger` | `deploy\windows\verify_ledger.ps1` → `scripts\verify_ledger.py --days 3 --alert`: trades vs MT5 deals; a difference or a failure is a CRITICAL alert and the `job.verify_ledger` heartbeat (System page) | daily 22:15 UTC |
 | `aifund-research` | `deploy\windows\research_weekly.ps1`: `export_history.py --update` (new bars merged in), then `research.py scheduled` (runs only when due; log `logs\research_weekly.log`) | Tuesdays 03:00 UTC |
 
 Before the API task can serve the dashboard (once, and after every frontend change):
@@ -116,6 +117,26 @@ Other commands: `PAUSE`, `STOP`, `START`, `REARM`, `FLATTEN_ALL` (the kill switc
 5. Guardian: in the Strategy Tester (or on the demo with a tiny `InpHardDailyLossPct`), a forced equity drop closes
    the engine positions, writes `halt.flag`, and the engine goes **HALTED** within 5 s; REARM is refused until the
    flag is deleted.
+
+## 7. Backup and restore drill (9.5, monthly)
+
+The nightly `aifund-backup` task writes `backups\aifund-YYYYMMDD-HHMM.db.gz` (integrity-checked), uploads it to
+the encrypted remote, and only then thins old data (events > 30 days, LLM call text > 180 days). The result is
+the `job.backup` heartbeat on the System page; a failure is a CRITICAL alert.
+
+On the Mac, once a month:
+
+1. Fetch the newest backup from the remote: `rclone copy secret:aifund/<file>.db.gz ~/aifund-restore/`.
+2. `cd backend && uv run python scripts/verify_db.py ~/aifund-restore/<file>.db.gz` → exit 0 and `OK`
+   (integrity, foreign keys, schema at the code's head, ledger consistency, row counts).
+3. Restore it for real: `gunzip -k` it to `data/restore.db`, start the API on it
+   (`DATABASE_URL=sqlite:///data/restore.db uv run uvicorn aifund.api.app:app`) and check that the Journal shows
+   the last closed trades of the Windows host.
+4. Record the drill: date, file, verify output, in `docs/PROGRESS.md` (operational measurements).
+
+Restoring on the Windows host after a disk failure: stop `aifund-engine` and `aifund-api`, verify the file as
+above, decompress it to the `DATABASE_URL` path, start both tasks; the engine lands in PAUSED and reconciles
+against MT5 before anything else (`verify_ledger.py --days 30` then shows what happened meanwhile).
 
 ## Rotating secrets
 

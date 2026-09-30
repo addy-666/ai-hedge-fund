@@ -57,6 +57,25 @@ jobs:
         if: matrix.coverage
         run: uv run python scripts/coverage_gate.py
 
+  audit:
+    name: dependency audit (pip-audit, npm audit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Python dependencies (the lock file, every extra incl. MetaTrader5)
+        run: |
+          uv export --frozen --no-hashes --format requirements-txt --no-emit-project --all-extras > "$RUNNER_TEMP/req.txt"
+          uvx pip-audit -r "$RUNNER_TEMP/req.txt" --disable-pip --no-deps
+      - name: npm dependencies
+        working-directory: frontend
+        run: npm audit --audit-level=high
+
   frontend:
     name: frontend (types, unit, browser smoke)
     runs-on: ubuntu-latest

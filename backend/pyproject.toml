@@ -131,6 +131,15 @@ source_modules = ["aifund.agents"]
 forbidden_modules = ["aifund.execution", "aifund.adapters", "MetaTrader5"]
 
 [[tool.importlinter.contracts]]
+name = "The API never touches execution, risk sizing or a broker (docs/06 §6, roadmap 9.4)"
+type = "forbidden"
+source_modules = ["aifund.api"]
+forbidden_modules = [
+    "aifund.execution", "aifund.risk", "aifund.adapters.mt5", "aifund.adapters.sim", "MetaTrader5",
+]
+allow_indirect_imports = true  # it reads engine modules (rulebook, calibration) that the engine also runs
+
+[[tool.importlinter.contracts]]
 name = "Research can never place an order (docs/09)"
 type = "forbidden"
 source_modules = ["aifund.research"]
