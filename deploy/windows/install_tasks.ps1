@@ -10,6 +10,7 @@ $Tasks = @{   # name = (command, arguments)
     "aifund-engine" = @($PS, "-NoProfile -ExecutionPolicy Bypass -File `"$Here\run_engine.ps1`"")
     "aifund-api"    = @($PS, "-NoProfile -ExecutionPolicy Bypass -File `"$Here\run_api.ps1`"")
     "aifund-backup" = @($PS, "-NoProfile -ExecutionPolicy Bypass -File `"$Here\backup.ps1`"")
+    "aifund-ledger" = @($PS, "-NoProfile -ExecutionPolicy Bypass -File `"$Here\verify_ledger.ps1`"")
     "aifund-research" = @($PS, "-NoProfile -ExecutionPolicy Bypass -File `"$Here\research_weekly.ps1`"")
 }
 foreach ($Name in $Tasks.Keys) {

@@ -12,12 +12,14 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from aifund.domain.enums import DealEntry, DealReason, Side, TradeStatus
 from aifund.domain.market import Deal
 from aifund.persistence.db import unit_of_work
-from aifund.persistence.tables import TradeRow
+from aifund.persistence.tables import EventRow, HeartbeatRow, TradeRow
+from aifund.ports.system import Severity
 from aifund.reconcile.ledger_check import DiffKind, TradeFacts, diff_ledger
 
 MAGIC = 26092801
@@ -201,3 +203,48 @@ def test_the_script_runs_on_a_fixture(
     assert "UNRECORDED     #2" in out
     assert "1 difference(s)" in out
     assert script.main(["--fixture", str(tmp_path / "missing.json")]) == 2
+
+
+def test_the_nightly_job_records_and_alerts(
+    factory: sessionmaker[Session],
+    db_url: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Roadmap 9.3: a difference (or a failure to read the broker) is a CRITICAL alert and a heartbeat."""
+    fixture = tmp_path / "deals.json"
+    fixture.write_text(json.dumps({
+        "format_version": 1, "server": "Example-Demo", "currency": "USD", "trade_mode": "DEMO",
+        "server_offset_minutes": 0, "balance": "0", "deals": [raw(d) for d in DEALS[:4]],
+    }))  # fmt: skip
+    sent: list[tuple[Severity, str, str]] = []
+
+    class Recorder:
+        async def notify(self, severity: Severity, title: str, body: str = "") -> None:
+            sent.append((severity, title, body))
+
+    script = load()
+    monkeypatch.setattr(
+        script, "Settings", lambda: SimpleNamespace(DATABASE_URL=db_url, CONFIG_PATH=tmp_path / "none.yaml")
+    )
+    monkeypatch.setattr(script, "notifier_for", lambda *_a: Recorder())
+    assert script.main(["--fixture", str(fixture), "--account", "acc", "--alert"]) == 1  # nothing recorded
+    ((severity, title, body),) = sent
+    assert (severity, title) == (Severity.CRITICAL, "Ledger mismatch: 2 difference(s)")
+    assert "UNRECORDED" in body
+    with factory() as s:
+        beat = s.scalars(select(HeartbeatRow).where(HeartbeatRow.component == "job.verify_ledger")).one()
+        assert (beat.status, beat.detail["positions"], len(beat.detail["differences"])) == ("diff", 2, 2)
+        assert [e.type for e in s.scalars(select(EventRow)).all()] == ["ledger.mismatch"]
+    assert script.main(["--fixture", str(tmp_path / "missing.json"), "--alert"]) == 2
+    assert sent[-1][1] == "Ledger check FAILED"
+    empty = tmp_path / "empty.json"
+    empty.write_text(fixture.read_text().replace(json.dumps([raw(d) for d in DEALS[:4]]), "[]"))
+    sent.clear()
+    assert script.main(["--fixture", str(empty), "--account", "acc", "--alert"]) == 0
+    assert sent == []
+    with factory() as s:
+        beat = s.scalars(select(HeartbeatRow).where(HeartbeatRow.component == "job.verify_ledger")).one()
+        assert beat.status == "ok"
+    capsys.readouterr()
