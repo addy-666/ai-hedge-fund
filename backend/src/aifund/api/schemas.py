@@ -406,6 +406,36 @@ class CommandIn(BaseModel):
     payload: dict[str, Any] | None = None
 
 
+class GateOut(BaseModel):
+    name: str
+    status: str  # PASS / FAIL / MANUAL
+    value: str
+    need: str
+
+
+class SignoffOut(BaseModel):
+    ts: datetime
+    level_from: str | None
+    level_to: str | None
+    note: str | None
+
+
+class RolloutOut(BaseModel):
+    """The rollout ladder (docs/06 §10, roadmap 9.6-9.7): the level, its exit gates, the sign-offs."""
+
+    level: str
+    level_name: str
+    next_level: str | None
+    period_start: datetime | None
+    ready: bool  # every measured gate passes: the operator may sign off
+    gates: list[GateOut]
+    signoffs: list[SignoffOut]
+
+
+class SignoffIn(BaseModel):
+    note: str = Field(min_length=3, max_length=500)
+
+
 class CommandAccepted(BaseModel):
     command_id: str
 

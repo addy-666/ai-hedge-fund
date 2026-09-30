@@ -567,6 +567,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/rollout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Rollout */
+        get: operations["rollout_api_rollout_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/rollout/signoff": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Signoff */
+        post: operations["signoff_api_rollout_signoff_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/rulebook/versions": {
         parameters: {
             query?: never;
@@ -1291,6 +1325,17 @@ export interface components {
             /** Message */
             message: string;
         };
+        /** GateOut */
+        GateOut: {
+            /** Name */
+            name: string;
+            /** Need */
+            need: string;
+            /** Status */
+            status: string;
+            /** Value */
+            value: string;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -1530,6 +1575,26 @@ export interface components {
             /** Volume */
             volume: string;
         };
+        /**
+         * RolloutOut
+         * @description The rollout ladder (docs/06 §10, roadmap 9.6-9.7): the level, its exit gates, the sign-offs.
+         */
+        RolloutOut: {
+            /** Gates */
+            gates: components["schemas"]["GateOut"][];
+            /** Level */
+            level: string;
+            /** Level Name */
+            level_name: string;
+            /** Next Level */
+            next_level: string | null;
+            /** Period Start */
+            period_start: string | null;
+            /** Ready */
+            ready: boolean;
+            /** Signoffs */
+            signoffs: components["schemas"]["SignoffOut"][];
+        };
         /** RuleCreated */
         RuleCreated: {
             /** Rule Id */
@@ -1696,6 +1761,25 @@ export interface components {
              * Format: date-time
              */
             reauth_until: string;
+        };
+        /** SignoffIn */
+        SignoffIn: {
+            /** Note */
+            note: string;
+        };
+        /** SignoffOut */
+        SignoffOut: {
+            /** Level From */
+            level_from: string | null;
+            /** Level To */
+            level_to: string | null;
+            /** Note */
+            note: string | null;
+            /**
+             * Ts
+             * Format: date-time
+             */
+            ts: string;
         };
         /** Summary */
         Summary: {
@@ -2848,6 +2932,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CommandAccepted"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rollout_api_rollout_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RolloutOut"];
+                };
+            };
+        };
+    };
+    signoff_api_rollout_signoff_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SignoffIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RolloutOut"];
                 };
             };
             /** @description Validation Error */

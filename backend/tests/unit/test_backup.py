@@ -69,5 +69,30 @@ def test_main_reports_failures(
     db = tmp_path / "a.db"
     sqlite3.connect(db).execute("CREATE TABLE t (x)").connection.commit()
     monkeypatch.setattr(script, "Settings", lambda: SimpleNamespace(DATABASE_URL=f"sqlite:///{db}"))
-    assert script.main(["--out", str(tmp_path / "b")]) == 0
+    assert script.main(["--out", str(tmp_path / "b"), "--no-retention"]) == 0  # a bare database
     assert "backup:" in capsys.readouterr().out
+
+
+def test_backups_are_only_uploaded_to_an_encrypted_remote(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Roadmap 9.4 / docs/06 §6: backups are encrypted at rest in the remote (an rclone crypt remote)."""
+    script = load()
+    db = tmp_path / "a.db"
+    sqlite3.connect(db).execute("CREATE TABLE t (x)").connection.commit()
+    monkeypatch.setattr(script, "Settings", lambda: SimpleNamespace(DATABASE_URL=f"sqlite:///{db}"))
+    calls: list[list[str]] = []
+
+    def rclone(cmd: list[str], **_kw: object) -> SimpleNamespace:
+        calls.append(cmd)
+        return SimpleNamespace(stdout="gdrive:  drive\nsecret:  crypt\n")
+
+    monkeypatch.setattr(script.subprocess, "run", rclone)
+    assert script.main(["--out", str(tmp_path / "b"), "--remote", "gdrive:aifund"]) == 1
+    assert "'gdrive' is drive, not an encrypted 'crypt' remote" in capsys.readouterr().err
+    assert not (tmp_path / "b").exists()  # nothing written before the check
+    assert script.main(["--out", str(tmp_path / "b"), "--remote", "nowhere:x"]) == 1
+    assert "is not configured" in capsys.readouterr().err
+    assert script.main(["--out", str(tmp_path / "b"), "--remote", "secret:aifund", "--no-retention"]) == 0
+    assert calls[-1][:2] == ["rclone", "copy"]
+    assert calls[-1][-1] == "secret:aifund"

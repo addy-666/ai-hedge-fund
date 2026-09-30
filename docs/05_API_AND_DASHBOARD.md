@@ -51,6 +51,7 @@
 | GET | `/api/analytics/breakdown?dim=symbol\|setup_tag\|session\|regime\|direction\|confidence_bucket\|rulebook_version` | Expectancy tables |
 | GET | `/api/analytics/calibration` | Per source (analyst, committee): reliability bins (with the active map's value), raw Brier, the active and the waiting model; every model (Brier history) |
 | POST | `/api/calibration/{version}/approve\|reject`, `/api/calibration/fit` | Commands `APPROVE_CALIBRATION` (re-auth: it can raise confidences over the threshold), `REJECT_CALIBRATION`, `FIT_CALIBRATION` |
+| GET | `/api/rollout` / POST `/api/rollout/signoff` | The rollout level from the config, its measured exit gates (docs/06 §10) and the sign-offs; signing off needs re-auth, is refused (409) while a measured gate fails, and is recorded in `audit_log` (9.6-9.7) |
 | GET | `/api/analytics/committee?from&to` | Committee vs analyst vs baseline in shadow (8.4): paired bars, per-arm trades/R/win rate/LLM cost, agreement, committee uplift per bar net of LLM cost with its 90% CI |
 | GET | `/api/analytics/costs` | Spread/commission/swap/slippage totals and per trade |
 | GET | `/api/llm/usage?from&to` | Calls, tokens, cache hit rate, cost, latency p50/p95, error rate per agent/model |

@@ -238,3 +238,19 @@ def test_state_machine_reads_the_persisted_state(factory: sessionmaker[Session],
     w = make_world(factory, clock)
     persist(w, EngineState.HALTED, "x")
     assert StateMachine("acc", Mode.SIM, factory, clock, w.notifier).state is EngineState.HALTED
+
+
+async def test_a_restart_keeps_the_halt_cause_so_a_daily_halt_still_rearms(
+    factory: sessionmaker[Session], clock: FakeClock
+) -> None:
+    """Roadmap 9.2 (found by the chaos suite): a restart used to replace the cause with "restart from HALTED",
+    so a daily-loss halt never re-armed at the next trading day once the engine had restarted."""
+    w = make_world(factory, clock)
+    persist(w, EngineState.HALTED, "DAILY_LOSS: 3.10% >= limit 3.0%")
+    e = engine(w)
+    assert await e.boot() is EngineState.HALTED
+    assert e.state.halt_reason == "DAILY_LOSS: 3.10% >= limit 3.0%"
+    await e._day_rearm()
+    clock.advance(timedelta(days=1).total_seconds())
+    await e._day_rearm()
+    assert e.state.state is EngineState.PAUSED

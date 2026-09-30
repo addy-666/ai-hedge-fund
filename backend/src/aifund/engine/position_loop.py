@@ -1,4 +1,7 @@
-"""Runs the position manager over every open engine position (docs/03 §13; every 5 s in the engine)."""
+"""Runs the position manager over every open engine position (docs/03 §13; every 5 s in the engine).
+
+A position found without a stop-loss (repaired, or closed because its planned stop was already crossed) is
+recorded as a ``position.sl_missing`` event: the L2 rollout gate counts them (docs/06 §10, roadmap 9.6)."""
 
 from __future__ import annotations
 
@@ -10,17 +13,20 @@ import numpy as np
 from sqlalchemy.orm import Session, sessionmaker
 
 from aifund.config.trading_config import TradingConfig
+from aifund.domain.enums import IntentStatus
 from aifund.domain.values import to_decimal
 from aifund.execution.executor import ExecutionResult, Executor
 from aifund.market import indicators as ind
 from aifund.market.sessions import calendars
 from aifund.persistence.db import unit_of_work
 from aifund.persistence.repositories.intents import IntentRepository
+from aifund.persistence.repositories.system import EventRepository
 from aifund.ports.broker import BrokerError, BrokerPort, MarketDataPort
-from aifund.ports.system import ClockPort
+from aifund.ports.system import ClockPort, Severity
 from aifund.risk.position_manager import ActionKind, PositionFacts, PositionManager
 
 ATR_BARS = 60  # enough closed bars for a settled ATR(14)
+SL_MISSING = {ActionKind.REPAIR_SL, ActionKind.STOP_BREACHED}
 
 
 @dataclass
@@ -59,6 +65,19 @@ class PositionLoop:
             }
             busy = {sym for sym in symbols if repo.non_terminal(sym)}
         return planned, busy
+
+    def _sl_missing(self, position_id: int, symbol: str, kind: ActionKind, result: ExecutionResult) -> None:
+        with unit_of_work(self._factory) as s:
+            EventRepository(s, self._clock).append(
+                "position.sl_missing",
+                Severity.WARN if result.status is IntentStatus.FILLED else Severity.CRITICAL,
+                {
+                    "position_id": position_id,
+                    "symbol": symbol,
+                    "action": kind.value,
+                    "status": str(result.status),
+                },
+            )
 
     async def run_once(self) -> LoopReport:
         report = LoopReport()
@@ -106,7 +125,12 @@ class PositionLoop:
                     now,
                 )
                 if action is not None:
-                    report.actions.append((action.kind, await self._executor.execute(action.intent, spec)))
+                    result = await self._executor.execute(action.intent, spec)
+                    report.actions.append((action.kind, result))
+                    if action.kind in SL_MISSING:
+                        await asyncio.to_thread(
+                            self._sl_missing, pos.position_id, pos.symbol, action.kind, result
+                        )
             except BrokerError as exc:
                 report.errors.append(f"{pos.symbol} {pos.ticket}: {exc}")
         return report

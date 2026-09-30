@@ -32,9 +32,11 @@ cd backend && uv run python scripts/data_quality.py --details 5   # quality of t
 cd backend && uv run python scripts/uplift_report.py   # gate G-LLM: analyst vs baseline shadows net of LLM cost; --sign-off NAME only if it passed
 cd backend && uv run python -m aifund.engine        # Windows: the engine (engine.mode DEMO/LIVE; PAPER = DEMO + strategy.dry_run)
 cd backend && BROKER=sim uv run python -m aifund.engine --days 2   # the whole engine replayed over data/history (throw-away DB in data/sim)
-cd backend && uv run python scripts/verify_ledger.py --days 7   # Windows: trades table vs MT5 deal history (exit 1 on any difference)
+cd backend && uv run python scripts/verify_ledger.py --days 7   # Windows: trades table vs MT5 deal history (exit 1 on any difference); --alert = the nightly job
+cd backend && CHAOS_RUNS=100 uv run pytest -q tests/scenario/test_chaos.py   # the chaos suite with 100 kill seeds (nightly CI; default 8)
 cd backend && uv run python scripts/engine_command.py RESUME   # operator command to the running engine (PAUSE, FLATTEN_ALL, CLOSE_POSITION --payload ...)
-cd backend && uv run python scripts/backup_db.py   # online SQLite backup -> <repo>/backups (30 daily + 12 monthly); --remote for rclone
+cd backend && uv run python scripts/backup_db.py   # online SQLite backup -> <repo>/backups (30 daily + 12 monthly), then retention; --remote (rclone crypt only), --alert
+cd backend && uv run python scripts/verify_db.py   # restore drill: verify the newest backup (or a given .db/.db.gz): integrity, schema, ledger consistency
 powershell -ExecutionPolicy Bypass -File deploy\windows\install_tasks.ps1   # Windows: register the MT5 / engine / backup tasks (docs/runbooks/install.md)
 cd backend && uv run python scripts/replay.py --from 2026-06-15 --to 2026-09-27   # full stack on exported history (SimBroker); --snapshot-minutes 1 for engine cadence
 cd backend && uv run python scripts/research.py baseline   # edge study: grid, walk-forward, gate E1 (docs/09); --spend-holdout once

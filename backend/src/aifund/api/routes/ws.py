@@ -7,7 +7,9 @@ from __future__ import annotations
 
 import asyncio
 from typing import Any
+from urllib.parse import urlsplit
 
+import structlog
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
 
 from aifund.api.auth import COOKIE, token_hash
@@ -18,6 +20,21 @@ from aifund.persistence.repositories.system import EventRepository
 router = APIRouter(prefix="/api", tags=["events"])
 POLL_S = 0.5
 BATCH = 500
+log = structlog.get_logger(__name__)
+
+
+def _same_origin(websocket: WebSocket) -> bool:
+    """Cross-site WebSocket hijacking guard (roadmap 9.4; SameSite=Strict already keeps the cookie off
+    cross-site handshakes in current browsers): a browser's Origin must be this host or an allowed origin."""
+    origin = websocket.headers.get("origin")
+    if origin is None:
+        return True  # not a browser (scripts); the session cookie still decides
+    hosts = {websocket.headers.get("host", ""), websocket.headers.get("x-forwarded-host", "")} - {""}
+    allowed = {o.strip() for o in websocket.app.state.settings.API_ALLOWED_ORIGINS.split(",") if o.strip()}
+    if urlsplit(origin).netloc in hosts or origin in allowed:
+        return True
+    log.warning("ws.origin_refused", origin=origin, hosts=sorted(hosts), hint="add it to API_ALLOWED_ORIGINS")
+    return False
 
 
 def _authenticated(websocket: WebSocket) -> bool:
@@ -53,7 +70,7 @@ def _latest(websocket: WebSocket) -> int:
 
 @router.websocket("/ws")
 async def events(websocket: WebSocket, since: int = 0) -> None:
-    if not await asyncio.to_thread(_authenticated, websocket):
+    if not _same_origin(websocket) or not await asyncio.to_thread(_authenticated, websocket):
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
         return
     await websocket.accept()

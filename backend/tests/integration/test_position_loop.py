@@ -6,6 +6,7 @@ from datetime import timedelta
 from decimal import Decimal as D
 from pathlib import Path
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from aifund.adapters.clock import FakeClock
@@ -15,6 +16,7 @@ from aifund.config.loader import load_trading_config
 from aifund.domain.enums import IntentStatus, Side, Timeframe
 from aifund.engine.position_loop import PositionLoop
 from aifund.execution.executor import Executor
+from aifund.persistence.tables import EventRow
 from aifund.risk.position_manager import ActionKind, PositionManager
 from tests.integration.test_executor import m1_bars, open_intent
 from tests.unit.risk.test_stops import XAU
@@ -53,6 +55,13 @@ async def test_dropped_stop_loss_is_restored(factory: sessionmaker[Session], clo
     (pos,) = await broker.positions()
     assert pos.sl == D("4138.35")  # fill 4150.28 - planned 11.93
     assert (await loop.run_once()).actions == []  # healthy now: nothing more to do
+    with factory() as s:  # counted by the L2 rollout gate (roadmap 9.6)
+        (event,) = s.scalars(select(EventRow).where(EventRow.type == "position.sl_missing")).all()
+    assert (event.severity, event.payload["action"], event.payload["status"]) == (
+        "warn",
+        "REPAIR_SL",
+        "FILLED",
+    )
 
 
 async def test_time_stop_closes_a_stale_position(factory: sessionmaker[Session], clock: FakeClock) -> None:

@@ -1,0 +1,33 @@
+name: Chaos (nightly)
+
+# Roadmap 9.2: the engine killed at 100 seeded random points on the SimBroker, plus broker timeout storms,
+# a locked database, an LLM outage and a Guardian halt under kills. Zero duplicates, zero lost trades, zero
+# orders on stale data. The regular CI runs 8 of the kill seeds on every push.
+on:
+  schedule:
+    - cron: "0 2 * * *"
+  workflow_dispatch:
+    inputs:
+      runs:
+        description: "kill runs (seeds)"
+        default: "100"
+
+defaults:
+  run:
+    working-directory: backend
+
+jobs:
+  chaos:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Install
+        run: uv sync --python 3.12
+      - name: Chaos suite
+        env:
+          CHAOS_RUNS: ${{ github.event.inputs.runs || '100' }}
+        run: uv run pytest -q tests/scenario/test_chaos.py

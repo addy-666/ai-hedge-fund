@@ -186,11 +186,11 @@ Runs on the Mac against exported history (no broker, no network), except R.8 and
 | # | Task | Size | DoD |
 |---|---|---|---|
 | 9.1 | **Guardian EA hardening** (built in 5.7a): re-run the forced-drawdown test on the final build; heartbeat-loss behaviour under chaos (9.2) | S | Test re-run recorded |
-| 9.2 | **Chaos suite** on SimBroker: kill engine at random points (100 seeded runs), DB locked, LLM outage, gateway timeout storms | M | Zero duplicates, zero lost trades, zero orders on stale data across all runs |
+| 9.2 | **Chaos suite** on SimBroker: kill engine at random points (100 seeded runs), DB locked, LLM outage, gateway timeout storms (`tests/scenario/test_chaos.py`; nightly CI `chaos.yml`) | M | Zero duplicates, zero lost trades, zero orders on stale data across all runs |
 | 9.3 | **Ledger verification job**: schedule 5.7c's `verify_ledger.py` nightly + alert | S | Runs nightly; diff alert tested |
 | 9.4 | **Security review** (checklist `06` §6), `pip-audit`/`npm audit`, pen-test the API auth flows | S | Checklist all ticked |
 | 9.5 | **Backup/restore drill** | S (ops) | Restore on Mac verified |
-| 9.6 | **Soak**: L2 DEMO gate (`06` §10) | ops | All L2 gates met, signed off in `audit_log` |
+| 9.6 | **Soak**: L2 DEMO gate (`06` §10); gate tracker + sign-off on the System page (`engine/rollout.py`, `/api/rollout`) | ops | All L2 gates met, signed off in `audit_log` |
 | 9.7 | **Go-live L3** micro risk — only strategies that passed E1 **and** E2 (`09` §7) | ops | L3 gates tracked on dashboard |
 
 ## Phase 10 — Continuous improvement (backlog, not scheduled)
