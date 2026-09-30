@@ -18,6 +18,7 @@ from aifund.adapters import history_store as hs
 from aifund.adapters.clock import FakeClock
 from aifund.adapters.notify.telegram import FanOut, LogNotifier
 from aifund.agents.analyst import Analyst
+from aifund.agents.committee import Committee
 from aifund.config.loader import ConfigError, load_trading_config
 from aifund.config.settings import PROJECT_ROOT, BrokerKind
 from aifund.domain.enums import Timeframe
@@ -118,6 +119,14 @@ async def test_notifier_and_analyst_wiring(
             }
         )
         assert main.analyst_for(keyed, off, factory, clock, LogNotifier(), client) is None
+        # the committee (roadmap 8.4): only in shadow mode, and only with a key
+        assert main.committee_for(keyed, cfg, factory, clock, LogNotifier(), client) is None
+        shadow = cfg.model_copy(update={"committee": cfg.committee.model_copy(update={"mode": "shadow"})})
+        with pytest.raises(main.StartupError, match="DEEPSEEK_API_KEY"):
+            main.committee_for(settings(tmp_path), shadow, factory, clock, LogNotifier(), client)
+        built = main.committee_for(keyed, shadow, factory, clock, LogNotifier(), client)
+        assert isinstance(built, Committee)
+        assert [sp.family for sp in built._specialists] == ["trend", "breakout", "reversal"]
 
 
 # ---------------------------------------------------------------- SIM and MT5 runs
@@ -218,14 +227,29 @@ def card(tmp_path: Path, **over: Any) -> Path:
         "invalidation": {"type": "atr", "k": 1.0},
         "mechanism": "Oversold dips mean-revert.",
     }
-    data = {"id": "H-1", "status": "APPROVED", "hypothesis": hypothesis, **over}
+    data = {"id": "H-1", "status": "APPROVED", "hypothesis": hypothesis, **CARD_TEXT, **over}
     (tmp_path / "H-1.yaml").write_text(yaml.safe_dump(data))
     return tmp_path
 
 
+CARD_TEXT = {
+    "setup_tag": "rsi_dip",
+    "summary": "Oversold dips mean-revert.",
+    "long_rules": ["m15.rsi14 < 30"],
+    "short_rules": "none",
+    "stop": "1 x ATR",
+    "target": "none",
+}
+
+
 @pytest.mark.parametrize(
     ("over", "error"),
-    [({"status": "DRAFT"}, "set status: APPROVED"), ({"hypothesis": None}, "invalid hypothesis")],
+    [
+        ({"status": "DRAFT"}, "set status: APPROVED"),
+        ({"hypothesis": {"id": "H-1"}}, "invalid hypothesis"),
+        ({"hypothesis": None}, "no DSL hypothesis"),
+        ({"stop": ""}, "playbook H-1.yaml: stop"),
+    ],
 )
 def test_approved_dsl_playbooks_only(tmp_path: Path, over: dict[str, Any], error: str) -> None:
     with pytest.raises(ConfigError, match=error):
@@ -240,7 +264,7 @@ def test_the_detector_factory(tmp_path: Path) -> None:
     built = detector_factory(both, card(tmp_path))(cfg.symbols[0], ROLES)
     assert [d.playbook_id for d in built] == ["mtf_trend_pullback", "H-1"]
     assert isinstance(built[1], DslDetector)
-    (tmp_path / "H-2.yaml").write_text(yaml.safe_dump({"id": "H-2"}))
+    (tmp_path / "H-2.yaml").write_text(yaml.safe_dump({"id": "H-2", "status": "APPROVED", **CARD_TEXT}))
     for missing, error in (("nope", "neither built in"), ("H-2", "no DSL hypothesis")):
         bad = cfg.model_copy(update={"strategy": cfg.strategy.model_copy(update={"detectors": [missing]})})
         with pytest.raises(ConfigError, match=error):

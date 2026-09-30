@@ -196,3 +196,42 @@ def test_non_finite_yaml_numbers_raise_config_error(value: str) -> None:
     text = EXAMPLE.read_text().replace("  bar_close_grace_s: 3\n", f"  bar_close_grace_s: {value}\n")
     with pytest.raises(ConfigError, match="non-finite number"):
         parse_trading_config(text)
+
+
+# ---------------------------------------------------------------- committee (roadmap 8.3-8.4)
+
+
+def test_committee_defaults_and_helpers(base: dict[str, Any]) -> None:
+    cfg = TradingConfig.model_validate(base).committee
+    assert cfg.mode == "off"
+    assert cfg.family_of("sr_fade_range") == "reversal"
+    assert cfg.family_of("unknown") is None
+    assert cfg.weight("trend") == 1
+    weighted = TradingConfig.model_validate(_mutated(base, "committee.weights", {"trend": 2})).committee
+    assert weighted.weight("trend") == 2
+    # YAML 1.1 reads a bare `off` as false
+    assert TradingConfig.model_validate(_mutated(base, "committee.mode", False)).committee.mode == "off"
+
+
+@pytest.mark.parametrize(
+    ("path", "value", "error"),
+    [
+        ("committee.mode", "orders", "committee.mode"),
+        ("committee.families", {"Trend": ["a"]}, "lower-case"),
+        ("committee.families", {"a1": ["x"], "b1": ["x"]}, "two committee families"),
+        ("committee.weights", {"carry": 1}, "unknown families"),
+        ("committee.weights", {"trend": 0}, "must be > 0"),
+        ("committee.critic_penalty", {"HIGH": 15}, "HIGH, MEDIUM and LOW"),
+        ("committee.critic_penalty", {"HIGH": 60, "MEDIUM": 7, "LOW": 0}, "0-50"),
+    ],
+)
+def test_committee_validation(base: dict[str, Any], path: str, value: Any, error: str) -> None:
+    with pytest.raises(ValidationError, match=error):
+        TradingConfig.model_validate(_mutated(base, path, value))
+
+
+def test_the_committee_runs_beside_the_analyst(base: dict[str, Any]) -> None:
+    raw = _mutated(_mutated(base, "committee.mode", "shadow"), "strategy.analyst_enabled", False)
+    raw["strategy"]["baseline_enabled"] = True
+    with pytest.raises(ValidationError, match="runs beside the analyst"):
+        TradingConfig.model_validate(raw)

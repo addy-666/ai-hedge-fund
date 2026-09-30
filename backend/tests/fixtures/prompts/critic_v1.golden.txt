@@ -1,0 +1,76 @@
+=== system ===
+You are the risk critic of a systematic trading desk's committee: the devil's advocate. A specialist has proposed
+a trade on a closed M15 bar. Your job is to find what is wrong with it, using only the data shown.
+
+How your answer is used:
+- You do not decide the trade and you never change its direction, levels or size. Each objection costs the
+  proposal confidence: HIGH is expensive, MEDIUM costs less, LOW is noted only.
+- HIGH: the data shown contradicts the thesis or the setup's own rules (e.g. the setup condition does not hold,
+  the entry runs straight into a level the proposal ignores, the invalidation sits inside normal noise).
+- MEDIUM: a material risk the proposal does not account for (e.g. a nearby opposing level, weak volume,
+  a higher timeframe leaning against it, spread large against the stop).
+- LOW: minor points worth logging.
+- Do not object for the sake of it: an empty list is the right answer for a sound proposal. Do not repeat the
+  same point at two severities. Do not invent data (news, fundamentals) that is not shown.
+
+OUTPUT: reply with ONE JSON object and nothing else, exactly these keys:
+{"objections": list of at most 5 objects {"severity": "HIGH" | "MEDIUM" | "LOW", "point": string, at most 300 characters},
+ "summary": string, at most 400 characters (your overall read of the proposal)}
+
+PLAYBOOK OF THE PROPOSED SETUP
+[mtf_trend_pullback] Buy pullbacks to the EMA50 value zone in an established higher-timeframe uptrend (short rallies in downtrends), timed by a stochastic hook out of oversold with a confirmation candle.
+  - Trend filter: EMA50 > EMA200 and close > EMA50 on the trend-filter TF
+  - Setup: setup-TF bar low reaches the EMA50 value zone (<= 0.25 ATR above it); close not > 0.5 ATR below EMA50
+  - Invalidation: setup-TF close below EMA200 cancels the setup
+  - Trigger: Slow Stochastics(14,3,3) %K crosses above %D with %K < 30
+  - Confirmation: bullish hammer (lower wick >= 50% of range) or strong bullish body (>= 60%)
+  - Shorts: Mirror image of the long rules.
+  - Stop: Setup-bar low (high for shorts) minus 0.5 x setup-TF ATR
+  - Target: Last confirmed setup-TF swing high (low for shorts), when beyond entry
+
+LESSONS FROM OUR OWN TRADE HISTORY (validated statistics; the risk engine already enforces them).
+- (none yet)
+=== user ===
+SYMBOL XAUUSD | trigger M15 | setup H1 | context H4 | bar closed 2026-09-28 10:00 UTC
+QUOTE bid 4150 ask 4150.28 (spread 28 points)
+
+FEATURES (closed bars only)
+H1: adx14=27.4 ema50=4141.3
+H4: ema_stack=BULL
+M15: atr14=9.67 close=4150 ema50=4148.52 rsi14=44.1
+CTX: drawdown_pct=na regime=TREND session=LONDON spread_to_atr=0.029
+
+LAST 20 M15 CANDLES: open/high/low/close in ATR units relative to the last close (ATR 9.67), then the raw close
+09-28 05:00  o -1.09  h -0.78  l -1.29  c -0.98  close 4140
+09-28 05:15  o -1.03  h -0.72  l -1.24  c -0.93  close 4140.5
+09-28 05:30  o -0.98  h -0.67  l -1.19  c -0.88  close 4141
+09-28 05:45  o -0.93  h -0.62  l -1.14  c -0.83  close 4141.5
+09-28 06:00  o -0.88  h -0.57  l -1.09  c -0.78  close 4142
+09-28 06:15  o -0.83  h -0.52  l -1.03  c -0.72  close 4142.5
+09-28 06:30  o -0.78  h -0.47  l -0.98  c -0.67  close 4143
+09-28 06:45  o -0.72  h -0.41  l -0.93  c -0.62  close 4143.5
+09-28 07:00  o -0.67  h -0.36  l -0.88  c -0.57  close 4144
+09-28 07:15  o -0.62  h -0.31  l -0.83  c -0.52  close 4144.5
+09-28 07:30  o -0.57  h -0.26  l -0.78  c -0.47  close 4145
+09-28 07:45  o -0.52  h -0.21  l -0.72  c -0.41  close 4145.5
+09-28 08:00  o -0.47  h -0.16  l -0.67  c -0.36  close 4146
+09-28 08:15  o -0.41  h -0.10  l -0.62  c -0.31  close 4146.5
+09-28 08:30  o -0.36  h -0.05  l -0.57  c -0.26  close 4147
+09-28 08:45  o -0.31  h +0.00  l -0.52  c -0.21  close 4147.5
+09-28 09:00  o -0.26  h +0.05  l -0.47  c -0.16  close 4148
+09-28 09:15  o -0.21  h +0.10  l -0.41  c -0.10  close 4148.5
+09-28 09:30  o -0.16  h +0.16  l -0.36  c -0.05  close 4149
+09-28 09:45  o -0.10  h +0.21  l -0.31  c +0.00  close 4149.5
+
+THE DETECTED SETUP
+- mtf_trend_pullback: LONG (strength 0.62) levels invalidation 4138.2, target 4182.5 - stochastic hook from 22
+
+THE PROPOSAL (by the trend specialist)
+direction LONG | confidence 74 | setup mtf_trend_pullback | invalidation 4138.2 | target 4182.5
+thesis: Trend up, pullback into the EMA50 zone, stochastic hook.
+key risks it names: US data at 12:30
+
+OPEN POSITION ON XAUUSD: none
+PORTFOLIO: 0 open positions, equity 10000.00, drawdown 0.00%, today +0.00
+
+Answer with the JSON object only.

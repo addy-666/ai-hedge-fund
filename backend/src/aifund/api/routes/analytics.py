@@ -14,9 +14,27 @@ from fastapi import APIRouter, Query, Request
 
 from aifund.api import context as ctx
 from aifund.api.auth import Authenticated
-from aifund.api.schemas import BreakdownRow, Costs, Summary
+from aifund.api.schemas import (
+    ArmStat,
+    BreakdownRow,
+    CalibrationBin,
+    CalibrationModelOut,
+    CalibrationOut,
+    CalibrationSourceOut,
+    CommitteeComparison,
+    Costs,
+    Summary,
+    UpliftStat,
+)
+from aifund.domain.enums import CalibrationStatus
+from aifund.persistence.repositories.calibration import SOURCES, CalibrationRepository
 from aifund.persistence.repositories.dashboard import DashboardQueries
-from aifund.persistence.tables import DecisionRow, FeatureSnapshotRow, TradeRow
+from aifund.persistence.repositories.equity import EquitySnapshotRepository
+from aifund.persistence.repositories.virtual import VirtualTradeRepository
+from aifund.persistence.tables import CalibrationModelRow, DecisionRow, FeatureSnapshotRow, TradeRow
+from aifund.research.committee import compare
+from aifund.rules.calibration import IsotonicMap, Sample, brier, reliability
+from aifund.stats import Summary as Stats
 
 router = APIRouter(prefix="/api/analytics", tags=["analytics"])
 From = Annotated[datetime | None, Query(alias="from")]
@@ -168,4 +186,95 @@ def costs(request: Request, _s: Authenticated, start: From = None, end: To = Non
         per_trade=((commission + swap + fee) / len(trades)).quantize(Decimal("0.01")) if trades else None,
         avg_entry_slippage_points=round(sum(entry) / len(entry), 2) if entry else None,
         avg_exit_slippage_points=round(sum(exit_) / len(exit_), 2) if exit_ else None,
+    )
+
+
+def _uplift(stats: Stats | None) -> UpliftStat | None:
+    if stats is None:
+        return None
+    return UpliftStat(n=stats.n, mean_r=round(stats.mean, 4), ci_low=stats.ci_low, ci_high=stats.ci_high)
+
+
+@router.get("/committee")
+def committee(request: Request, _s: Authenticated, start: From = None, end: To = None) -> CommitteeComparison:
+    """The committee's shadow record beside the analyst and the baseline (roadmap 8.4)."""
+    start, end = _window(request, start, end)
+    cfg = ctx.state(request).config.current().config
+    account = ctx.account(request)
+    with ctx.read(request) as s:
+        bars = VirtualTradeRepository(s, ctx.clock(request)).committee_bars(account, start, end)
+        latest = EquitySnapshotRepository(s).latest(account)
+    risk_usd = latest.equity * cfg.risk.risk_per_trade_pct / 100 if latest is not None else None
+    report = compare(bars, risk_usd=risk_usd if risk_usd and risk_usd > 0 else None)
+    days = (report.last - report.first).total_seconds() / 86400 if report.first and report.last else 0.0
+    return CommitteeComparison(
+        mode=cfg.committee.mode,
+        bars=report.bars,
+        first=report.first,
+        last=report.last,
+        days=round(days, 2),
+        arms=[
+            ArmStat(
+                arm=a.name,
+                trades=a.trades,
+                total_r=a.total_r,
+                mean_r_per_trade=a.mean_r_per_trade,
+                win_rate=a.win_rate,
+                cost_usd=a.cost_usd,
+            )
+            for a in report.arms
+        ],
+        agreement=report.agreement,
+        risk_usd=report.risk_usd.quantize(Decimal("0.01")) if report.risk_usd is not None else None,
+        vs_analyst=_uplift(report.vs_analyst),
+        vs_baseline=_uplift(report.vs_baseline),
+    )
+
+
+def _model(row: CalibrationModelRow) -> CalibrationModelOut:
+    improvement = (row.details or {}).get("improvement")
+    return CalibrationModelOut(
+        version=row.version, source=row.source, method=row.method, status=row.status.value,
+        n_samples=row.n_samples, brier_before=row.brier_before, brier_after=row.brier_after,
+        improvement=round(improvement, 4) if isinstance(improvement, float) else None,
+        points=[[float(x), float(y)] for x, y in (row.params or {}).get("points", [])],
+        created_at=row.created_at, decided_by=row.decided_by, decided_at=row.decided_at,
+    )  # fmt: skip
+
+
+@router.get("/calibration")
+def calibration(request: Request, _s: Authenticated) -> CalibrationOut:
+    """Reliability per source over every finished sample, the active and waiting models, the Brier history."""
+    cfg = ctx.state(request).config.current().config
+    account = ctx.account(request)
+    sources = []
+    with ctx.read(request) as s:
+        repo = CalibrationRepository(s, ctx.clock(request))
+        for source in SOURCES:
+            data = [Sample(c, r > 0, t) for c, r, t in repo.outcomes(account, source)]
+            active = repo.active(source)
+            waiting = repo.with_status(source, CalibrationStatus.CANDIDATE)
+            model = IsotonicMap.from_params(active.params) if active is not None and active.params else None
+            bins = [
+                CalibrationBin(
+                    **vars(b),
+                    calibrated=model(round(b.mean_confidence))
+                    if model and b.mean_confidence is not None
+                    else None,
+                )
+                for b in reliability(data)
+            ]
+            sources.append(
+                CalibrationSourceOut(
+                    source=source, n=len(data), reliability=bins,
+                    brier_raw=round(brier([x.confidence / 100 for x in data], [x.win for x in data]), 6)
+                    if data else None,
+                    active=_model(active) if active is not None else None,
+                    candidate=_model(waiting[-1]) if waiting else None,
+                )
+            )  # fmt: skip
+        models = [_model(r) for r in repo.history()]
+    cal = cfg.learning.calibration
+    return CalibrationOut(
+        activation=cal.activation, min_samples=cal.min_samples, sources=sources, models=models
     )

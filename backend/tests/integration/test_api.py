@@ -21,11 +21,13 @@ from aifund.adapters.clock import FakeClock
 from aifund.api.app import create_app
 from aifund.config.settings import PROJECT_ROOT, Settings
 from aifund.domain.enums import (
+    CalibrationStatus,
     CommandType,
     EngineState,
     Mode,
 )
 from aifund.persistence.db import unit_of_work
+from aifund.persistence.repositories.calibration import CalibrationRepository
 from aifund.persistence.repositories.llm import LLMCallRepository
 from aifund.persistence.repositories.system import EngineStateRepository, EventRepository, HeartbeatRepository
 from aifund.persistence.tables import AuditLogRow, CommandRow
@@ -206,8 +208,10 @@ def test_read_contracts_on_a_seeded_database(
     assert system["versions"]["prompts"] == [
         "analyst_v1.j2",
         "auditor_v1.j2",
+        "critic_v1.j2",
         "researcher_v1.j2",
         "reviewer_v1.j2",
+        "specialist_v1.j2",
     ]
 
     acct = client.get("/api/account").json()
@@ -346,6 +350,34 @@ def test_analytics_on_the_seeded_trades(
     assert client.get("/api/analytics/breakdown", params={"dim": "session"}).json()[0]["key"] == "unknown"
     assert client.get("/api/analytics/breakdown", params={"dim": "nope"}).status_code == 422
     assert client.get("/api/analytics/costs").json()["commission"] == "-0.70"
+
+
+def test_the_committee_comparison(
+    client: TestClient, factory: sessionmaker[Session], clock: FakeClock, config_path: Path
+) -> None:
+    login(client)
+    empty = client.get("/api/analytics/committee").json()
+    assert (empty["bars"], empty["mode"], empty["risk_usd"], empty["vs_analyst"]) == (0, "off", None, None)
+    acc = account(config_path)
+    seed(factory, clock, acc)  # equity 9950 -> one trade risks 0.5% = 49.75
+    load("demo_api").seed_committee(factory, clock, acc, clock.now())
+    out = client.get("/api/analytics/committee").json()
+    assert (out["bars"], out["days"], out["risk_usd"]) == (6, 0.21, "49.75")
+    arms = {a["arm"]: a for a in out["arms"]}
+    assert (arms["baseline"]["trades"], arms["baseline"]["total_r"]) == (6, "3.0")
+    assert (arms["analyst"]["trades"], arms["analyst"]["total_r"], arms["analyst"]["cost_usd"]) == (
+        5,
+        "0.5",
+        "0.0060",
+    )
+    assert (arms["committee"]["trades"], arms["committee"]["total_r"], arms["committee"]["win_rate"]) == (
+        4,
+        "3.5",
+        0.75,
+    )
+    assert out["agreement"] == 0.8  # 4 of the 5 bars where either traded (the same side here)
+    assert out["vs_analyst"]["n"] == 6
+    assert out["vs_analyst"]["mean_r"] == round((3.5 - 0.5) / 6 - (0.003 - 0.001) / 49.75, 4)
 
 
 # ---------------------------------------------------------------- 6.3 commands and config
@@ -614,6 +646,49 @@ def test_rule_actions_are_engine_commands_with_reauth_for_blocks_and_force(
         ("RETIRE_RULE", {"rule_id": "R-0001"}), ("REJECT_RULE", {"rule_id": "R-0003"}),
         ("APPROVE_RULE", {"rule_id": "R-0002"}), ("RUN_AUDIT", None),
     ]  # fmt: skip
+
+
+def test_calibration_view_and_actions(
+    client: TestClient, factory: sessionmaker[Session], clock: FakeClock, config_path: Path
+) -> None:
+    headers = login(client)
+    empty = client.get("/api/analytics/calibration").json()
+    assert (empty["activation"], empty["min_samples"], empty["models"]) == ("approve", 150, [])
+    assert [(src["source"], src["n"], src["brier_raw"]) for src in empty["sources"]] == [
+        ("analyst", 0, None), ("committee", 0, None),
+    ]  # fmt: skip
+    load("demo_api").seed_calibration(factory, clock, account(config_path), clock.now())
+    out = client.get("/api/analytics/calibration").json()
+    analyst = out["sources"][0]
+    assert analyst["n"] == 200
+    assert analyst["active"] is None
+    assert (analyst["candidate"]["version"], analyst["candidate"]["improvement"]) == (2, 0.1447)
+    assert sum(b["n"] for b in analyst["reliability"]) == 200
+    assert all(b["calibrated"] is None for b in analyst["reliability"])  # nothing active yet
+    assert [(m["version"], m["status"]) for m in out["models"]] == [(2, "CANDIDATE"), (1, "REJECTED")]
+    assert out["models"][1]["points"] == [[45.0, 0.25], [95.0, 0.7]]
+
+    clock.advance(minutes=6)  # the login no longer counts as a fresh password
+    assert client.post("/api/calibration/2/approve", headers=headers).status_code == 403
+    assert client.post("/api/calibration/1/approve", headers=headers).status_code == 409  # not a candidate
+    assert client.post("/api/calibration/9/reject", headers=headers).status_code == 404
+    assert client.post("/api/calibration/2/reject", headers=headers).status_code == 202
+    assert client.post("/api/calibration/fit", headers=headers).status_code == 202
+    assert client.post("/api/auth/reauth", json={"password": PASSWORD}, headers=headers).status_code == 200
+    assert client.post("/api/calibration/2/approve", headers=headers).status_code == 202
+    with factory() as s:
+        queued = [(c.type, c.payload) for c in s.scalars(select(CommandRow).order_by(CommandRow.created_at))]
+    assert queued == [
+        ("REJECT_CALIBRATION", {"version": 2}), ("FIT_CALIBRATION", None),
+        ("APPROVE_CALIBRATION", {"version": 2}),
+    ]  # fmt: skip
+    with unit_of_work(factory) as s:  # what the engine does with the approval
+        CalibrationRepository(s, clock).decide(2, CalibrationStatus.ACTIVE, "operator")
+    active = client.get("/api/analytics/calibration").json()["sources"][0]
+    assert active["active"]["version"] == 2
+    top = next(b for b in active["reliability"] if b["lo"] == 80)
+    assert top["calibrated"] is not None
+    assert top["calibrated"] < top["mean_confidence"]
 
 
 def test_an_operator_rule_is_validated_as_dsl_and_stored_as_a_candidate(client: TestClient) -> None:

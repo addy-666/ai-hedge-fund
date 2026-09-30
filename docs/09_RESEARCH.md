@@ -43,8 +43,11 @@ Orders (DEMO → LIVE ladder, 06 §10)
    reported as the result of a walk-forward. In-sample numbers are diagnostics.
 5. **Every trial is counted.** The ledger records every hypothesis evaluated, including failures, so the
    false-discovery control reflects the true search effort (grid points, LLM proposals, manual ideas).
-6. **The holdout is spent once.** The most recent `holdout_fraction` of history is locked. A hypothesis may be
-   evaluated on it at most once (the ledger enforces it); results on it are never shown to the LLM.
+6. **The holdout is spent once.** The most recent `holdout_fraction` of history is locked — a fixed window
+   recorded in `data/research/holdout.json` on the first run. A hypothesis may be evaluated on it at most once
+   (the ledger enforces it); results on it are never shown to the LLM. The window rolls forward (8.7) only onto
+   `research.holdout_roll_days` of NEW data: the next holdout is exactly the bars after the old window, and the
+   old holdout joins the walk-forward history; each window allows one look per hypothesis.
 7. **LLM-proposed hypotheses are data-snooped at the idea level** (the model has read about what worked in
    the past). In-sample/holdout success is therefore necessary, not sufficient: forward confirmation on data
    after the model's training cutoff (E2) is mandatory before orders.
@@ -103,7 +106,15 @@ symbols, profile, window, split (`in_sample` | `walk_forward` | `holdout`), n, m
 
 - **FDR:** Benjamini–Hochberg at `research.fdr_q` over the p-values of *every* distinct hypothesis in the
   ledger (walk-forward split). A hypothesis "survives" only if it survives against the whole ledger.
-- **Holdout:** at most one `holdout` line per hypothesis; a second request is refused.
+- **Holdout:** at most one `holdout` line per hypothesis per holdout window (an overlapping window counts as
+  the same); a second request is refused.
+
+Scheduled research (8.7, `scripts/research.py scheduled`, Windows task `aifund-research` after
+`export_history.py --update`): due when `research.schedule_days` (7) have passed since the last run AND the
+export changed (its fingerprint); rolls the holdout when due, runs the `baseline` study of every built-in
+detector in `strategy.detectors` and `research.scheduled_llm_rounds` researcher rounds (with a DeepSeek key),
+all with the holdout spend enabled; BH always runs over the whole ledger. A replaced or cut export that no
+longer covers the recorded holdout stops research (`HoldoutError`) instead of guessing.
 
 ## 5. Entry-rule DSL detector — `strategies/dsl_detector.py`
 

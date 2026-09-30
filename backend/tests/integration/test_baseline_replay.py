@@ -23,8 +23,9 @@ from aifund.adapters.notify.null import NullNotifier
 from aifund.adapters.sim.replay_feed import ReplayFeed
 from aifund.adapters.sim.sim_broker import SimBroker, SimConfig
 from aifund.agents.analyst import Analyst
+from aifund.agents.committee import Committee
 from aifund.config.loader import load_trading_config
-from aifund.config.trading_config import ProfileConfig, StrategyConfig, SymbolConfig
+from aifund.config.trading_config import CommitteeConfig, ProfileConfig, StrategyConfig, SymbolConfig
 from aifund.domain.decision import FeatureSnapshot, SetupCandidate
 from aifund.domain.enums import DecisionOutcome, Direction, ReasonCode, Timeframe
 from aifund.engine.equity import EquitySnapshotter, EquityTracker
@@ -110,6 +111,8 @@ async def replay(
     llm: FakeLLM | None = None,
     days: int = REPLAY_DAYS,
     news: Callable[[], NewsCalendar | None] | None = None,
+    committee: Committee | None = None,
+    committee_mode: str | None = None,
 ) -> ReplayReport:
     cfg = load_trading_config(CONFIG).config
     risk = cfg.risk.model_copy(
@@ -120,6 +123,9 @@ async def replay(
             "symbols": [s for s in cfg.symbols if s.canonical == "XAUUSD"],
             "strategy": strategy,
             "risk": risk,
+            "committee": CommitteeConfig(
+                mode=committee_mode or ("shadow" if committee is not None else "off")
+            ),
         }
     )
     profile = ProfileConfig(trigger_tf=Timeframe.M15, setup_tf=Timeframe.H1, context_tfs=[Timeframe.H4])
@@ -140,7 +146,7 @@ async def replay(
         cfg, broker=broker, market=feed, factory=factory, clock=clock, executor=executor, risk=risk,
         detectors=detectors, equity=tracker, account_id="acc",
         profile_override={"intraday_m15": profile}, analyst=analyst,
-        news=news,
+        news=news, committee=committee,
     )  # fmt: skip
     bar_clock = BarClock(feed, clock, [("XAUUSD", Timeframe.M15)], DecisionCursorStore(factory))
     manager = PositionManager(cfg.position_management, cfg.risk.stops, magic=cfg.engine.magic, account=1)

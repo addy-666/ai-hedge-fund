@@ -173,13 +173,13 @@ Runs on the Mac against exported history (no broker, no network), except R.8 and
 
 | # | Task | Size | DoD |
 |---|---|---|---|
-| 8.1 | **Playbook compiler**: `scripts/compile_playbooks.py` reads vault strategy notes with `automation_potential: high`, emits draft cards for human curation → `config/playbooks/*.yaml` (id, setup_tag, summary, entry conditions, invalidation, typical R, source wikilink) | M | Cards validated by schema; human-reviewed |
+| 8.1 | **Playbook compiler**: `scripts/compile_playbooks.py` reads vault notes with `type: strategy` and `automation_potential: high`, plus any note named with `--note NAME[=CARD_ID]` (the notes the detectors cite carry no `automation_potential`), and emits DRAFT cards for human curation into `data/playbooks/drafts/`; the operator approves them into `config/playbooks/*.yaml` (id, setup_tag, summary, entry conditions, invalidation, typical R, source wikilink; schema `config/playbooks.py`) | M | Cards validated by schema; human-reviewed |
 | 8.2 | **Additional detectors**: `nr7_breakout`, `failure_test_2b`, `sr_fade_range` | M each | Detector tests |
 | 8.3 | **Specialist analysts + risk critic** (`agents/specialists.py`, `critic.py`) | M | FakeLLM tests; cost per decision logged |
-| 8.4 | **Committee aggregation** in portfolio manager; runs in **shadow** alongside single-analyst for ≥ 2 weeks; compare via decisions table | M | Comparison report in Analytics |
-| 8.5 | **Calibrator** (isotonic, activation criteria) + reliability UI | M | Synthetic miscalibrated data corrected; Brier improves |
+| 8.4 | **Committee aggregation** in portfolio manager; runs in **shadow** alongside single-analyst for ≥ 2 weeks; compare via decisions table (`SHADOW_COMMITTEE` virtual trades; `/api/analytics/committee`) | M | Comparison report in Analytics |
+| 8.5 | **Calibrator** (isotonic, activation criteria; per source analyst/committee; `learning.calibration.activation: approve\|auto`) + reliability UI | M | Synthetic miscalibrated data corrected; Brier improves |
 | 8.6 | *(moved to 5.7b)* | — | — |
-| 8.7 | **Researcher at scale**: scheduled research runs (weekly) over new history, ledger-wide FDR, holdout rolled forward only with new data (the old holdout joins the walk-forward history) | S | Trigger tests; holdout never reused for the same hypothesis |
+| 8.7 | **Researcher at scale**: scheduled research runs (weekly) over new history, ledger-wide FDR, holdout rolled forward only with new data (the old holdout joins the walk-forward history) (`research/holdout.py`, `research.py scheduled`, `export_history.py --update`, task `aifund-research`) | S | Trigger tests; holdout never reused for the same hypothesis |
 
 ## Phase 9 — Hardening & go-live (Milestone M5)
 

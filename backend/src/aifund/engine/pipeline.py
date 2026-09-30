@@ -26,6 +26,7 @@ import structlog
 from sqlalchemy.orm import Session, sessionmaker
 
 from aifund.agents.analyst import Analyst, AnalystInput, Verdict
+from aifund.agents.committee import Committee, Deliberation
 from aifund.agents.portfolio_manager import PortfolioManager, with_rules
 from aifund.config.evidence import (
     Deployment,
@@ -51,6 +52,7 @@ from aifund.domain.ids import new_id
 from aifund.domain.market import Bar, Position, SymbolSpec, Tick
 from aifund.domain.trade import gets_virtual_trade
 from aifund.domain.values import to_decimal
+from aifund.engine.calibration import CalibrationCache
 from aifund.engine.equity import EquityTracker
 from aifund.engine.rulebook import RulebookCache
 from aifund.execution.executor import ExecutionResult, Executor
@@ -111,6 +113,7 @@ class DecisionRecord:
     prompt_version: str | None = None
     virtual: dict[str, Any] | None = None  # a blocked signal's counterfactual trade plan (docs/03 §14.4)
     shadows: list[dict[str, Any]] = field(default_factory=list)  # G-LLM shadow plans (docs/09 §7)
+    committee: dict[str, Any] | None = None  # the committee's deliberation in shadow (roadmap 8.4)
     decision_id: str = field(default_factory=new_id)
 
 
@@ -167,7 +170,11 @@ class DecisionPipeline:
         g_llm: Sequence[GLlmSignoff] = (),
         news: Callable[[], NewsCalendar | None] | None = None,
         rulebook: RulebookCache | None = None,
+        committee: Committee | None = None,
+        calibration: CalibrationCache | None = None,
     ) -> None:
+        if cfg.committee.mode == "shadow" and committee is None:
+            raise ValueError("committee.mode shadow needs the committee (specialists and critic: an LLM)")
         if cfg.strategy.analyst_enabled and analyst is None and not cfg.strategy.baseline_enabled:
             raise ValueError(
                 "strategy.analyst_enabled needs an Analyst (an LLM); or enable the baseline instead"
@@ -191,7 +198,13 @@ class DecisionPipeline:
             analyst_orders=cfg.strategy.analyst_orders and not cfg.strategy.dry_run,
         )
         self._analyst = analyst if cfg.strategy.analyst_enabled else None
-        self._portfolio = portfolio or PortfolioManager()
+        # confidence calibration per source (docs/04 §9): identity until a model is ACTIVE
+        self._calibration = calibration or CalibrationCache(factory, clock)
+        # the committee runs in shadow beside the analyst (config requires the analyst for it): never orders
+        self._committee = committee if cfg.committee.mode == "shadow" and self._analyst is not None else None
+        self._portfolio = portfolio or PortfolioManager(calibrator=self._calibration.calibrator("analyst"))
+        if self._committee is not None:
+            self._committee.use_calibrator(self._calibration.calibrator("committee"))
         self._rulebook = rulebook or RulebookCache(
             factory, clock, max_total_penalty=cfg.learning.max_total_penalty
         )
@@ -356,6 +369,15 @@ class DecisionPipeline:
         if plan is not None:
             record.shadows.append({**plan, "arm": arm})
 
+    async def _deliberate(self, inp: AnalystInput, rules: Callable[..., RuleVerdict]) -> Deliberation | None:
+        """The committee in shadow: a failure there is logged and never touches the real decision."""
+        assert self._committee is not None  # only called with a committee
+        try:
+            return await self._committee.deliberate(inp, rules)
+        except Exception as exc:
+            log.warning("committee.failed", decision_id=inp.decision_id, error=f"{type(exc).__name__}: {exc}")
+            return None
+
     def _stop_atr(self, snapshot: FeatureSnapshot, roles: TfRoles) -> Decimal | None:
         """ATR on the configured stops timeframe, as the Risk Manager receives it."""
         stops_tf = roles.trigger if self._cfg.risk.stops.atr_tf == "trigger" else roles.setup
@@ -476,6 +498,7 @@ class DecisionPipeline:
         #    (docs/04 §7) apply to whichever is taken
         record.stage = "DECISION"
         rules = await asyncio.to_thread(self._rulebook.current)
+        await asyncio.to_thread(self._calibration.refresh)
         record.rulebook_version = rules.version
 
         def rule_context(direction: Direction, setup_tag: str | None, confidence: int | None) -> RuleContext:
@@ -514,14 +537,23 @@ class DecisionPipeline:
                 ]
             )  # fmt: skip
             record.lessons_shown = [br.rule.rule_id for br in lessons]
-            analysis = await self._analyst.analyse(
-                AnalystInput(
-                    decision_id=record.decision_id, symbol=event.symbol, snapshot=snapshot, roles=roles,
-                    candidates=candidates, trigger_bars=bars[roles.trigger], trigger_atr=to_decimal(atr),
-                    tick=tick, spread_points=spread_points, position=position, portfolio=portfolio,
-                    lessons=[lesson(br) for br in lessons],
-                )
+            bar_input = AnalystInput(
+                decision_id=record.decision_id, symbol=event.symbol, snapshot=snapshot, roles=roles,
+                candidates=candidates, trigger_bars=bars[roles.trigger], trigger_atr=to_decimal(atr),
+                tick=tick, spread_points=spread_points, position=position, portfolio=portfolio,
+                lessons=[lesson(br) for br in lessons],
             )  # fmt: skip
+            deliberation: Deliberation | None = None
+            if self._committee is None:
+                analysis = await self._analyst.analyse(bar_input)
+            else:  # the committee deliberates concurrently, in shadow
+
+                def committee_rules(direction: Direction, setup_tag: str, confidence: int) -> RuleVerdict:
+                    return rules.evaluate(rule_context(direction, setup_tag, confidence))
+
+                analysis, deliberation = await asyncio.gather(
+                    self._analyst.analyse(bar_input), self._deliberate(bar_input, committee_rules)
+                )
             record.model, record.cost_usd, record.prompt_version = (
                 analysis.model, analysis.cost_usd, analysis.prompt_version,
             )  # fmt: skip
@@ -553,6 +585,18 @@ class DecisionPipeline:
             ):
                 analyst_arm = _Blocked(event, sym_cfg, roles, spec, tick, snapshot, verdict.decision)
                 self._shadow(record, VirtualArm.SHADOW_ANALYST, analyst_arm)
+            if deliberation is not None:  # the committee's shadow (roadmap 8.4): what it would have traded
+                record.committee = deliberation.record()
+                chosen = deliberation.decision
+                tradable = (
+                    chosen is not None
+                    and chosen.blocked_by is None
+                    and chosen.decision.final_confidence >= threshold
+                )
+                record.committee["tradable"] = tradable
+                if chosen is not None and tradable:
+                    committee_arm = _Blocked(event, sym_cfg, roles, spec, tick, snapshot, chosen.decision)
+                    self._shadow(record, VirtualArm.SHADOW_COMMITTEE, committee_arm)
 
             if self._cfg.strategy.analyst_orders:  # G-LLM signed off (or SIM): the analyst decides
                 record.proposal = analyst_proposal
@@ -738,7 +782,11 @@ class DecisionPipeline:
                 reason_code=record.reason.value if record.reason else None,
                 reason_detail=record.detail or None,
                 setups=record.setups or None,
-                proposal=record.proposal,
+                proposal=(
+                    {**(record.proposal or {}), "committee": record.committee}
+                    if record.committee is not None
+                    else record.proposal
+                ),
                 llm_confidence=record.confidence,
                 calibrated_confidence=record.calibrated_confidence,
                 penalty_points=record.penalty_points,

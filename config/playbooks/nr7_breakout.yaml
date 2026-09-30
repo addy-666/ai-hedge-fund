@@ -1,0 +1,31 @@
+# Playbook card — curated from the TRADING BRAIN vault (draft: scripts/compile_playbooks.py). Grounds the
+# deterministic detector (backend/src/aifund/strategies/nr7_breakout.py) and the analyst prompts.
+id: nr7_breakout
+setup_tag: nr7_breakout
+version: 1
+status: APPROVED   # curated by the operator (config/playbooks.py schema)
+source: "[[high_probability_nr7_volatility_breakout]]"   # Link / Crabel, High Probability Trading
+summary: >
+  Volatility contraction resolves into expansion: after the narrowest bar of seven forms at value inside an
+  established higher-timeframe trend, buy the first close through its high (sell the first close through its
+  low in downtrends) on expanding volume.
+timeframe_roles: {trend_filter: highest context TF, setup: setup TF (the NR7 bar), trigger: trigger TF}
+long_rules:
+  - "Trend filter: EMA50 > EMA200 and close > EMA50 on the trend-filter TF"
+  - "NR7: the last closed setup-TF bar has the narrowest range of the last seven bars"
+  - "Location: the NR7 bar closes within 1 ATR of the setup-TF EMA20 or EMA50, and EMA50 is rising"
+  - "Trigger: a trigger-TF bar opens at or below the NR7 high and closes above it"
+  - "Volume: trigger-TF relative tick volume (vs the last 20 bars) > 1.2"
+short_rules: "Mirror image of the long rules."
+stop: "NR7 low (high for shorts) minus 0.25 x setup-TF ATR"
+target: "2R from the entry (the note's first target, where it scales out half)"
+typical_r: 2.0
+approximations:
+  - "The NR7 bar's high/low are rebuilt from snapshot ratios; for a doji the widest possible range is used."
+  - "The entry is the close of the breakout bar, not a buy stop one tick above the NR7 high."
+  - "Scale-out at 2R and the trailing runner are not implemented (single target)."
+claimed_performance:
+  win_rate: "55-65%"
+  profit_factor: "2.0-2.8"
+  status: UNVALIDATED   # book claims; E1 research (scripts/research.py baseline --detector nr7_breakout)
+validation_status: research

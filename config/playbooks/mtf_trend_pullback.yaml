@@ -3,6 +3,7 @@
 id: mtf_trend_pullback
 setup_tag: mtf_trend_pullback
 version: 1
+status: APPROVED   # curated by the operator (config/playbooks.py schema)
 source: "[[high_probability_multi_timeframe_trend_pullback]]"   # Link, High Probability Trading
 summary: >
   Buy pullbacks to the EMA50 value zone in an established higher-timeframe uptrend (short rallies in

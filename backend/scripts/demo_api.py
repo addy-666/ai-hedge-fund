@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import os
+import random
 import sys
 import tempfile
 import threading
@@ -29,6 +30,7 @@ from aifund.adapters.notify.null import NullNotifier
 from aifund.api.app import create_app
 from aifund.config.settings import PROJECT_ROOT, Settings
 from aifund.domain.enums import (
+    CalibrationStatus,
     CloseReason,
     CommandType,
     DealEntry,
@@ -48,6 +50,7 @@ from aifund.engine.learning import Learning
 from aifund.persistence.db import make_engine, make_session_factory, unit_of_work
 from aifund.persistence.migrations import alembic_config
 from aifund.persistence.repositories.api import BarCacheRepository
+from aifund.persistence.repositories.calibration import CalibrationRepository
 from aifund.persistence.repositories.decisions import DecisionRepository
 from aifund.persistence.repositories.equity import EquitySnapshotRepository
 from aifund.persistence.repositories.learning import (
@@ -221,6 +224,72 @@ def seed(
     return {"decision": decision.id}
 
 
+def seed_committee(factory: sessionmaker[Session], clock: ClockPort, acc: str, t0: datetime) -> None:
+    """Six hourly bars the committee deliberated on in shadow beside the analyst (roadmap 8.4), each with
+    finished shadow trades: (baseline R, analyst R, committee R or None when it stayed out)."""
+    outcomes = [("-1", "-1", None), ("2", "2", "2"), ("1", "-1", "1"), ("0.5", None, None),
+                ("-1", "-1", "-1"), ("1.5", "1.5", "1.5")]  # fmt: skip
+    with unit_of_work(factory) as s:
+        for i, (base, analyst, committee) in enumerate(outcomes):
+            bar = t0 - timedelta(hours=len(outcomes) - i)
+            record = {"combined": 72, "confidence": 65, "critic_penalty": 7, "tradable": committee is not None,
+                      "cost_usd": "0.0030", "calls": 2, "proposer": "trend", "specialists": {}}  # fmt: skip
+            d = DecisionRepository(s, clock).add(
+                account_id=acc, symbol="XAUUSD", trigger_tf="M15", bar_time=bar, stage_reached="DECISION",
+                outcome=DecisionOutcome.SHADOW, setups=[{"setup_tag": "mtf_trend_pullback"}], model="deepseek-chat",
+                cost_usd=D("0.0010"), proposal={"source": "analyst", "committee": record},
+            )  # fmt: skip
+            for arm, r in ((VirtualArm.SHADOW_BASELINE, base), (VirtualArm.SHADOW_ANALYST, analyst),
+                           (VirtualArm.SHADOW_COMMITTEE, committee)):  # fmt: skip
+                if r is None:
+                    continue
+                s.add(
+                    VirtualTradeRow(
+                        id=f"VC{i}{arm.value[7]}", account_id=acc, decision_id=d.id, arm=arm, symbol="XAUUSD",
+                        side=Side.BUY, entry_time=bar + timedelta(minutes=15), sl_distance=D("10"),
+                        tp_distance=D("20"), expires_at=bar + timedelta(hours=3),
+                        expire_reason=CloseReason.TIME_STOP, status=VirtualStatus.CLOSED, created_at=bar,
+                        entry_price=D("4150"), r_multiple=D(r),
+                    )
+                )  # fmt: skip
+
+
+def seed_calibration(factory: sessionmaker[Session], clock: ClockPort, acc: str, t0: datetime) -> None:
+    """200 analyst shadow trades from an overconfident analyst (it says c, wins (c - 25)%), an older REJECTED
+    fit and a CANDIDATE that waits for approval (roadmap 8.5)."""
+    rng = random.Random(8)  # noqa: S311 - demo data, not security
+    with unit_of_work(factory) as s:
+        for i in range(200):
+            bar = t0 - timedelta(days=30) + timedelta(hours=3 * i)
+            c = rng.randint(45, 95)
+            won = rng.random() < max(0.05, c / 100 - 0.25)
+            d = DecisionRepository(s, clock).add(
+                account_id=acc, symbol="XAUUSD", trigger_tf="M15", bar_time=bar, stage_reached="DECISION",
+                outcome=DecisionOutcome.SHADOW, setups=[{"setup_tag": "mtf_trend_pullback"}],
+                proposal={"source": "baseline", "shadow_analyst": {"verdict": "PROPOSAL", "confidence": c}},
+            )  # fmt: skip
+            s.add(
+                VirtualTradeRow(
+                    id=f"VK{i}", account_id=acc, decision_id=d.id, arm=VirtualArm.SHADOW_ANALYST,
+                    symbol="XAUUSD", side=Side.BUY, entry_time=bar + timedelta(minutes=15), sl_distance=D("10"),
+                    tp_distance=D("20"), expires_at=bar + timedelta(hours=3), expire_reason=CloseReason.TIME_STOP,
+                    status=VirtualStatus.CLOSED, created_at=bar, entry_price=D("4150"),
+                    r_multiple=D("2") if won else D("-1"),
+                )
+            )  # fmt: skip
+        repo = CalibrationRepository(s, clock)
+        repo.add(
+            source="analyst", method="ISOTONIC", status=CalibrationStatus.REJECTED, n_samples=160,
+            params={"points": [[45, 0.25], [95, 0.7]]}, brier_before=0.2641, brier_after=0.2598,
+            details={"improvement": 0.0163}, decided_by="fit", decided_at=t0 - timedelta(days=7),
+        )  # fmt: skip
+        repo.add(
+            source="analyst", method="ISOTONIC", status=CalibrationStatus.CANDIDATE, n_samples=200,
+            params={"points": [[45, 0.2], [60, 0.3], [80, 0.55], [95, 0.68]]}, brier_before=0.2702,
+            brier_after=0.2311, details={"improvement": 0.1447},
+        )  # fmt: skip
+
+
 def seed_learning(factory: sessionmaker[Session], clock: ClockPort, decision_id: str) -> None:
     """A rule in every lifecycle column, two rulebook versions, one audit run and one rule match."""
     t0 = clock.now()
@@ -370,6 +439,8 @@ def main(argv: list[str]) -> int:
     account = app.state.config.current().config.engine.account_label
     ids = seed(factory, clock, account, t0=clock.now() - timedelta(hours=2))
     seed_learning(factory, clock, ids["decision"])
+    seed_committee(factory, clock, account, clock.now() - timedelta(hours=2))
+    seed_calibration(factory, clock, account, clock.now())
     stop = threading.Event()
     worker = threading.Thread(
         target=serve_commands, args=(factory, clock, app.state.config.current().config, stop)

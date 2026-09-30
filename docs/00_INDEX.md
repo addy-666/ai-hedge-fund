@@ -86,9 +86,10 @@ should read `AGENTS.md` (repo root) first, then the docs relevant to the phase i
 
 The Obsidian vault (`../TRADING BRAIN`) is the knowledge layer; this project is the execution layer.
 
-- **Vault → Engine:** strategy notes with `automation_potential: high` are curated into *playbook cards*
-  (`config/playbooks/*.yaml`) that ground the analyst agents. The engine never reads the vault at runtime
-  (it runs on a Windows VPS); cards are compiled and committed.
+- **Vault → Engine:** strategy notes (`type: strategy` with `automation_potential: high`, or named
+  explicitly) are compiled into DRAFT *playbook cards* (`scripts/compile_playbooks.py`), curated by the
+  operator and committed as `status: APPROVED` cards in `config/playbooks/*.yaml`; they ground the analyst
+  agents. The engine never reads the vault at runtime (it runs on a Windows VPS).
 - **Engine → Vault:** weekly audit reports and learned-rule summaries are exported as `type: review`
   notes into `wiki/reviews/`, following the vault's `SCHEMA.md` (YAML frontmatter, wikilinks). The engine
   never writes to `raw/`.

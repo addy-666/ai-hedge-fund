@@ -38,10 +38,15 @@ cd backend && uv run python scripts/backup_db.py   # online SQLite backup -> <re
 powershell -ExecutionPolicy Bypass -File deploy\windows\install_tasks.ps1   # Windows: register the MT5 / engine / backup tasks (docs/runbooks/install.md)
 cd backend && uv run python scripts/replay.py --from 2026-06-15 --to 2026-09-27   # full stack on exported history (SimBroker); --snapshot-minutes 1 for engine cadence
 cd backend && uv run python scripts/research.py baseline   # edge study: grid, walk-forward, gate E1 (docs/09); --spend-holdout once
+cd backend && uv run python scripts/research.py baseline --detector nr7_breakout   # the same for failure_test_2b / sr_fade_range
 cd backend && uv run python scripts/research.py dsl --file ideas.json   # operator entry hypotheses (docs/09 §5) through the research loop
 cd backend && uv run python scripts/research.py llm --rounds 1   # LLM researcher proposes, the loop judges (DEEPSEEK_API_KEY, llm.pricing, migrated DB)
+cd backend && uv run python scripts/research.py scheduled   # the weekly run: only on new history, rolls the holdout; --force
+cd backend && uv run python scripts/export_history.py --update   # Windows: merge the bars since the last export (the weekly research task)
 cd backend && uv run python scripts/spread_report.py   # spread vs ATR per symbol: evidence for the spread gates
 cd backend && uv run python scripts/capture_deals.py  # Windows, DEMO: record deal history -> tests/fixtures/mt5_deals (READ-ONLY)
+cd backend && uv run python scripts/compile_playbooks.py --vault "<path>/TRADING BRAIN" --note NAME=CARD_ID   # Mac: vault notes -> DRAFT cards in data/playbooks/drafts
+cd backend && uv run python scripts/compile_playbooks.py --check   # validate config/playbooks/*.yaml against the card schema
 ```
 
 Not yet available (the phase that adds each is in brackets; update this list when it lands): none right now.
@@ -62,6 +67,7 @@ Learning loop (Phase 7; it runs inside the engine when `learning.enabled`):
 
 ```bash
 cd backend && uv run python scripts/engine_command.py RUN_AUDIT   # an audit now (also: the Learning Lab button)
+cd backend && uv run python scripts/engine_command.py FIT_CALIBRATION   # fit the confidence calibration now (Analytics: "Fit now")
 cd backend && uv run python scripts/pull_vault_reviews.py --url https://<machine>.<tailnet>.ts.net --vault "<path>/TRADING BRAIN"   # Mac: new weekly reviews -> wiki/reviews
 ```
 

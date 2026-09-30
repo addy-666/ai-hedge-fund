@@ -257,6 +257,18 @@ premise stops being true can be retired instead of blocking good trades forever.
   activate only if Brier score on the 30% improves by ≥ 5%. Map to 0–100 scale.
 - The threshold then operates on calibrated confidence. Reliability diagram and Brier history in dashboard.
 
+Implementation (8.5): `rules/calibration.py` (pure: pool-adjacent-violators isotonic fit — no scikit-learn
+dependency for 20 lines —, Brier, reliability bins), `engine/calibration.py` (weekly fit per source, the
+pipeline's cache), `persistence/repositories/calibration.py` (samples). Per **source**: the analyst (raw
+confidence of its proposals, decided or in shadow; outcome = its real trade, else its SHADOW_ANALYST virtual
+trade, else — when it decided and was blocked — the blocked signal's virtual trade) and the committee
+(confidence after the critic; SHADOW_COMMITTEE). Win = net R > 0. The map interpolates between fitted points
+and, **outside the fitted confidence range, may only lower a confidence**. `learning.calibration.activation`
+(operator decision 2026-09-30): `approve` (default) stores a passing fit as a CANDIDATE and notifies; the
+operator activates it (Analytics page, re-auth, or `APPROVE_CALIBRATION {version}`); `auto` activates at once.
+A fit that misses the 5% stores REJECTED (Brier history); fewer than `min_samples` stores nothing. Activation
+retires the source's previous model; `FIT_CALIBRATION` fits now. Weekly at `fit_weekday` / `fit_utc`.
+
 This answers the question "does the LLM's 80 actually mean anything?" with data.
 
 ---

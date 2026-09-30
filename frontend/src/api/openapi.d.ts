@@ -38,6 +38,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/analytics/calibration": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Calibration
+         * @description Reliability per source over every finished sample, the active and waiting models, the Brier history.
+         */
+        get: operations["calibration_api_analytics_calibration_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/analytics/committee": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Committee
+         * @description The committee's shadow record beside the analyst and the baseline (roadmap 8.4).
+         */
+        get: operations["committee_api_analytics_committee_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/analytics/costs": {
         parameters: {
             query?: never;
@@ -185,6 +225,60 @@ export interface paths {
         get: operations["bars_api_bars_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/calibration/fit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Fit Calibration */
+        post: operations["fit_calibration_api_calibration_fit_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/calibration/{version}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Approve Calibration
+         * @description Activating a calibration can raise confidences over the threshold (more trades): re-auth required.
+         */
+        post: operations["approve_calibration_api_calibration__version__approve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/calibration/{version}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reject Calibration */
+        post: operations["reject_calibration_api_calibration__version__reject_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -690,6 +784,21 @@ export interface components {
             /** Open Risk Money */
             open_risk_money: string | null;
         };
+        /** ArmStat */
+        ArmStat: {
+            /** Arm */
+            arm: string;
+            /** Cost Usd */
+            cost_usd: string;
+            /** Mean R Per Trade */
+            mean_r_per_trade: number | null;
+            /** Total R */
+            total_r: string;
+            /** Trades */
+            trades: number;
+            /** Win Rate */
+            win_rate: number | null;
+        };
         /** AuditRunDetail */
         AuditRunDetail: {
             /** Candidates */
@@ -793,6 +902,78 @@ export interface components {
             /** Win Rate */
             win_rate: number | null;
         };
+        /** CalibrationBin */
+        CalibrationBin: {
+            /** Calibrated */
+            calibrated: number | null;
+            /** Hi */
+            hi: number;
+            /** Lo */
+            lo: number;
+            /** Mean Confidence */
+            mean_confidence: number | null;
+            /** N */
+            n: number;
+            /** Win Rate */
+            win_rate: number | null;
+        };
+        /** CalibrationModelOut */
+        CalibrationModelOut: {
+            /** Brier After */
+            brier_after: number | null;
+            /** Brier Before */
+            brier_before: number | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Decided At */
+            decided_at: string | null;
+            /** Decided By */
+            decided_by: string | null;
+            /** Improvement */
+            improvement: number | null;
+            /** Method */
+            method: string;
+            /** N Samples */
+            n_samples: number;
+            /** Points */
+            points: number[][];
+            /** Source */
+            source: string;
+            /** Status */
+            status: string;
+            /** Version */
+            version: number;
+        };
+        /**
+         * CalibrationOut
+         * @description Confidence calibration (roadmap 8.5, docs/04 §9): reliability per source, models and Brier history.
+         */
+        CalibrationOut: {
+            /** Activation */
+            activation: string;
+            /** Min Samples */
+            min_samples: number;
+            /** Models */
+            models: components["schemas"]["CalibrationModelOut"][];
+            /** Sources */
+            sources: components["schemas"]["CalibrationSourceOut"][];
+        };
+        /** CalibrationSourceOut */
+        CalibrationSourceOut: {
+            active: components["schemas"]["CalibrationModelOut"] | null;
+            /** Brier Raw */
+            brier_raw: number | null;
+            candidate: components["schemas"]["CalibrationModelOut"] | null;
+            /** N */
+            n: number;
+            /** Reliability */
+            reliability: components["schemas"]["CalibrationBin"][];
+            /** Source */
+            source: string;
+        };
         /** CommandAccepted */
         CommandAccepted: {
             /** Command Id */
@@ -834,6 +1015,30 @@ export interface components {
             status: string;
             /** Type */
             type: string;
+        };
+        /**
+         * CommitteeComparison
+         * @description Committee vs analyst vs baseline in shadow (roadmap 8.4): paired bars, net of LLM cost in R.
+         */
+        CommitteeComparison: {
+            /** Agreement */
+            agreement: number | null;
+            /** Arms */
+            arms: components["schemas"]["ArmStat"][];
+            /** Bars */
+            bars: number;
+            /** Days */
+            days: number;
+            /** First */
+            first: string | null;
+            /** Last */
+            last: string | null;
+            /** Mode */
+            mode: string;
+            /** Risk Usd */
+            risk_usd: string | null;
+            vs_analyst: components["schemas"]["UpliftStat"] | null;
+            vs_baseline: components["schemas"]["UpliftStat"] | null;
         };
         /** ConfigIn */
         ConfigIn: {
@@ -1670,6 +1875,17 @@ export interface components {
             /** Thesis Verdict */
             thesis_verdict: string;
         };
+        /** UpliftStat */
+        UpliftStat: {
+            /** Ci High */
+            ci_high: number | null;
+            /** Ci Low */
+            ci_low: number | null;
+            /** Mean R */
+            mean_r: number;
+            /** N */
+            n: number;
+        };
         /** ValidationError */
         ValidationError: {
             /** Context */
@@ -1777,6 +1993,58 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BreakdownRow"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    calibration_api_analytics_calibration_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CalibrationOut"];
+                };
+            };
+        };
+    };
+    committee_api_analytics_committee_get: {
+        parameters: {
+            query?: {
+                from?: string | null;
+                to?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommitteeComparison"];
                 };
             };
             /** @description Validation Error */
@@ -2030,6 +2298,88 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BarOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    fit_calibration_api_calibration_fit_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommandAccepted"];
+                };
+            };
+        };
+    };
+    approve_calibration_api_calibration__version__approve_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                version: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommandAccepted"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reject_calibration_api_calibration__version__reject_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                version: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommandAccepted"];
                 };
             };
             /** @description Validation Error */

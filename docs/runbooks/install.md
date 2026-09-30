@@ -76,6 +76,7 @@ powershell -ExecutionPolicy Bypass -File C:\aifund\ai-hedge-fund\deploy\windows\
 | `aifund-engine` | `deploy\windows\run_engine.ps1`: waits for the terminal, runs `python -m aifund.engine`, restarts it with backoff 5 s → 5 min | at logon |
 | `aifund-api` | `deploy\windows\run_api.ps1`: `tailscale serve --bg 8000` (tailnet-only HTTPS) + uvicorn on `127.0.0.1:8000` serving the API and `frontend\dist` | at logon; restarted on failure every minute |
 | `aifund-backup` | `deploy\windows\backup.ps1` → `scripts\backup_db.py` (online backup, gzip, 30 daily + 12 monthly; set user variable `AIFUND_BACKUP_REMOTE=gdrive:aifund` to upload with rclone) | daily 21:30 UTC |
+| `aifund-research` | `deploy\windows\research_weekly.ps1`: `export_history.py --update` (new bars merged in), then `research.py scheduled` (runs only when due; log `logs\research_weekly.log`) | Tuesdays 03:00 UTC |
 
 Before the API task can serve the dashboard (once, and after every frontend change):
 

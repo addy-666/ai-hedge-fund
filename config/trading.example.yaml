@@ -23,6 +23,19 @@ strategy:
                                 #   enabled). On outside SIM needs a sign-off: scripts/uplift_report.py
   analyst_prompt_version: 1     # agents/prompts/analyst_v<n>.j2
 
+committee:                      # Phase 8 (docs/03 §8): specialists per setup family + a risk critic
+  mode: "off"                   # "shadow": on every bar with a candidate, record what the committee would
+                                #   trade (SHADOW_COMMITTEE virtual trades; compare on the Analytics page).
+                                #   Never sends an order. ~2-3 extra LLM calls per candidate bar.
+  specialist_prompt_version: 1  # agents/prompts/specialist_v<n>.j2
+  critic_prompt_version: 1      # agents/prompts/critic_v<n>.j2
+  families:                     # family -> setup tags its specialist judges (a tag in at most one family)
+    trend: [mtf_trend_pullback]
+    breakout: [nr7_breakout]
+    reversal: [failure_test_2b, sr_fade_range]
+  weights: {}                   # family -> weight in the confidence average (default 1)
+  critic_penalty: {HIGH: 15, MEDIUM: 7, LOW: 0}   # confidence points per critic objection
+
 symbols:                        # canonical -> broker symbol (Vantage uses no suffix; Exness appends "m")
   - canonical: XAUUSD
     broker: XAUUSD
@@ -183,6 +196,15 @@ learning:                      # the self-learning loop (docs/04): penalty-only 
   auto_promote_max_penalty: 15
   review_after_days: 30
   expire_after_days: 90
+  calibration:                  # confidence -> win probability (docs/04 §9), fitted weekly per source
+    activation: approve         # approve: a passing model waits for the operator (Analytics page or
+                                #   APPROVE_CALIBRATION); auto: it activates at once. Calibration can RAISE a
+                                #   confidence over the threshold (more trades), hence approve by default.
+    min_samples: 150            # identity below this (the reliability chart still shows the data)
+    holdout_fraction: 0.30      # newest share of the samples kept out of the fit to judge it
+    min_brier_improvement: 0.05 # the fit must cut the held-out Brier score by >= 5%
+    fit_weekday: 0              # Monday
+    fit_utc: "01:00"
 
 alerts:
   telegram: false

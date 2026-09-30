@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from datetime import datetime
+from decimal import Decimal
+
 from aifund.domain.enums import DecisionOutcome, ReasonCode, TradeStatus
 
 # A trade only moves from open to closed; orphans stay orphans (no entry snapshot, excluded from learning).
@@ -51,3 +55,23 @@ VIRTUAL_REASONS = frozenset(
 
 def gets_virtual_trade(outcome: DecisionOutcome, reason: ReasonCode | None) -> bool:
     return outcome in VIRTUAL_OUTCOMES and reason in VIRTUAL_REASONS
+
+
+@dataclass(frozen=True)
+class CommitteeBar:
+    """One bar the committee deliberated on beside the analyst (roadmap 8.4): each shadow arm's R (0 when it
+    did not trade), whether it traded, its direction and the LLM spend of each side."""
+
+    decision_id: str
+    symbol: str
+    bar_time: datetime
+    baseline_r: Decimal
+    analyst_r: Decimal
+    committee_r: Decimal
+    analyst_traded: bool
+    committee_traded: bool
+    baseline_traded: bool
+    analyst_direction: str | None  # of the shadow trade, when there was one
+    committee_direction: str | None
+    analyst_cost_usd: Decimal
+    committee_cost_usd: Decimal

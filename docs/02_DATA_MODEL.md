@@ -48,7 +48,7 @@ APPROVE_RULE, REJECT_RULE, RETIRE_RULE, RELOAD_CONFIG, SET_MODE), `payload JSON`
 **`audit_log`**: every operator action and config change: `id`, `actor`, `action`, `before JSON`, `after JSON`,
 `ip`, `ts`.
 
-**`llm_calls`**: `id`, `agent` (analyst/critic/reviewer/auditor…), `decision_id` null, `trade_id` null,
+**`llm_calls`**: `id`, `agent` (analyst/specialist_<family>/critic/reviewer/auditor…), `decision_id` null, `trade_id` null,
 `audit_run_id` null, `model` (requested), `model_reported` (what the provider says it used), `prompt_template`, `prompt_version`, `prompt_sha256`, `messages JSON` (full),
 `response_text`, `parsed JSON`, `valid bool`, `error`, `prompt_tokens`, `completion_tokens`,
 `cached_tokens`, `cost_usd`, `latency_ms`, `created_at`.
@@ -173,8 +173,9 @@ risk of open engine positions; orphans count 0), `open_notional` (Σ broker marg
 `n_virtual`, `miner_output JSON`, `candidates JSON`, `validation JSON`, `lessons_md`,
 `status`, `created_at`, `finished_at`.
 
-**`calibration_models`**: `version`, `method` (IDENTITY/ISOTONIC), `params JSON`, `n_samples`,
-`brier_before`, `brier_after`, `created_at`, `active bool`.
+**`calibration_models`**: `version`, `source` (analyst/committee), `method` (IDENTITY/ISOTONIC), `status`
+(CANDIDATE/ACTIVE/REJECTED/RETIRED), `params JSON` (fitted points), `n_samples`, `brier_before`, `brier_after`
+(held-out), `details JSON`, `created_at`, `decided_by`, `decided_at`.
 
 ---
 
@@ -313,6 +314,14 @@ strategy:
   dry_run: false                # decide + risk-check everything, record DRY_RUN, send nothing (4.6)
   analyst_prompt_version: 1     # agents/prompts/analyst_v<n>.j2
   baseline_enabled: false       # deterministic mtf_trend_pullback trading without LLM (Phase 2)
+
+committee:                      # Phase 8: a specialist per setup family + a risk critic (docs/03 §8)
+  mode: "off"                   # "shadow" = SHADOW_COMMITTEE virtual trades beside the analyst; never orders
+  specialist_prompt_version: 1
+  critic_prompt_version: 1
+  families: {trend: [mtf_trend_pullback], breakout: [nr7_breakout], reversal: [failure_test_2b, sr_fade_range]}
+  weights: {}                   # family -> weight (default 1)
+  critic_penalty: {HIGH: 15, MEDIUM: 7, LOW: 0}
 
 symbols:                        # canonical -> broker symbol + profile
   - canonical: XAUUSD

@@ -1,0 +1,31 @@
+# Playbook card — curated from the TRADING BRAIN vault (draft: scripts/compile_playbooks.py). Grounds the
+# deterministic detector (backend/src/aifund/strategies/failure_test_2b.py) and the analyst prompts.
+id: failure_test_2b
+setup_tag: failure_test_2b
+version: 1
+status: APPROVED   # curated by the operator (config/playbooks.py schema)
+source: "[[sperandeo_2b_reversal_playbook]]"   # also [[grimes_failure_test_and_false_breakout_playbook]]
+summary: >
+  Fade a false breakout (Sperandeo's 2B, Grimes' failure test / spring and upthrust): price runs the last
+  swing low only slightly, finds no follow-through and closes back above it; the trapped breakout sellers
+  fuel the reversal. Shorts mirror at a swing high.
+timeframe_roles: {level: setup TF confirmed swing, probe_and_failure: one trigger-TF bar}
+long_rules:
+  - "Level: the last confirmed setup-TF swing low"
+  - "Probe: the trigger-TF bar trades below the swing low by at most 0.5 x setup-TF ATR"
+  - "Failure: the same bar closes back above the swing low, as a bullish candle"
+  - "Context: not every higher timeframe (setup and context EMA stacks) is aligned against the trade"
+short_rules: "Mirror image of the long rules (a probe above the last swing high that closes back below)."
+stop: "The probe's low (high for shorts) minus 0.5 x trigger-TF ATR"
+target: "The opposite setup-TF swing, but at least 2R from the entry"
+typical_r: 2.0
+approximations:
+  - "Probe and failure happen in one trigger bar (Grimes allows the failure within 1-3 bars)."
+  - "The snapshot cannot count touches of the level, so any confirmed swing counts as significant."
+  - "The entry is the reversal bar's close, not a stop beyond its extreme."
+  - "Sperandeo's trend-age filter and the volume confirmation are not implemented."
+claimed_performance:
+  win_rate: "60-70% (Grimes)"
+  profit_factor: "2.0-2.8 (Grimes)"
+  status: UNVALIDATED   # book claims; E1 research (scripts/research.py baseline --detector failure_test_2b)
+validation_status: research

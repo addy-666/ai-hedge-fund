@@ -154,8 +154,21 @@ class CommandType(StrEnum):
     APPROVE_RULE = "APPROVE_RULE"
     REJECT_RULE = "REJECT_RULE"
     RETIRE_RULE = "RETIRE_RULE"
+    FIT_CALIBRATION = "FIT_CALIBRATION"
+    APPROVE_CALIBRATION = "APPROVE_CALIBRATION"
+    REJECT_CALIBRATION = "REJECT_CALIBRATION"
     RELOAD_CONFIG = "RELOAD_CONFIG"
     SET_MODE = "SET_MODE"
+
+
+class CalibrationStatus(StrEnum):
+    """A calibration model's lifecycle (roadmap 8.5): CANDIDATE → ACTIVE (auto or operator) or REJECTED;
+    an ACTIVE model is RETIRED when the next one of its source activates."""
+
+    CANDIDATE = "CANDIDATE"
+    ACTIVE = "ACTIVE"
+    REJECTED = "REJECTED"
+    RETIRED = "RETIRED"
 
 
 class CommandStatus(StrEnum):
@@ -231,6 +244,7 @@ class VirtualArm(StrEnum):
     BLOCKED = "BLOCKED"  # a directional signal the rules, threshold, guards or limits blocked
     SHADOW_BASELINE = "SHADOW_BASELINE"  # what the deterministic baseline would have traded on this bar
     SHADOW_ANALYST = "SHADOW_ANALYST"  # what the analyst would have traded on this bar
+    SHADOW_COMMITTEE = "SHADOW_COMMITTEE"  # what the Phase 8 committee would have traded (roadmap 8.4)
 
 
 class CloseReason(StrEnum):
@@ -274,6 +288,14 @@ class MistakeTag(StrEnum):
     GOOD_TRADE_BAD_OUTCOME = "GOOD_TRADE_BAD_OUTCOME"  # stops the auditor learning from variance
     GOOD_TRADE_GOOD_OUTCOME = "GOOD_TRADE_GOOD_OUTCOME"
     LUCKY_WIN = "LUCKY_WIN"
+
+
+class ObjectionSeverity(StrEnum):
+    """How much a risk-critic objection costs the committee's confidence (docs/03 §8)."""
+
+    HIGH = "HIGH"
+    MEDIUM = "MEDIUM"
+    LOW = "LOW"
 
 
 class ThesisVerdict(StrEnum):
@@ -329,6 +351,10 @@ class ReasonCode(StrEnum):
     LLM_ERROR = "LLM_ERROR"
     SETUP_MISMATCH = "SETUP_MISMATCH"
     ANALYST_HOLD = "ANALYST_HOLD"
+    # committee (docs/03 §8, roadmap 8.4)
+    COMMITTEE_HOLD = "COMMITTEE_HOLD"  # no specialist proposed a trade
+    COMMITTEE_SPLIT = "COMMITTEE_SPLIT"  # specialists proposed opposite directions
+    CRITIC_UNAVAILABLE = "CRITIC_UNAVAILABLE"  # no critique (provider trouble or invalid output): fail closed
     # rules / portfolio
     RULE_BLOCK = "RULE_BLOCK"
     BELOW_THRESHOLD = "BELOW_THRESHOLD"

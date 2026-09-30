@@ -10,6 +10,7 @@ $Tasks = @{   # name = (command, arguments)
     "aifund-engine" = @($PS, "-NoProfile -ExecutionPolicy Bypass -File `"$Here\run_engine.ps1`"")
     "aifund-api"    = @($PS, "-NoProfile -ExecutionPolicy Bypass -File `"$Here\run_api.ps1`"")
     "aifund-backup" = @($PS, "-NoProfile -ExecutionPolicy Bypass -File `"$Here\backup.ps1`"")
+    "aifund-research" = @($PS, "-NoProfile -ExecutionPolicy Bypass -File `"$Here\research_weekly.ps1`"")
 }
 foreach ($Name in $Tasks.Keys) {
     $Xml = Get-Content -Raw -Path (Join-Path $Here "tasks\$Name.xml")

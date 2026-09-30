@@ -75,6 +75,29 @@ def test_baseline_study_records_every_trial_and_fails_honestly(
     assert data["throughput"]["too_slow"] is True
 
 
+@pytest.mark.parametrize("detector", ["nr7_breakout", "failure_test_2b", "sr_fade_range"])
+def test_baseline_studies_the_other_built_in_detectors(export: Path, tmp_path: Path, detector: str) -> None:
+    script = load()
+    out = tmp_path / "research"
+    argv = [
+        "baseline",
+        "--detector",
+        detector,
+        "--symbols",
+        "XAUUSD",
+        "--history",
+        str(export),
+        "--out",
+        str(out),
+    ]
+    assert script.main(argv) == 0
+    trials = Ledger(out / "ledger.jsonl").trials()
+    _, grid = script.GRIDS[detector]
+    assert [t.split for t in trials] == [Split.IN_SAMPLE] * len(grid) + [Split.WALK_FORWARD]
+    assert trials[-1].hypothesis["family"] == detector
+    assert len(list(out.glob(f"report_baseline_{detector}_*.json"))) == 1
+
+
 DOJI = {
     "id": "OP-1", "version": 1, "setup_tag": "doji_probe",
     "long": {"all": [{"feature": "m15.candle_dir", "op": "==", "value": "DOJI"}]}, "short": None,
@@ -138,3 +161,29 @@ def test_llm_rounds_propose_and_judge(
     assert "DESCRIPTIVE TABLES" in prompt  # (empty here: 10 days of bars never warm the indicators up)
     trials = Ledger(tmp_path / "research" / "ledger.jsonl").trials()
     assert [t.split for t in trials] == [Split.WALK_FORWARD]  # the same idea twice is one trial
+
+
+def test_the_scheduled_run_is_due_once_per_new_export(
+    export: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Roadmap 8.7: the weekly run studies the configured detectors (holdout included when the walk-forward
+    passes), skips the LLM without a key, and does not run again until new history arrives."""
+    script = load()
+    monkeypatch.setattr(
+        script, "Settings", lambda: SimpleNamespace(DEEPSEEK_API_KEY=None, CONFIG_PATH=tmp_path / "none.yaml")
+    )
+    out = tmp_path / "research"
+    assert script.main(args(export, tmp_path, "scheduled")) == 0
+    printed = capsys.readouterr().out
+    assert "scheduled research: first scheduled run" in printed
+    assert "holdout set: generation 1" in printed
+    assert "=== baseline --detector mtf_trend_pullback" in printed
+    assert "no DEEPSEEK_API_KEY: the LLM researcher is skipped" in printed
+    assert (out / "holdout.json").is_file()
+    assert (out / "schedule.json").is_file()
+    families = {t.hypothesis.get("family") for t in Ledger(out / "ledger.jsonl").trials()}
+    assert families == {"mtf_trend_pullback", None}  # the family trial and its grid variants
+    assert script.main(args(export, tmp_path, "scheduled")) == 0
+    assert "not due: last run" in capsys.readouterr().out
+    assert script.main(args(export, tmp_path, "scheduled", "--force")) == 0
+    assert "scheduled research: forced" in capsys.readouterr().out

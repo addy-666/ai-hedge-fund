@@ -139,6 +139,60 @@
         "title": "AccountOut",
         "type": "object"
       },
+      "ArmStat": {
+        "properties": {
+          "arm": {
+            "title": "Arm",
+            "type": "string"
+          },
+          "cost_usd": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Cost Usd",
+            "type": "string"
+          },
+          "mean_r_per_trade": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mean R Per Trade"
+          },
+          "total_r": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Total R",
+            "type": "string"
+          },
+          "trades": {
+            "title": "Trades",
+            "type": "integer"
+          },
+          "win_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Win Rate"
+          }
+        },
+        "required": [
+          "arm",
+          "trades",
+          "total_r",
+          "mean_r_per_trade",
+          "win_rate",
+          "cost_usd"
+        ],
+        "title": "ArmStat",
+        "type": "object"
+      },
       "AuditRunDetail": {
         "properties": {
           "candidates": {
@@ -410,6 +464,271 @@
         "title": "BreakdownRow",
         "type": "object"
       },
+      "CalibrationBin": {
+        "properties": {
+          "calibrated": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Calibrated"
+          },
+          "hi": {
+            "title": "Hi",
+            "type": "integer"
+          },
+          "lo": {
+            "title": "Lo",
+            "type": "integer"
+          },
+          "mean_confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mean Confidence"
+          },
+          "n": {
+            "title": "N",
+            "type": "integer"
+          },
+          "win_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Win Rate"
+          }
+        },
+        "required": [
+          "lo",
+          "hi",
+          "n",
+          "mean_confidence",
+          "win_rate",
+          "calibrated"
+        ],
+        "title": "CalibrationBin",
+        "type": "object"
+      },
+      "CalibrationModelOut": {
+        "properties": {
+          "brier_after": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Brier After"
+          },
+          "brier_before": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Brier Before"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "decided_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided At"
+          },
+          "decided_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided By"
+          },
+          "improvement": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Improvement"
+          },
+          "method": {
+            "title": "Method",
+            "type": "string"
+          },
+          "n_samples": {
+            "title": "N Samples",
+            "type": "integer"
+          },
+          "points": {
+            "items": {
+              "items": {
+                "type": "number"
+              },
+              "type": "array"
+            },
+            "title": "Points",
+            "type": "array"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version",
+          "source",
+          "method",
+          "status",
+          "n_samples",
+          "brier_before",
+          "brier_after",
+          "improvement",
+          "points",
+          "created_at",
+          "decided_by",
+          "decided_at"
+        ],
+        "title": "CalibrationModelOut",
+        "type": "object"
+      },
+      "CalibrationOut": {
+        "description": "Confidence calibration (roadmap 8.5, docs/04 \u00a79): reliability per source, models and Brier history.",
+        "properties": {
+          "activation": {
+            "title": "Activation",
+            "type": "string"
+          },
+          "min_samples": {
+            "title": "Min Samples",
+            "type": "integer"
+          },
+          "models": {
+            "items": {
+              "$ref": "#/components/schemas/CalibrationModelOut"
+            },
+            "title": "Models",
+            "type": "array"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/CalibrationSourceOut"
+            },
+            "title": "Sources",
+            "type": "array"
+          }
+        },
+        "required": [
+          "activation",
+          "min_samples",
+          "sources",
+          "models"
+        ],
+        "title": "CalibrationOut",
+        "type": "object"
+      },
+      "CalibrationSourceOut": {
+        "properties": {
+          "active": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CalibrationModelOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "brier_raw": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Brier Raw"
+          },
+          "candidate": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CalibrationModelOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "n": {
+            "title": "N",
+            "type": "integer"
+          },
+          "reliability": {
+            "items": {
+              "$ref": "#/components/schemas/CalibrationBin"
+            },
+            "title": "Reliability",
+            "type": "array"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "n",
+          "reliability",
+          "brier_raw",
+          "active",
+          "candidate"
+        ],
+        "title": "CalibrationSourceOut",
+        "type": "object"
+      },
       "CommandAccepted": {
         "properties": {
           "command_id": {
@@ -532,6 +851,111 @@
           "finished_at"
         ],
         "title": "CommandOut",
+        "type": "object"
+      },
+      "CommitteeComparison": {
+        "description": "Committee vs analyst vs baseline in shadow (roadmap 8.4): paired bars, net of LLM cost in R.",
+        "properties": {
+          "agreement": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agreement"
+          },
+          "arms": {
+            "items": {
+              "$ref": "#/components/schemas/ArmStat"
+            },
+            "title": "Arms",
+            "type": "array"
+          },
+          "bars": {
+            "title": "Bars",
+            "type": "integer"
+          },
+          "days": {
+            "title": "Days",
+            "type": "number"
+          },
+          "first": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First"
+          },
+          "last": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last"
+          },
+          "mode": {
+            "title": "Mode",
+            "type": "string"
+          },
+          "risk_usd": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Risk Usd"
+          },
+          "vs_analyst": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UpliftStat"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "vs_baseline": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UpliftStat"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "mode",
+          "bars",
+          "first",
+          "last",
+          "days",
+          "arms",
+          "agreement",
+          "risk_usd",
+          "vs_analyst",
+          "vs_baseline"
+        ],
+        "title": "CommitteeComparison",
         "type": "object"
       },
       "ConfigIn": {
@@ -3295,6 +3719,48 @@
         "title": "TradeReviewOut",
         "type": "object"
       },
+      "UpliftStat": {
+        "properties": {
+          "ci_high": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ci High"
+          },
+          "ci_low": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ci Low"
+          },
+          "mean_r": {
+            "title": "Mean R",
+            "type": "number"
+          },
+          "n": {
+            "title": "N",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "n",
+          "mean_r",
+          "ci_low",
+          "ci_high"
+        ],
+        "title": "UpliftStat",
+        "type": "object"
+      },
       "ValidationError": {
         "properties": {
           "ctx": {
@@ -3607,6 +4073,96 @@
           }
         },
         "summary": "Breakdown",
+        "tags": [
+          "analytics"
+        ]
+      }
+    },
+    "/api/analytics/calibration": {
+      "get": {
+        "description": "Reliability per source over every finished sample, the active and waiting models, the Brier history.",
+        "operationId": "calibration_api_analytics_calibration_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CalibrationOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Calibration",
+        "tags": [
+          "analytics"
+        ]
+      }
+    },
+    "/api/analytics/committee": {
+      "get": {
+        "description": "The committee's shadow record beside the analyst and the baseline (roadmap 8.4).",
+        "operationId": "committee_api_analytics_committee_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommitteeComparison"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Committee",
         "tags": [
           "analytics"
         ]
@@ -4017,6 +4573,112 @@
         "summary": "Bars",
         "tags": [
           "read"
+        ]
+      }
+    },
+    "/api/calibration/fit": {
+      "post": {
+        "operationId": "fit_calibration_api_calibration_fit_post",
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandAccepted"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Fit Calibration",
+        "tags": [
+          "learning"
+        ]
+      }
+    },
+    "/api/calibration/{version}/approve": {
+      "post": {
+        "description": "Activating a calibration can raise confidences over the threshold (more trades): re-auth required.",
+        "operationId": "approve_calibration_api_calibration__version__approve_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "schema": {
+              "title": "Version",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandAccepted"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Approve Calibration",
+        "tags": [
+          "learning"
+        ]
+      }
+    },
+    "/api/calibration/{version}/reject": {
+      "post": {
+        "operationId": "reject_calibration_api_calibration__version__reject_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "schema": {
+              "title": "Version",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandAccepted"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reject Calibration",
+        "tags": [
+          "learning"
         ]
       }
     },

@@ -1,0 +1,31 @@
+# Playbook card — curated from the TRADING BRAIN vault (draft: scripts/compile_playbooks.py). Grounds the
+# deterministic detector (backend/src/aifund/strategies/sr_fade_range.py) and the analyst prompts.
+id: sr_fade_range
+setup_tag: sr_fade_range
+version: 1
+status: APPROVED   # curated by the operator (config/playbooks.py schema)
+source: "[[high_probability_support_resistance_fade]]"   # Link, High Probability Trading
+summary: >
+  In a non-trending market, fade a test of the range wall: buy a rejection candle at support when the
+  setup-timeframe oscillator is oversold (sell one at resistance when overbought), targeting the middle of
+  the range.
+timeframe_roles: {range: setup TF (regime and swings), oscillator: setup TF, rejection: trigger TF}
+long_rules:
+  - "Range: setup-TF regime RANGE and a flat EMA50 (|slope| <= 0.25 ATR over 5 bars)"
+  - "Room: the range (last setup-TF swing high minus swing low) is at least 2 setup-TF ATR tall"
+  - "Test: the trigger bar's low comes within 0.25 setup ATR of support (at most 0.25 ATR below it) and it closes above support"
+  - "Oscillator: setup-TF Stochastics %K <= 20 or RSI14 <= 30"
+  - "Rejection: a bullish trigger candle with a hammer wick (>= 50% of range) or a strong body (>= 60%)"
+short_rules: "Mirror image of the long rules at resistance (Stochastics >= 80 or RSI14 >= 70)."
+stop: "The rejection candle's low (high for shorts) minus 0.25 x trigger-TF ATR"
+target: "The range midpoint (the note's first target); no trade when the entry is already past it"
+typical_r: 1.5
+approximations:
+  - "The note wants two prior reactions at the level and oscillator divergence; the snapshot shows neither."
+  - "The entry is the rejection bar's close, not a buy stop above its high."
+  - "The second target (the opposite wall) and the scale-out are not implemented."
+claimed_performance:
+  win_rate: "65-72%"
+  profit_factor: "2.2-2.8"
+  status: UNVALIDATED   # book claims; E1 research (scripts/research.py baseline --detector sr_fade_range)
+validation_status: research

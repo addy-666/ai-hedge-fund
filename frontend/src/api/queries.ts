@@ -2,7 +2,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "./client";
 import type {
-  AccountOut, BreakdownRow, CommandOut, ConfigOut, ConfigSaved, ConfigVersionOut, Costs, DecisionDossier,
+  AccountOut, BreakdownRow, CalibrationOut, CommandOut, CommitteeComparison, ConfigOut, ConfigSaved, ConfigVersionOut, Costs, DecisionDossier,
   DecisionOut, EquityPoint, LLMUsageRow, LogLine, Me, Page, PositionOut, Summary, SystemOut, TradeDossier,
   TradeOut, VirtualTradeOut, RuleOut, RuleDetail, RuleIn, RuleCreated, RulebookVersionOut, RulebookDiff,
   AuditRunOut, AuditRunDetail, FeatureOut,
@@ -81,6 +81,24 @@ export const useCosts = (days: number) =>
     queryFn: () =>
       api.get<Costs>("/api/analytics/costs", { from: new Date(Date.now() - days * 86_400_000).toISOString() }),
   });
+export const useCommittee = (days: number) =>
+  useQuery({
+    queryKey: ["committee", days],
+    queryFn: () =>
+      api.get<CommitteeComparison>("/api/analytics/committee", {
+        from: new Date(Date.now() - days * 86_400_000).toISOString(),
+      }),
+  });
+export const useCalibration = () =>
+  useQuery({ queryKey: ["calibration"], queryFn: () => api.get<CalibrationOut>("/api/analytics/calibration") });
+export function useCalibrationAction() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ version, action }: { version?: number; action: "approve" | "reject" | "fit" }) =>
+      api.post<{ command_id: string }>(action === "fit" ? "/api/calibration/fit" : `/api/calibration/${version}/${action}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["calibration"] }),
+  });
+}
 export const useConfig = () => useQuery({ queryKey: ["config"], queryFn: () => api.get<ConfigOut>("/api/config") });
 export const useConfigVersions = () =>
   useQuery({ queryKey: ["config-versions"], queryFn: () => api.get<ConfigVersionOut[]>("/api/config/versions") });

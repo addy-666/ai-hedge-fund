@@ -1,6 +1,7 @@
 """Learning Lab endpoints (roadmap 7.9, docs/05 §3): rules with their evidence and matches, the operator's
 rule actions (as engine commands), operator-authored rules, rulebook history and diffs, audit runs, and the
-feature registry for the rule editor. Re-auth: approving a block rule and force-activating (docs/05 §2)."""
+feature registry for the rule editor; confidence calibration models (8.5: fit, approve, reject). Re-auth:
+approving a block rule, force-activating, approving a calibration (docs/05 §2)."""
 
 from __future__ import annotations
 
@@ -26,9 +27,10 @@ from aifund.api.schemas import (
     RuleMatch,
     RuleOut,
 )
-from aifund.domain.enums import CommandType, RuleStatus
+from aifund.domain.enums import CalibrationStatus, CommandType, RuleStatus
 from aifund.engine.rulebook import rule_of
 from aifund.market import feature_registry as reg
+from aifund.persistence.repositories.calibration import CalibrationRepository
 from aifund.persistence.repositories.learning import (
     AuditRunRepository,
     OutcomeRepository,
@@ -195,6 +197,34 @@ def audit(request: Request, run_id: str, _s: Authenticated) -> AuditRunDetail:
 @router.post("/audits/run", status_code=status.HTTP_202_ACCEPTED)
 def run_audit(request: Request, _s: Mutating) -> CommandAccepted:
     return CommandAccepted(command_id=enqueue(request, CommandType.RUN_AUDIT, None))
+
+
+def _calibration_candidate(request: Request, version: int) -> None:
+    with ctx.read(request) as s:
+        row = CalibrationRepository(s, ctx.clock(request)).get(version)
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "no such calibration model")
+    if row.status is not CalibrationStatus.CANDIDATE:
+        raise HTTPException(status.HTTP_409_CONFLICT, f"calibration v{version} is {row.status.value}")
+
+
+@router.post("/calibration/{version}/approve", status_code=status.HTTP_202_ACCEPTED)
+def approve_calibration(request: Request, version: int, session: Mutating) -> CommandAccepted:
+    """Activating a calibration can raise confidences over the threshold (more trades): re-auth required."""
+    _calibration_candidate(request, version)
+    require_reauth(request, session)
+    return CommandAccepted(command_id=enqueue(request, CommandType.APPROVE_CALIBRATION, {"version": version}))
+
+
+@router.post("/calibration/{version}/reject", status_code=status.HTTP_202_ACCEPTED)
+def reject_calibration(request: Request, version: int, _s: Mutating) -> CommandAccepted:
+    _calibration_candidate(request, version)
+    return CommandAccepted(command_id=enqueue(request, CommandType.REJECT_CALIBRATION, {"version": version}))
+
+
+@router.post("/calibration/fit", status_code=status.HTTP_202_ACCEPTED)
+def fit_calibration(request: Request, _s: Mutating) -> CommandAccepted:
+    return CommandAccepted(command_id=enqueue(request, CommandType.FIT_CALIBRATION, None))
 
 
 @router.get("/features")

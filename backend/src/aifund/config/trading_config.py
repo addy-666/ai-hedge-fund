@@ -14,7 +14,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from aifund.domain.enums import AssetClass, Mode, ReversalMode, Timeframe
+from aifund.domain.enums import AssetClass, Mode, ObjectionSeverity, ReversalMode, Timeframe
 
 _HHMM = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 
@@ -86,6 +86,67 @@ class StrategyConfig(_Strict):
         if self.analyst_orders and not self.analyst_enabled:
             raise ValueError("strategy.analyst_orders needs strategy.analyst_enabled")
         return self
+
+
+_FAMILY = re.compile(r"^[a-z][a-z0-9_]{1,19}$")
+
+
+class CommitteeConfig(_Strict):
+    """The Phase 8 committee (docs/03 §8, roadmap 8.3-8.4): one specialist per family of setups and a risk
+    critic. ``shadow`` runs it on every bar with a candidate and records what it would have traded (a
+    SHADOW_COMMITTEE virtual trade) next to the analyst and the baseline; it never sends an order."""
+
+    mode: Literal["off", "shadow"] = "off"
+    specialist_prompt_version: int = Field(default=1, ge=1)
+    critic_prompt_version: int = Field(default=1, ge=1)
+    families: dict[str, list[str]] = Field(
+        default_factory=lambda: {
+            "trend": ["mtf_trend_pullback"],
+            "breakout": ["nr7_breakout"],
+            "reversal": ["failure_test_2b", "sr_fade_range"],
+        },
+        min_length=1,
+    )  # family -> the setup tags its specialist judges
+    weights: dict[str, Decimal] = Field(default_factory=dict)  # family -> weight (default 1)
+    critic_penalty: dict[ObjectionSeverity, int] = Field(
+        default_factory=lambda: {
+            ObjectionSeverity.HIGH: 15,
+            ObjectionSeverity.MEDIUM: 7,
+            ObjectionSeverity.LOW: 0,
+        }
+    )
+
+    @field_validator("mode", mode="before")
+    @classmethod
+    def _yaml_off(cls, value: object) -> object:
+        return "off" if value is False else value  # YAML 1.1 reads a bare `off` as false
+
+    @model_validator(mode="after")
+    def _consistent(self) -> Self:
+        seen: dict[str, str] = {}
+        for family, tags in self.families.items():
+            if not _FAMILY.match(family):
+                raise ValueError(f"committee family {family!r}: lower-case letters, digits, _ (2-20)")
+            for tag in tags:
+                if tag in seen:
+                    raise ValueError(f"setup {tag!r} is in two committee families: {seen[tag]}, {family}")
+                seen[tag] = family
+        unknown = set(self.weights) - set(self.families)
+        if unknown:
+            raise ValueError(f"committee.weights for unknown families: {sorted(unknown)}")
+        if any(w <= 0 for w in self.weights.values()):
+            raise ValueError("committee.weights must be > 0")
+        if set(self.critic_penalty) != set(ObjectionSeverity):
+            raise ValueError("committee.critic_penalty needs HIGH, MEDIUM and LOW")
+        if any(not 0 <= v <= 50 for v in self.critic_penalty.values()):
+            raise ValueError("committee.critic_penalty values must be 0-50")
+        return self
+
+    def family_of(self, setup_tag: str) -> str | None:
+        return next((f for f, tags in self.families.items() if setup_tag in tags), None)
+
+    def weight(self, family: str) -> Decimal:
+        return self.weights.get(family, Decimal(1))
 
 
 # ---------------------------------------------------------------- symbols / profiles
@@ -347,6 +408,21 @@ class LLMConfig(_Strict):
     pricing: dict[str, ModelPricing] = Field(default_factory=dict)  # model id -> prices (for cost and budget)
 
 
+class CalibrationConfig(_Strict):
+    """Confidence calibration (docs/04 §9, roadmap 8.5), fitted weekly per source (analyst, committee)."""
+
+    # approve: a model that passes waits as a CANDIDATE for the operator (it can RAISE confidences above the
+    # threshold, i.e. trade more); auto: it activates at once. Either way the operator is notified.
+    activation: Literal["approve", "auto"] = "approve"
+    min_samples: int = Field(default=150, ge=30)
+    holdout_fraction: Decimal = Field(default=Decimal("0.30"), ge=Decimal("0.1"), le=Decimal("0.5"))
+    min_brier_improvement: Decimal = Field(default=Decimal("0.05"), gt=0, lt=1)
+    fit_weekday: int = Field(default=0, ge=0, le=6)  # Monday
+    fit_utc: str = "01:00"
+
+    _hhmm = field_validator("fit_utc")(_check_hhmm)
+
+
 class LearningConfig(_Strict):
     enabled: bool = True  # the audit, rule lifecycle and trade reviews (docs/04); rules only ever reduce risk
     audit_schedule_utc: str = "00:30"
@@ -367,6 +443,7 @@ class LearningConfig(_Strict):
     auto_promote_max_penalty: int = Field(default=15, ge=0, le=30)
     review_after_days: int = Field(default=30, ge=1)
     expire_after_days: int = Field(default=90, ge=1)
+    calibration: CalibrationConfig = CalibrationConfig()
 
     _hhmm = field_validator("audit_schedule_utc")(_check_hhmm)
 
@@ -406,11 +483,16 @@ class ResearchConfig(_Strict):
     commission_per_lot: Decimal = Field(default=Decimal(0), ge=0)  # round turn, account currency
     slippage_points: int = Field(default=0, ge=0)
     max_hypotheses_per_run: int = Field(default=5, ge=1, le=20)
+    # roadmap 8.7: the holdout window is fixed in <research>/holdout.json and rolls forward onto new data only
+    holdout_roll_days: int = Field(default=90, ge=30)  # new data needed before the holdout moves forward
+    schedule_days: int = Field(default=7, ge=1)  # scheduled runs: at most this often, and only on new history
+    scheduled_llm_rounds: int = Field(default=1, ge=0, le=10)  # LLM researcher rounds per run (needs a key)
 
 
 class TradingConfig(_Strict):
     engine: EngineConfig
     strategy: StrategyConfig = StrategyConfig()
+    committee: CommitteeConfig = CommitteeConfig()
     symbols: list[SymbolConfig] = Field(min_length=1)
     profiles: dict[str, ProfileConfig] = Field(min_length=1)
     risk: RiskConfig = RiskConfig()
@@ -439,6 +521,8 @@ class TradingConfig(_Strict):
                 raise ValueError(f"symbol {s.canonical}: undefined session {s.session!r}")
         if not (self.strategy.analyst_enabled or self.strategy.baseline_enabled):
             raise ValueError("strategy: enable analyst_enabled and/or baseline_enabled")
+        if self.committee.mode == "shadow" and not self.strategy.analyst_enabled:
+            raise ValueError("committee.mode shadow runs beside the analyst: enable strategy.analyst_enabled")
         if self.strategy.analyst_enabled and self.engine.mode is not Mode.SIM:
             for field in ("analyst_model", "auditor_model"):
                 model = getattr(self.llm, field)

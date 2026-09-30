@@ -18,15 +18,16 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
+from decimal import Decimal
 from pathlib import Path
 from typing import Any, Protocol
 
-import yaml
 from pydantic import TypeAdapter
 
 from aifund.agents.prompting import PlaybookCard
 from aifund.agents.researcher import LedgerLine, ResearchBrief, Researcher, ResearcherResult, Table
 from aifund.config.evidence import EvidenceGate, EvidenceRecord, profile_key, write_evidence
+from aifund.config.playbooks import CardStatus, Playbook
 from aifund.config.trading_config import ResearchConfig
 from aifund.market.conditions import Condition, describe
 from aifund.research.describe import TABLES, breakdown
@@ -248,7 +249,9 @@ class ResearchLoop:
                 e.note = "failed the walk-forward part of E1; holdout kept clean"
             elif not spend_holdout:
                 e.note = "passed the walk-forward part; holdout not requested"
-            elif self.ledger.holdout_spent(self.document(e.hypothesis)):
+            elif self.ledger.holdout_spent(
+                self.document(e.hypothesis), self.window.holdout_start, self.window.end
+            ):
                 e.note = "holdout already spent on this hypothesis"
             else:
                 self._holdout(e)  # 3. the one look
@@ -297,22 +300,23 @@ class ResearchLoop:
             created_at=self._now(),
         )  # fmt: skip
         e.evidence = write_evidence(self.evidence_dir, record)
-        card = {
-            "id": h.id,
-            "setup_tag": h.setup_tag,
-            "version": h.version,
-            "status": "DRAFT",  # an operator approves it into config/playbooks; orders also need E2
-            "origin": e.origin.value,
-            "summary": h.mechanism,
-            "mechanism": h.mechanism,
-            "long_rules": [describe(h.long)] if h.long is not None else [],
-            "short_rules": describe(h.short_condition) if h.short_condition is not None else "none",
-            "stop": f"{h.invalidation.k:g} x ATR({h.invalidation.tf}) beyond the signal bar's close",
-            "target": f"{h.target.rr:g} R" if h.target is not None else "none (time stop / trailing)",
-            "hypothesis": h.model_dump(mode="json", by_alias=True),
-            "evidence": record.filename,
-            "validation_status": "research_validated",
-        }
+        card = Playbook(
+            id=h.id,
+            setup_tag=h.setup_tag,
+            version=h.version,
+            status=CardStatus.DRAFT,  # an operator approves it into config/playbooks; orders also need E2
+            origin=e.origin.value,
+            summary=h.mechanism,
+            mechanism=h.mechanism,
+            long_rules=[describe(h.long)] if h.long is not None else ["none (short side only)"],
+            short_rules=describe(h.short_condition) if h.short_condition is not None else "none",
+            stop=f"{h.invalidation.k:g} x ATR({h.invalidation.tf}) beyond the signal bar's close",
+            target=f"{h.target.rr:g} R" if h.target is not None else "none (time stop / trailing)",
+            typical_r=Decimal(str(h.target.rr)) if h.target is not None else None,
+            hypothesis=h.model_dump(mode="json", by_alias=True),
+            evidence=record.filename,
+            validation_status="research_validated",
+        )
         self.drafts_dir.mkdir(parents=True, exist_ok=True)
         e.card = self.drafts_dir / f"{h.id}.yaml"
-        e.card.write_text(yaml.safe_dump(card, sort_keys=False, allow_unicode=True), encoding="utf-8")
+        e.card.write_text(card.to_yaml(), encoding="utf-8")

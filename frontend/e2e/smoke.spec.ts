@@ -53,3 +53,19 @@ test("pause asks once and is queued for the engine", async ({ page }) => {
   await page.getByRole("button", { name: "Yes, pause" }).click();
   await expect(page.getByRole("status").filter({ hasText: "PAUSE sent" })).toBeVisible();
 });
+
+test("analytics shows the committee shadow and approving a calibration is queued (with re-auth if stale)", async ({ page }) => {
+  await login(page);
+  await page.getByRole("navigation").first().getByRole("link", { name: "Analytics", exact: true }).click();
+  await expect(page.getByText(/6 paired bars over/)).toBeVisible();
+  await expect(page.getByRole("img", { name: "analyst reliability" })).toBeVisible();
+  await page.getByRole("button", { name: "Approve" }).click();
+  const sent = page.getByRole("status").filter({ hasText: "approve v2 sent" });
+  const password = page.getByLabel("password");
+  await expect(sent.or(password)).toBeVisible(); // a login older than 5 minutes needs the password again
+  if (await password.isVisible()) {
+    await password.fill("demo password");
+    await page.getByRole("button", { name: "Confirm" }).click();
+  }
+  await expect(sent).toBeVisible();
+});

@@ -103,7 +103,11 @@ class Analyst:
         record_parse: RecordParse | None = None,
         version: int = 1,
         require_setup: bool = True,
+        prompt: str = PROMPT,
+        agent: str | None = None,
     ) -> None:
+        self._prompt = prompt  # the template family (the specialists reuse this class with their own)
+        self._agent = agent or prompt  # llm_calls.agent: cost and usage per agent
         self._llm = llm
         self._cfg = cfg
         self._playbooks = playbooks
@@ -138,8 +142,8 @@ class Analyst:
     # ------------------------------------------------------------------ the call
 
     async def analyse(self, inp: AnalystInput) -> AnalystResult:
-        rendered = self._prompts.render(PROMPT, self._version, self.context(inp))
-        result = AnalystResult(Verdict.INVALID, prompt_version=f"{PROMPT}_v{self._version}")
+        rendered = self._prompts.render(self._prompt, self._version, self.context(inp))
+        result = AnalystResult(Verdict.INVALID, prompt_version=f"{self._prompt}_v{self._version}")
         messages = list(rendered.messages)
         problem = ""
         for attempt in (1, 2):  # the answer, then at most one repair
@@ -177,12 +181,12 @@ class Analyst:
 
     def _request(self, inp: AnalystInput, messages: list[LLMMessage]) -> LLMRequest:
         return LLMRequest(
-            agent=PROMPT,
+            agent=self._agent,
             model=self._cfg.analyst_model,
             messages=messages,
             temperature=self._cfg.temperature,
             timeout_s=self._cfg.timeout_s,
-            prompt_template=PROMPT,
+            prompt_template=self._prompt,
             prompt_version=str(self._version),
             decision_id=inp.decision_id,
         )
