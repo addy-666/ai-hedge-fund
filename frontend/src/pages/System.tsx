@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useLogs, useSystem } from "../api/queries";
 import { EngineControls } from "../components/EngineControls";
+import { RolloutCard } from "../components/Rollout";
 import { Card, Loading, Select, Table, Td } from "../components/ui";
 import { age, utc } from "../lib/format";
 
@@ -29,12 +30,13 @@ export function System() {
         <Card title="Heartbeats">
           <Table head={["Component", "Status", "Age", "Detail"]}>
             {s.heartbeats.map((h) => (
-              <tr key={h.component}><Td>{h.component}</Td><Td className={h.status === "error" ? "text-rose-300" : ""}>{h.status}</Td>
+              <tr key={h.component}><Td>{h.component}</Td><Td className={["error", "diff", "failed"].includes(h.status) ? "text-rose-300" : ""}>{h.status}</Td>
                 <Td>{age(h.age_s)}</Td><Td className="max-w-xs truncate text-xs text-zinc-400">{h.detail ? JSON.stringify(h.detail) : ""}</Td></tr>
             ))}
           </Table>
         </Card>
       </div>
+      <RolloutCard />
       <Card title="Engine log (tail)" actions={<Select label="level" value={level} onChange={setLevel} options={["error", "warning", "info"]} />}>
         <div className="max-h-96 overflow-auto font-mono text-xs">
           {(logs.data ?? []).slice().reverse().map((l, i) => (

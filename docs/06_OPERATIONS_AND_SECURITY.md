@@ -102,7 +102,8 @@ Reviewed in 9.4: `docs/security_review.md` holds the evidence (tests, CI jobs) p
   uploaded with `rclone` to cloud storage; keep 30 daily + 12 monthly.
 - Backup before every Alembic migration (the migration script does it automatically).
 - Monthly restore test on the Mac (open the DB, run `scripts/verify_db.py` consistency checks).
-- Retention: `events` 30 days; `llm_calls.messages` full text 180 days then truncated (keep hashes/metadata);
+- Retention (applied after each nightly backup, 9.5): `events` 30 days, except the rollout gates' evidence
+  (`engine.state`, `position.sl_missing`, `ledger.mismatch`, kept for §10); `llm_calls.messages` full text 180 days then truncated (keep hashes/metadata);
   everything else forever (it is the learning dataset).
 
 ## 9. Runbooks (short form — expand in `docs/runbooks/` as incidents happen)
@@ -128,5 +129,10 @@ Reviewed in 9.4: `docs/security_review.md` holds the evidence (tests, CI jobs) p
 | L3 LIVE-MICRO | Live account, `risk_per_trade_pct ≤ 0.25`, minimum lots | ≥ 4 weeks | Same as L2 + live costs within 20% of demo assumptions; expectancy net of costs ≥ 0 over the period (with honest CI shown) |
 | L4 LIVE | Gradual risk increases (e.g. +0.25 pp per month max) | ongoing | Monthly review: rulebook changes, drawdown vs expectations, LLM cost vs P&L |
 
-Moving up a level is an operator decision recorded in `audit_log`. Moving *down* (e.g. LIVE → DEMO) after a
+Moving up a level is an operator decision recorded in `audit_log`. The gates are tracked on the System page
+(`engine/rollout.py`, 9.6-9.7): the level follows the config (SIM L0, DEMO + dry run L1, DEMO L2, LIVE at
+≤ 0.25% risk L3, above L4); every L2/L3 gate is measured from the engine's own tables (trades, intents, the
+nightly ledger check, `position.sl_missing` and restart events — kept by retention for this —, FLATTEN_ALL
+commands); L0/L1/L4 show as operator judgements. The sign-off needs re-auth and is refused while a measured
+gate fails. Moving *down* (e.g. LIVE → DEMO) after a
 serious incident is always allowed and never requires re-auth.

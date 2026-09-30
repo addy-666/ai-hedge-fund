@@ -19,6 +19,7 @@ export type BreakdownRow = S["BreakdownRow"];
 export type Costs = S["Costs"];
 export type CommitteeComparison = S["CommitteeComparison"];
 export type CalibrationOut = S["CalibrationOut"];
+export type RolloutOut = S["RolloutOut"];
 export type CalibrationSourceOut = S["CalibrationSourceOut"];
 export type CommandOut = S["CommandOut"];
 export type ConfigOut = S["ConfigOut"];

@@ -94,8 +94,11 @@ async def test_a_backup_of_a_trading_database_restores_and_verifies(
 def test_retention_keeps_the_learning_dataset(factory: sessionmaker[Session], clock: FakeClock) -> None:
     now = T0 + timedelta(days=400)
     with unit_of_work(factory) as s:  # oldest first: the fake clock only moves forward
-        for days_old, kind in ((200, "llm"), (40, "event"), (30, "llm"), (10, "event")):
+        for days_old, kind in ((200, "llm"), (60, "evidence"), (40, "event"), (30, "llm"), (10, "event")):
             clock.set(now - timedelta(days=days_old))
+            if kind == "evidence":  # a restart: the rollout gates need it beyond 30 days
+                EventRepository(s, clock).append("engine.state", Severity.INFO, {"age": days_old})
+                continue
             if kind == "event":
                 EventRepository(s, clock).append("alert", Severity.INFO, {"age": days_old})
                 continue
@@ -109,7 +112,7 @@ def test_retention_keeps_the_learning_dataset(factory: sessionmaker[Session], cl
         result = RetentionRepository(s).apply(now)
     assert (result.events_deleted, result.llm_calls_truncated) == (1, 1)
     with factory() as s:
-        assert [e.payload["age"] for e in s.scalars(select(EventRow)).all()] == [10]
+        assert [e.payload["age"] for e in s.scalars(select(EventRow)).all()] == [60, 10]
         calls = sorted(s.scalars(select(LLMCallRow)).all(), key=lambda c: c.created_at)
         assert (calls[0].messages, calls[0].response_text, calls[0].parsed) == (None, None, {"ok": True})
         assert (calls[0].prompt_sha256, calls[0].cost_usd) == ("h" * 64, D("0.001"))  # the metadata stays

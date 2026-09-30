@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from aifund.adapters.clock import SystemClock
 from aifund.api import auth
 from aifund.api.context import ConfigSource
-from aifund.api.routes import analytics, commands, learning, read, ws
+from aifund.api.routes import analytics, commands, learning, read, rollout, ws
 from aifund.config.settings import PROJECT_ROOT, Settings
 from aifund.observability import register_settings_secrets
 from aifund.persistence.db import make_engine, make_session_factory, unit_of_work
@@ -94,7 +94,16 @@ def create_app(
     def health() -> dict[str, str]:
         return {"status": "ok"}
 
-    for router in (auth.router, read.router, analytics.router, commands.router, learning.router, ws.router):
+    routers = (
+        auth.router,
+        read.router,
+        analytics.router,
+        commands.router,
+        learning.router,
+        rollout.router,
+        ws.router,
+    )
+    for router in routers:
         app.include_router(router)
 
     if (dist / "index.html").is_file():  # the built dashboard; any unknown path falls back to the SPA

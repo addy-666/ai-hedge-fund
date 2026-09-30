@@ -2,7 +2,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "./client";
 import type {
-  AccountOut, BreakdownRow, CalibrationOut, CommandOut, CommitteeComparison, ConfigOut, ConfigSaved, ConfigVersionOut, Costs, DecisionDossier,
+  AccountOut, BreakdownRow, CalibrationOut, RolloutOut, CommandOut, CommitteeComparison, ConfigOut, ConfigSaved, ConfigVersionOut, Costs, DecisionDossier,
   DecisionOut, EquityPoint, LLMUsageRow, LogLine, Me, Page, PositionOut, Summary, SystemOut, TradeDossier,
   TradeOut, VirtualTradeOut, RuleOut, RuleDetail, RuleIn, RuleCreated, RulebookVersionOut, RulebookDiff,
   AuditRunOut, AuditRunDetail, FeatureOut,
@@ -97,6 +97,15 @@ export function useCalibrationAction() {
     mutationFn: ({ version, action }: { version?: number; action: "approve" | "reject" | "fit" }) =>
       api.post<{ command_id: string }>(action === "fit" ? "/api/calibration/fit" : `/api/calibration/${version}/${action}`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["calibration"] }),
+  });
+}
+export const useRollout = () =>
+  useQuery({ queryKey: ["rollout"], queryFn: () => api.get<RolloutOut>("/api/rollout") });
+export function useSignoff() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (note: string) => api.post<RolloutOut>("/api/rollout/signoff", { note }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["rollout"] }),
   });
 }
 export const useConfig = () => useQuery({ queryKey: ["config"], queryFn: () => api.get<ConfigOut>("/api/config") });

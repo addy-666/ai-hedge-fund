@@ -1778,6 +1778,34 @@
         "title": "FieldError",
         "type": "object"
       },
+      "GateOut": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "need": {
+            "title": "Need",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "status",
+          "value",
+          "need"
+        ],
+        "title": "GateOut",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -2523,6 +2551,71 @@
         "title": "PositionOut",
         "type": "object"
       },
+      "RolloutOut": {
+        "description": "The rollout ladder (docs/06 \u00a710, roadmap 9.6-9.7): the level, its exit gates, the sign-offs.",
+        "properties": {
+          "gates": {
+            "items": {
+              "$ref": "#/components/schemas/GateOut"
+            },
+            "title": "Gates",
+            "type": "array"
+          },
+          "level": {
+            "title": "Level",
+            "type": "string"
+          },
+          "level_name": {
+            "title": "Level Name",
+            "type": "string"
+          },
+          "next_level": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Level"
+          },
+          "period_start": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period Start"
+          },
+          "ready": {
+            "title": "Ready",
+            "type": "boolean"
+          },
+          "signoffs": {
+            "items": {
+              "$ref": "#/components/schemas/SignoffOut"
+            },
+            "title": "Signoffs",
+            "type": "array"
+          }
+        },
+        "required": [
+          "level",
+          "level_name",
+          "next_level",
+          "period_start",
+          "ready",
+          "gates",
+          "signoffs"
+        ],
+        "title": "RolloutOut",
+        "type": "object"
+      },
       "RuleCreated": {
         "properties": {
           "rule_id": {
@@ -2976,6 +3069,71 @@
           "reauth_until"
         ],
         "title": "SessionInfo",
+        "type": "object"
+      },
+      "SignoffIn": {
+        "properties": {
+          "note": {
+            "maxLength": 500,
+            "minLength": 3,
+            "title": "Note",
+            "type": "string"
+          }
+        },
+        "required": [
+          "note"
+        ],
+        "title": "SignoffIn",
+        "type": "object"
+      },
+      "SignoffOut": {
+        "properties": {
+          "level_from": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Level From"
+          },
+          "level_to": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Level To"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ts",
+          "level_from",
+          "level_to",
+          "note"
+        ],
+        "title": "SignoffOut",
         "type": "object"
       },
       "Summary": {
@@ -5495,6 +5653,68 @@
         "summary": "Close Position",
         "tags": [
           "commands"
+        ]
+      }
+    },
+    "/api/rollout": {
+      "get": {
+        "operationId": "rollout_api_rollout_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RolloutOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Rollout",
+        "tags": [
+          "rollout"
+        ]
+      }
+    },
+    "/api/rollout/signoff": {
+      "post": {
+        "operationId": "signoff_api_rollout_signoff_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SignoffIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RolloutOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Signoff",
+        "tags": [
+          "rollout"
         ]
       }
     },

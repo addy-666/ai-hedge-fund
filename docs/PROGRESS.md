@@ -4,17 +4,15 @@ Updated by the coding agent at the end of every task.
 
 ## Current position
 
-- Phase: 8 — Multi-agent committee, playbooks, calibration: code complete (8.1–8.5, 8.7). Phase 7 is merged
-  (PR #16).
-- Next: Phase 9 (hardening & go-live). Operator steps waiting (with 5.8, the demo 24/7 run): review the three
-  new playbook cards; `committee.mode: shadow` for ≥ 2 weeks and read Analytics → "Committee vs analyst";
-  approve (or set `auto`) the first calibration once 150 analyst trades exist; `install_tasks.ps1` again for
-  the weekly `aifund-research` task.
+- Phase: 9 — Hardening & go-live (Milestone M5): code complete (9.1–9.7 code parts). Phase 8 is merged (PR #17).
+- Next: the operator steps of `docs/runbooks/go_live.md` (tasks, security, Guardian re-test, restore drill), then
+  the L2 DEMO soak (≥ 4 weeks, ≥ 100 trades) tracked on the System page → sign-off → L3 only for strategies with
+  E1 + E2. Phase 10 is an unscheduled backlog.
 - Rollout level: L0 (SIM). `python -m aifund.engine` now runs the whole engine on MT5 (DEMO/LIVE) or in SIM;
   outside SIM it refuses to start without E1 evidence for its detectors (none has any yet: run DEMO with
   `strategy.dry_run: true` or the analyst in shadow).
-- Tests: backend 1,398 passing + 1 Windows-only (MQL5 constant cross-check against the real MetaTrader5
-  package); frontend 16 Vitest + 9 Playwright.
+- Tests: backend 1,456 passing + 1 Windows-only (MQL5 constant cross-check against the real MetaTrader5
+  package); frontend 18 Vitest + 9 Playwright.
 - History: 15-month export (2025-07-05 → 2026-09-28) for XAUUSD, NAS100.r, BTCUSD (EURUSD files remain but
   the symbol was dropped from the config on 2026-09-28). M1 is capped at 99,999 bars per symbol by the
   terminal's max-bars setting (~70 days) → R.8 (kept for now, operator decision). D1 has 317–447 bars, so D1-context snapshots start only
@@ -118,6 +116,7 @@ Updated by the coding agent at the end of every task.
 | 2026-09-30 | 9.3 Ledger verification job | `verify_ledger.py --alert`: result as heartbeat `job.verify_ledger` (ok / diff / failed + the differences), a `ledger.mismatch` event and a CRITICAL alert on any difference or failure; Windows task `aifund-ledger` daily 22:15 UTC (`--days 3`) | — | Operator: re-run `install_tasks.ps1`; test the alert once (e.g. `--fixture` with a missing trade) |
 | 2026-09-30 | 9.4 Security review | `docs/security_review.md` (06 §6 item by item, with evidence); `test_api_security.py`: EVERY route in the schema needs a session, every mutation the CSRF token, gated actions a fresh password; cookie flags and server-side expiry/logout; login rate limit per socket (spoofed X-Forwarded-For does not help); SPA traversal; the API source can only enqueue operator commands; import-linter contract API ↛ execution/risk/broker; CI job `audit` (pip-audit + npm audit: 0 known vulnerabilities today); backups upload only to an rclone `crypt` remote | Found: the WebSocket did not check `Origin` (SameSite=Strict already covered browsers; now a foreign Origin is refused and logged) | Operator: RDP (NLA, tailnet-only), firewall rule on 8000, rclone crypt remote |
 | 2026-09-30 | 9.5 Backup/restore drill (code) | `scripts/verify_db.py` (a .db or .db.gz: integrity, foreign keys, schema at head, ledger consistency, row counts; exit 0/1/2), `persistence/repositories/consistency.py`, retention (events 30 d, LLM call text 180 d) applied by `backup_db.py` only after a verified backup, `--alert` → heartbeat `job.backup` + CRITICAL on failure; drill test on a replayed trading DB (restorable; a damaged ledger, an old schema and a truncated file are each caught); runbook §7 | A JSON column set to None stores the text `null`: retention writes SQL NULL so it never re-truncates | Operator: the monthly drill on the Mac (runbook §7) |
+| 2026-10-01 | 9.6-9.7 Rollout gates (code) | `engine/rollout.py` (level from the config; L2 gates: ≥ 28 days, ≥ 100 closed trades, 0 duplicate opens, ledger check ok ≤ 36 h + 0 UNKNOWN, 0 `position.sl_missing`, every closed trade with decision + snapshot, kill switch and restart-with-open-positions tested; L3 adds micro risk, live costs per lot within 20% of the DEMO period, expectancy ≥ 0 with CI; L0/L1/L4 are operator judgements), `persistence/repositories/rollout.py`, `/api/rollout` + sign-off (re-auth, 409 unless ready, `audit_log` ROLLOUT_SIGNOFF with the gates), System page card; the position loop records `position.sl_missing`; `docs/runbooks/go_live.md` | Retention keeps the gates' evidence events (`engine.state`, `position.sl_missing`, `ledger.mismatch`) beyond 30 days: a 4-week period needs them | Operator: the soak and the sign-offs (runbook) |
 
 ## Decisions log
 
@@ -140,6 +139,7 @@ Updated by the coding agent at the end of every task.
 | 2026-09-29 | Dashboard without shadcn/ui | shadcn is a code generator over Radix + class-variance tooling; the pages need only buttons, tables, cards, a dialog and a select, written once in `components/ui.tsx` (fewer dependencies in the only process reachable over the network) | 07 (6.5) |
 | 2026-09-30 | Miner p-values from the exact permutation variance (normal tail, continuity correction) | 1,000 Monte Carlo permutations cannot produce p < 0.001, but Benjamini-Hochberg over ~150–2,000 mined bins needs p ≤ q/m for its first discovery: no pattern could ever survive. The closed form is deterministic, matches brute-force relabelling within noise and errs conservative at k ≥ 20 | 04 §3 |
 | 2026-09-30 | Learned rules also rule the baseline | Until G-LLM passes the baseline is what trades; rules that only touched the analyst would never act | 04 §7 |
+| 2026-10-01 | Retention keeps `engine.state`, `position.sl_missing` and `ledger.mismatch` events beyond 30 days | The L2/L3 gates span ≥ 4 weeks and are measured from these events; deleting them at 30 days would erase the evidence mid-period | 06 §8 (via the retention module docstring), 06 §10 |
 | 2026-09-30 | Calibration activation is configurable: `learning.calibration.activation: approve` (default) or `auto` (operator) | A calibration map can RAISE a confidence over the threshold (more trades); the operator wanted both modes available | 04 §9, config example |
 | 2026-09-30 | Playbook compiler selects `type: strategy` + `automation_potential: high` plus notes named with `--note` (operator) | The detectors' own source notes carry no `automation_potential`; the field alone selects grid/hedge EAs and concept notes | 07 (8.1), 00 §4 |
 | 2026-09-30 | The committee runs only in shadow and only beside the analyst | Keeps G-LLM's analyst-vs-baseline pairs unchanged; a gate for committee orders is not specified yet | 03 §8 |

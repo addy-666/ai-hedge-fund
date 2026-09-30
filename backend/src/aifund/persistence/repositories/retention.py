@@ -1,6 +1,8 @@
 """Data retention (docs/06 §8, roadmap 9.5): what is thinned, and when.
 
-- ``events`` older than 30 days are deleted (the live feed; everything that matters is in its own table);
+- ``events`` older than 30 days are deleted (the live feed), except the rollout gates' evidence
+  (``EVIDENCE_EVENTS``: restarts, positions found without a stop, ledger mismatches — a 4-week L2 period
+  needs all of them, docs/06 §10);
 - ``llm_calls`` older than 180 days lose the full text (``messages``, ``response_text``); the prompt hash,
   model, tokens, cost, latency, validity and the parsed result stay;
 - everything else is kept forever: it is the learning dataset.
@@ -20,6 +22,7 @@ from aifund.persistence.tables import EventRow, LLMCallRow
 
 EVENTS_DAYS = 30
 LLM_TEXT_DAYS = 180
+EVIDENCE_EVENTS = ("engine.state", "position.sl_missing", "ledger.mismatch")
 
 
 @dataclass(frozen=True)
@@ -35,7 +38,11 @@ class RetentionRepository:
     def apply(
         self, now: datetime, *, events_days: int = EVENTS_DAYS, llm_text_days: int = LLM_TEXT_DAYS
     ) -> RetentionResult:
-        events = self._s.execute(delete(EventRow).where(EventRow.ts < now - timedelta(days=events_days)))
+        events = self._s.execute(
+            delete(EventRow).where(
+                EventRow.ts < now - timedelta(days=events_days), EventRow.type.not_in(EVIDENCE_EVENTS)
+            )
+        )
         calls = self._s.execute(
             update(LLMCallRow)
             .where(
