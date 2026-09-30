@@ -1,4 +1,5 @@
-"""Statistics of a sample of R-multiples (docs/09 §3). Pure numpy, deterministic given the seed.
+"""Statistics of R-multiples (docs/09 §3, docs/04 §3/§6). Pure numpy, deterministic given the seed. Shared by
+research (hypotheses) and rules (the learning loop), so it sits at the bottom of the layers.
 
 - expectancy (mean R), median, win rate (R > 0), profit factor, total, max drawdown of the cumulative R curve
   in time order, mean R per calendar month;
@@ -11,8 +12,9 @@ noise it fires about 1 time in 20 — which is why the trial ledger corrects for
 
 from __future__ import annotations
 
+import math
 from collections import defaultdict
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
@@ -113,3 +115,73 @@ def summarize(
         p_value=p_value,
         monthly=monthly,
     )
+
+
+def benjamini_hochberg(p_values: Mapping[str, float], q: float) -> set[str]:
+    """Keys whose null is rejected at false-discovery rate ``q``."""
+    if not 0 < q < 1:
+        raise ValueError(f"q must be in (0, 1), got {q}")
+    ranked = sorted(p_values.items(), key=lambda kv: (kv[1], kv[0]))
+    m = len(ranked)
+    cutoff = 0
+    for k, (_, p) in enumerate(ranked, start=1):
+        if p <= k / m * q:
+            cutoff = k
+    return {key for key, _ in ranked[:cutoff]}
+
+
+def bootstrap_mean_ci(
+    x: Sequence[float] | np.ndarray, *, seed: int = 0, resamples: int = 2000, confidence: float = 0.90
+) -> tuple[float, float] | None:
+    """Percentile bootstrap CI of the mean (None below 2 samples)."""
+    arr = np.asarray(x, dtype=float)
+    if len(arr) < 2:
+        return None
+    means = _bootstrap_means(arr, resamples, np.random.default_rng(seed))
+    tail = (1 - confidence) / 2 * 100
+    lo, hi = np.percentile(means, [tail, 100 - tail])
+    return float(lo), float(hi)
+
+
+def bootstrap_diff_ci(
+    a: Sequence[float] | np.ndarray,
+    b: Sequence[float] | np.ndarray,
+    *,
+    seed: int = 0,
+    resamples: int = 2000,
+    confidence: float = 0.90,
+) -> tuple[float, float] | None:
+    """Percentile bootstrap CI of mean(a) − mean(b), each group resampled on its own (None if either < 2)."""
+    xa, xb = np.asarray(a, dtype=float), np.asarray(b, dtype=float)
+    if len(xa) < 2 or len(xb) < 2:
+        return None
+    rng = np.random.default_rng(seed)
+    diffs = _bootstrap_means(xa, resamples, rng) - _bootstrap_means(xb, resamples, rng)
+    tail = (1 - confidence) / 2 * 100
+    lo, hi = np.percentile(diffs, [tail, 100 - tail])
+    return float(lo), float(hi)
+
+
+def permutation_z_p_lower(x: Sequence[float] | np.ndarray, mask: Sequence[bool] | np.ndarray) -> float:
+    """One-sided p that mean(x[mask]) − mean(x[~mask]) is this low under random relabelling, from the exact
+    permutation variance of the difference, σ²·n² / (k·(n−k)·(n−1)) (σ² with divisor n), and a normal tail
+    with a continuity correction of half the smallest step the difference can take (trade outcomes cluster
+    at a few R values; without it the tail is anti-conservative by a third at k = 20).
+
+    Why not Monte Carlo: B permutations cannot resolve p below 1/(B+1), while Benjamini-Hochberg over m tests
+    needs p <= q/m for its first discovery — with thousands of mined bins no pattern could ever survive.
+    """
+    arr = np.asarray(x, dtype=float)
+    m = np.asarray(mask, dtype=bool)
+    k, n = int(m.sum()), len(arr)
+    if k == 0 or k == n or n < 3:
+        return 1.0
+    var_pop = float(arr.var())
+    if var_pop == 0:
+        return 1.0
+    effect = float(arr[m].mean() - arr[~m].mean())
+    scale = n / (k * (n - k))  # swapping two members of different value v, w moves the effect by |v−w|·scale
+    sd = math.sqrt(var_pop * n * scale / (n - 1))
+    gaps = np.diff(np.unique(arr))
+    half_step = float(gaps.min()) * scale / 2  # continuity correction: R outcomes cluster at -1R, +rr...
+    return 0.5 * math.erfc(-(effect + half_step) / sd / math.sqrt(2))  # Φ((effect + step/2) / sd)

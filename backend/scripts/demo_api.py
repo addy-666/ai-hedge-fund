@@ -11,9 +11,11 @@ Nothing here touches data/aifund.db or config/trading.yaml; the database and con
 from __future__ import annotations
 
 import argparse
+import asyncio
 import os
 import sys
 import tempfile
+import threading
 from datetime import datetime, timedelta
 from decimal import Decimal as D
 from pathlib import Path
@@ -23,15 +25,18 @@ from alembic import command
 from argon2 import PasswordHasher
 from sqlalchemy.orm import Session, sessionmaker
 
+from aifund.adapters.notify.null import NullNotifier
 from aifund.api.app import create_app
 from aifund.config.settings import PROJECT_ROOT, Settings
 from aifund.domain.enums import (
     CloseReason,
+    CommandType,
     DealEntry,
     DealReason,
     DecisionOutcome,
     EngineState,
     Mode,
+    RuleStatus,
     Side,
     Timeframe,
     TradeStatus,
@@ -39,14 +44,28 @@ from aifund.domain.enums import (
     VirtualStatus,
 )
 from aifund.domain.market import Bar
+from aifund.engine.learning import Learning
 from aifund.persistence.db import make_engine, make_session_factory, unit_of_work
 from aifund.persistence.migrations import alembic_config
 from aifund.persistence.repositories.api import BarCacheRepository
 from aifund.persistence.repositories.decisions import DecisionRepository
 from aifund.persistence.repositories.equity import EquitySnapshotRepository
-from aifund.persistence.repositories.system import EngineStateRepository, EventRepository, HeartbeatRepository
+from aifund.persistence.repositories.learning import (
+    AuditRunRepository,
+    RulebookRepository,
+    RuleEvaluationRepository,
+    RuleRepository,
+    TradeReviewRepository,
+)
+from aifund.persistence.repositories.system import (
+    CommandRepository,
+    EngineStateRepository,
+    EventRepository,
+    HeartbeatRepository,
+)
 from aifund.persistence.tables import DealRow, TradeRow, VirtualTradeRow
 from aifund.ports.system import ClockPort, Severity
+from aifund.rules import dsl
 
 EXAMPLE = PROJECT_ROOT / "config" / "trading.example.yaml"
 
@@ -202,6 +221,128 @@ def seed(
     return {"decision": decision.id}
 
 
+def seed_learning(factory: sessionmaker[Session], clock: ClockPort, decision_id: str) -> None:
+    """A rule in every lifecycle column, two rulebook versions, one audit run and one rule match."""
+    t0 = clock.now()
+
+    def rule(rid: str, feature: str, op: str, value: Any, action: dict[str, Any], **scope: Any) -> dsl.Rule:
+        return dsl.parse(
+            {"rule_id": rid, "scope": scope, "conditions": {"all": [{"feature": feature, "op": op, "value": value}]},
+             "action": action, "hypothesis": "demo"}
+        )  # fmt: skip
+
+    evidence = {
+        "n_matched": 34, "n_holdout": 11, "win_matched": 0.24, "win_unmatched": 0.47, "mean_matched": -0.52,
+        "mean_unmatched": 0.14, "effect": -0.66, "effect_discovery": -0.71, "effect_holdout": -0.48,
+        "ci_mean": [-0.81, -0.2], "coverage": 0.12, "failures": [],
+    }  # fmt: skip
+    rules = [
+        (rule("R-0001", "h1.rsi14", ">", 70, {"type": "penalty", "points": 15}, directions=["LONG"]),
+         RuleStatus.ACTIVE, evidence),
+        (rule("R-0002", "ctx.session", "==", "NY", {"type": "block"}, symbols=["NAS100"]),
+         RuleStatus.SHADOW, {**evidence, "shadow": {"n": 12, "mean_r": -0.6, "days": 9}, "awaiting_approval": True}),
+        (rule("R-0003", "m15.nr7", "==", True, {"type": "penalty", "points": 10}), RuleStatus.CANDIDATE, None),
+        (rule("R-0004", "m15.rsi14", "<", 30, {"type": "penalty", "points": 5}), RuleStatus.REJECTED,
+         {**evidence, "failures": ["holdout effect +0.050 > -0.15"]}),
+        (rule("R-0005", "ctx.regime", "==", "RANGE", {"type": "risk_scale", "factor": "0.5"}), RuleStatus.RETIRED,
+         {**evidence, "review_failures": 2}),
+    ]  # fmt: skip
+    with unit_of_work(factory) as s:
+        run = AuditRunRepository(s, clock).start(
+            trigger="nightly", window_from=t0 - timedelta(days=120), window_to=t0, n_trades=180, n_virtual=64
+        )
+        AuditRunRepository(s, clock).finish(
+            run.id, "DONE", candidates=[], validation={"results": [], "findings": ["setup X loses in ASIA"]},
+            miner_output={"n_samples": 244, "n_discovery": 171, "tested": 812, "clusters": [], "weak": []},
+            lessons_md="# Audit (nightly)\n\nLong entries above H1 RSI 70 lose.\n",
+        )  # fmt: skip
+        repo = RuleRepository(s, clock)
+        for r, status, ev in rules:
+            repo.add(
+                rule_id=r.rule_id, version=1, status=RuleStatus.SHADOW if status is RuleStatus.ACTIVE else status,
+                dsl=dsl.dump(r), dsl_sha256=dsl.dsl_sha256(r), hypothesis="Late-trend longs get stopped out.",
+                evidence=ev, origin="AUDITOR", audit_run_id=run.id, shadow_started_at=t0 - timedelta(days=20),
+            )  # fmt: skip
+        TradeReviewRepository(s, clock).add(
+            "T-CLOSED", tags=["GOOD_TRADE_GOOD_OUTCOME"], thesis_verdict="CORRECT", execution_quality=4,
+            lesson="The pullback held the EMA50 zone; the target was realistic.",
+        )  # fmt: skip
+        RulebookRepository(s, clock).record("R-0001v1 CANDIDATE->SHADOW")
+        repo.update("R-0001", 1, status=RuleStatus.ACTIVE, activated_at=t0, review_at=t0 + timedelta(days=30),
+                    expires_at=t0 + timedelta(days=90))  # fmt: skip
+        RulebookRepository(s, clock).record("R-0001v1 SHADOW->ACTIVE")
+        for i in range(12):  # R-0002's live shadow evidence: 12 NY decisions whose virtual trades lost
+            when = t0 - timedelta(days=10) + timedelta(hours=i)
+            d = DecisionRepository(s, clock).add(
+                account_id="demo", symbol="NAS100.r", trigger_tf="M15", bar_time=when, stage_reached="DECISION",
+                outcome=DecisionOutcome.BELOW_THRESHOLD, proposal={"direction": "LONG", "setup_tag": "mtf_trend_pullback"},
+            )  # fmt: skip
+            s.add(
+                VirtualTradeRow(
+                    id=f"VD{i:02d}", account_id="demo", decision_id=d.id, arm=VirtualArm.BLOCKED, symbol="NAS100.r",
+                    side=Side.BUY, setup_tag="mtf_trend_pullback", entry_time=when, entry_price=D("20000"),
+                    sl_distance=D("40"), tp_distance=D("80"), expires_at=when + timedelta(hours=3),
+                    expire_reason=CloseReason.TIME_STOP, status=VirtualStatus.CLOSED, r_multiple=D("-1"), created_at=when,
+                )
+            )  # fmt: skip
+            s.flush()
+            RuleEvaluationRepository(s).add_many(
+                d.id,
+                [
+                    {
+                        "rule_id": "R-0002",
+                        "rule_version": 1,
+                        "mode": "SHADOW",
+                        "matched": True,
+                        "action_applied": None,
+                    }
+                ],
+            )
+        RuleEvaluationRepository(s).add_many(
+            decision_id,
+            [
+                {
+                    "rule_id": "R-0001",
+                    "rule_version": 1,
+                    "mode": "ACTIVE",
+                    "matched": True,
+                    "action_applied": {"type": "penalty", "points": 15},
+                }
+            ],
+        )
+
+
+def serve_commands(factory: sessionmaker[Session], clock: ClockPort, cfg: Any, stop: threading.Event) -> None:
+    """The demo has no engine: rule commands run through the real learning loop, others are acknowledged."""
+    learning = Learning(cfg, factory, clock, NullNotifier())
+
+    async def once() -> None:
+        with unit_of_work(factory) as s:
+            claimed = CommandRepository(s, clock).claim_next()
+            job = (claimed.id, claimed.type, dict(claimed.payload or {})) if claimed else None
+        if job is None:
+            return
+        cid, type_, payload = job
+        try:
+            command = CommandType(type_)
+            if command in (CommandType.RUN_AUDIT, CommandType.APPROVE_RULE, CommandType.REJECT_RULE,
+                           CommandType.RETIRE_RULE):  # fmt: skip
+                ok, result = True, await learning.handle(command, payload)
+            else:
+                ok, result = True, {"note": "demo server: no engine to run this"}
+        except Exception as exc:
+            ok, result = False, {"error": str(exc)}
+        with unit_of_work(factory) as s:
+            CommandRepository(s, clock).finish(cid, ok=ok, result=result)
+
+    async def loop() -> None:
+        while not stop.is_set():
+            await once()
+            await asyncio.sleep(0.3)
+
+    asyncio.run(loop())
+
+
 def main(argv: list[str]) -> int:
     import uvicorn
 
@@ -227,9 +368,19 @@ def main(argv: list[str]) -> int:
     clock = SystemClock()
     app = create_app(settings, factory=factory, clock=clock, log_file=work / "engine.jsonl")
     account = app.state.config.current().config.engine.account_label
-    seed(factory, clock, account, t0=clock.now() - timedelta(hours=2))
+    ids = seed(factory, clock, account, t0=clock.now() - timedelta(hours=2))
+    seed_learning(factory, clock, ids["decision"])
+    stop = threading.Event()
+    worker = threading.Thread(
+        target=serve_commands, args=(factory, clock, app.state.config.current().config, stop)
+    )
+    worker.start()
     print(f"demo database in {work}", flush=True)
-    uvicorn.run(app, host=args.host, port=args.port, log_level="warning")
+    try:
+        uvicorn.run(app, host=args.host, port=args.port, log_level="warning")
+    finally:
+        stop.set()
+        worker.join()
     return 0
 
 

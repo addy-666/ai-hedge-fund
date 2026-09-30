@@ -163,7 +163,8 @@ llm:
   #   <model id>: {input_cache_hit_per_mtok: <usd>, input_cache_miss_per_mtok: <usd>, output_per_mtok: <usd>}
   pricing: {}
 
-learning:
+learning:                      # the self-learning loop (docs/04): penalty-only rules, validated on held-out trades
+  enabled: true                 # audits, the rule lifecycle and (with DEEPSEEK_API_KEY) trade reviews and the auditor
   audit_schedule_utc: "00:30"
   audit_min_new_trades: 10
   audit_cooldown_hours: 12

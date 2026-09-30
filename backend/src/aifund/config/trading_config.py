@@ -348,6 +348,7 @@ class LLMConfig(_Strict):
 
 
 class LearningConfig(_Strict):
+    enabled: bool = True  # the audit, rule lifecycle and trade reviews (docs/04); rules only ever reduce risk
     audit_schedule_utc: str = "00:30"
     audit_min_new_trades: int = Field(default=10, ge=1)
     audit_cooldown_hours: int = Field(default=12, ge=0)

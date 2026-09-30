@@ -79,7 +79,14 @@ def client(
     ]
     log.write_text("".join((json.dumps(x) if isinstance(x, dict) else x) + "\n" for x in lines))
     return TestClient(
-        create_app(settings, factory=factory, clock=clock, dist=tmp_path / "nodist", log_file=log)
+        create_app(
+            settings,
+            factory=factory,
+            clock=clock,
+            dist=tmp_path / "nodist",
+            log_file=log,
+            exports=tmp_path / "exports",
+        )
     )
 
 
@@ -196,7 +203,12 @@ def test_read_contracts_on_a_seeded_database(
         False,
     )
     assert {h["component"] for h in system["heartbeats"]} == {"engine", "loop.decisions"}
-    assert system["versions"]["prompts"] == ["analyst_v1.j2", "researcher_v1.j2"]
+    assert system["versions"]["prompts"] == [
+        "analyst_v1.j2",
+        "auditor_v1.j2",
+        "researcher_v1.j2",
+        "reviewer_v1.j2",
+    ]
 
     acct = client.get("/api/account").json()
     assert (acct["equity"], acct["heat_pct"], acct["open_positions"]) == ("9950", "0.50", 1)
@@ -535,3 +547,104 @@ def test_the_built_dashboard_is_served_with_a_spa_fallback(db_url: str, engine: 
     assert client.get("/journal").text == "<html>app</html>"  # client-side routes
     assert client.get("/..%2Fsecret.txt").text == "<html>app</html>"  # nothing outside dist
     assert client.get("/api/health").json() == {"status": "ok"}
+
+
+# ---------------------------------------------------------------- 7.9 learning lab
+
+
+def test_learning_lab_reads_rules_rulebook_audits_and_features(
+    client: TestClient, factory: sessionmaker[Session], clock: FakeClock, config_path: Path
+) -> None:
+    ids = seed(factory, clock, account(config_path))
+    load("demo_api").seed_learning(factory, clock, ids["decision"])
+    login(client)
+    board = client.get("/api/rules").json()
+    assert [(r["rule_id"], r["status"]) for r in board] == [
+        ("R-0005", "RETIRED"), ("R-0004", "REJECTED"), ("R-0003", "CANDIDATE"), ("R-0002", "SHADOW"),
+        ("R-0001", "ACTIVE"),
+    ]  # fmt: skip
+    shadow = next(r for r in board if r["rule_id"] == "R-0002")
+    assert shadow["awaiting_approval"] and shadow["action"] == {"type": "block"}  # noqa: PT018
+    assert shadow["text"] == "LONG/SHORT any setup on NAS100 when ctx.session == NY"
+    assert [r["rule_id"] for r in client.get("/api/rules", params={"status": "ACTIVE"}).json()] == ["R-0001"]
+    detail = client.get("/api/rules/R-0001").json()
+    assert [v["version"] for v in detail["versions"]] == [1]
+    (match,) = detail["matches"]
+    assert (match["decision_id"], match["mode"], match["r"]) == (ids["decision"], "ACTIVE", "2.0")
+    assert client.get("/api/rules/R-9999").status_code == 404
+
+    versions = client.get("/api/rulebook/versions").json()
+    assert [v["version"] for v in versions] == [2, 1]
+    diff = client.get("/api/rulebook/versions/2/diff").json()
+    assert (diff["activated"], diff["unshadowed"], diff["previous"]) == (["R-0001v1"], ["R-0001v1"], 1)
+    assert client.get("/api/rulebook/versions/1/diff").json()["shadowed"] == ["R-0001v1", "R-0002v1"]
+    assert client.get("/api/rulebook/versions/9/diff").status_code == 404
+    assert client.get("/api/system").json()["versions"]["rulebook"] == 2
+
+    (run,) = client.get("/api/audits").json()
+    audit = client.get(f"/api/audits/{run['id']}").json()
+    assert (audit["status"], audit["validation"]["findings"]) == ("DONE", ["setup X loses in ASIA"])
+    assert client.get("/api/audits/nope").status_code == 404
+
+    names = {f["name"]: f for f in client.get("/api/features").json()}
+    assert names["m15.rsi14"]["bounds"] == [0.0, 100.0] and "ctx.session" in names  # noqa: PT018
+    assert "prop.rr_target" not in names and "prop.direction" not in names  # noqa: PT018
+
+
+def test_rule_actions_are_engine_commands_with_reauth_for_blocks_and_force(
+    client: TestClient, factory: sessionmaker[Session], clock: FakeClock, config_path: Path
+) -> None:
+    ids = seed(factory, clock, account(config_path))
+    load("demo_api").seed_learning(factory, clock, ids["decision"])
+    headers = login(client)
+    clock.advance(minutes=6)  # the login no longer counts as a fresh password
+    assert client.post("/api/rules/R-0002/approve", headers=headers).status_code == 403  # a block
+    assert client.post("/api/rules/R-0003/approve?force=true", headers=headers).status_code == 403
+    assert client.post("/api/rules/R-0001/retire", headers=headers).status_code == 202
+    assert client.post("/api/rules/R-0003/reject", headers=headers).status_code == 202
+    assert client.post("/api/rules/R-9999/retire", headers=headers).status_code == 404
+    assert client.post("/api/auth/reauth", json={"password": PASSWORD}, headers=headers).status_code == 200
+    assert client.post("/api/rules/R-0002/approve", headers=headers).status_code == 202
+    assert client.post("/api/audits/run", headers=headers).status_code == 202
+    with factory() as s:
+        queued = [
+            (c.type, c.payload) for c in s.scalars(select(CommandRow).order_by(CommandRow.created_at)).all()
+        ]
+    assert queued == [
+        ("RETIRE_RULE", {"rule_id": "R-0001"}), ("REJECT_RULE", {"rule_id": "R-0003"}),
+        ("APPROVE_RULE", {"rule_id": "R-0002"}), ("RUN_AUDIT", None),
+    ]  # fmt: skip
+
+
+def test_an_operator_rule_is_validated_as_dsl_and_stored_as_a_candidate(client: TestClient) -> None:
+    headers = login(client)
+    body = {
+        "scope": {"symbols": ["XAUUSD"], "directions": ["LONG"]},
+        "conditions": {"all": [{"feature": "h1.rsi14", "op": ">", "value": 75}]},
+        "action": {"type": "penalty", "points": 10},
+        "hypothesis": "Exhausted longs revert.",
+    }
+    created = client.post("/api/rules", json=body, headers=headers)
+    assert created.status_code == 201, created.text
+    assert created.json() == {"rule_id": "R-0001", "version": 1, "status": "CANDIDATE"}
+    bad = client.post("/api/rules", json={**body, "scope": {"symbols": ["EURUSD"]}}, headers=headers)
+    assert bad.status_code == 422 and "EURUSD" in bad.json()["detail"]  # noqa: PT018
+    unknown = {**body, "conditions": {"all": [{"feature": "m15.nope", "op": ">", "value": 1}]}}
+    assert client.post("/api/rules", json=unknown, headers=headers).status_code == 422
+    assert client.get("/api/rules/R-0001").json()["rule"]["origin"] == "OPERATOR"
+
+
+def test_vault_exports_are_listed_and_served(client: TestClient, tmp_path: Path) -> None:
+    login(client)
+    assert client.get("/api/exports/vault").json() == []
+    (tmp_path / "exports").mkdir()
+    for name in ("ai-fund-review-2026-W38.md", "ai-fund-review-2026-W39.md", "notes.md"):
+        (tmp_path / "exports" / name).write_text(f"# {name}\n", encoding="utf-8")
+    assert client.get("/api/exports/vault").json() == [
+        "ai-fund-review-2026-W39.md",
+        "ai-fund-review-2026-W38.md",
+    ]
+    note = client.get("/api/exports/vault/ai-fund-review-2026-W39.md")
+    assert (note.status_code, note.text) == (200, "# ai-fund-review-2026-W39.md\n")
+    assert client.get("/api/exports/vault/notes.md").status_code == 404
+    assert client.get("/api/exports/vault/ai-fund-review-2026-W40.md").status_code == 404

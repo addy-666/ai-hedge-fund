@@ -1,17 +1,19 @@
 import { expect, test, type Page } from "@playwright/test";
 
 async function login(page: Page) {
-  await page.goto("/");
-  await page.getByLabel("Password").fill("demo password");
-  await page.getByRole("button", { name: "Log in" }).click();
-  await expect(page.getByRole("navigation")).toBeVisible();
+  await page.goto("/"); // the session from e2e/auth.setup.ts
+  await expect(page.getByRole("navigation").first()).toBeVisible();
 }
 
-test("a wrong password is refused", async ({ page }) => {
+test.describe("without a session", () => {
+  test.use({ storageState: { cookies: [], origins: [] } });
+
+  test("a wrong password is refused", async ({ page }) => {
   await page.goto("/");
-  await page.getByLabel("Password").fill("not the password");
-  await page.getByRole("button", { name: "Log in" }).click();
-  await expect(page.getByRole("alert")).toBeVisible();
+    await page.getByLabel("Password").fill("not the password");
+    await page.getByRole("button", { name: "Log in" }).click();
+    await expect(page.getByRole("alert")).toBeVisible();
+  });
 });
 
 test("every page renders on the seeded database without errors", async ({ page }) => {
@@ -30,7 +32,7 @@ test("every page renders on the seeded database without errors", async ({ page }
     ["System", /heartbeat/i],
   ];
   for (const [link, text] of pages) {
-    await page.getByRole("navigation").getByRole("link", { name: link, exact: true }).click();
+    await page.getByRole("navigation").first().getByRole("link", { name: link, exact: true }).click();
     await expect(page.getByText(text).first()).toBeVisible();
   }
   expect(errors).toEqual([]);
@@ -38,9 +40,10 @@ test("every page renders on the seeded database without errors", async ({ page }
 
 test("the trade dossier shows the chart and the decision", async ({ page }) => {
   await login(page);
-  await page.getByRole("navigation").getByRole("link", { name: "Journal", exact: true }).click();
+  await page.getByRole("navigation").first().getByRole("link", { name: "Journal", exact: true }).click();
   await page.getByRole("row", { name: /XAUUSD/ }).first().click();
   await expect(page.getByText("Decision", { exact: true })).toBeVisible();
+  await expect(page.getByText("The pullback held the EMA50 zone; the target was realistic.")).toBeVisible();
   await expect(page.locator("canvas").first()).toBeVisible();
 });
 

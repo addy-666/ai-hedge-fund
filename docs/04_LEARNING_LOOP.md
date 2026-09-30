@@ -67,6 +67,9 @@ winners (so `LUCKY_WIN` can be detected).
 
 ## 3. Pattern Miner (deterministic) — `rules/miner.py`
 
+The miner sees only the DISCOVERY split (the oldest `1 − holdout_fraction` of the window by entry time); the
+holdout is the validator's. A scope holding exactly the samples of a broader one is not tested twice.
+
 Dataset: closed real trades + closed virtual trades in the last `window_days`, each with its entry snapshot
 (same `feature_set_version` family), `r_multiple`, symbol, direction, setup_tag, `virtual` flag.
 
@@ -84,7 +87,9 @@ for each scope in [ALL, per symbol, per setup_tag, per (symbol, direction), per 
         try pairwise conjunctions with other top bins (depth ≤ 2 in the miner; the auditor may add a 3rd)
     keep bins with effect ≤ −min_effect_r and n ≥ min_matches_total
     bootstrap 2,000× → 90% CI of mean_R(b) and of effect
-    p-value: permutation test of effect (1,000×)
+    p-value: permutation test of effect — the exact permutation variance of the difference with a normal tail
+             and a continuity correction (1,000 Monte Carlo permutations cannot resolve the p ≤ q/m that BH
+             needs over thousands of bins; PROGRESS decisions log 2026-09-30)
 apply Benjamini–Hochberg across ALL tested bins at q = fdr_q
 output: top 20 surviving clusters, plus the 10 strongest non-surviving ones marked "weak"
 ```
@@ -118,7 +123,9 @@ class AuditorOutput(BaseModel):
 ```
 
 Each `CandidateRule` = DSL (§5) + `hypothesis` (a *mechanism*: why would this lose?) + `cited_clusters`
-(miner cluster ids it is based on). Candidates without a cited cluster are discarded (no invented patterns).
+(miner cluster ids it is based on). Candidates without a cited SURVIVING cluster are discarded (no invented
+patterns; a weak cluster is context, not evidence). A candidate already live under the same scope and
+condition is not registered again. Without an LLM (no API key) the surviving clusters are the candidates.
 
 Model: the auditor may use a slower reasoning model (`llm.auditor_model`) with `auditor_timeout_s`.
 
@@ -151,6 +158,9 @@ Model: the auditor may use a slower reasoning model (`llm.auditor_model`) with `
 - `conditions`: `all` (AND) of up to `max_rule_conditions` predicates; `any` supported one level deep only.
 - `op`: `<`, `<=`, `>`, `>=`, `==`, `!=`, `in`, `not_in`, `between` (`value: [lo, hi]`).
 - `action.type`: `penalty` (`points` 5–30), `risk_scale` (`factor` 0.25–0.75), `block`.
+- `prop.*` features describe the candidate trade (direction, setup, raw confidence, HTF alignment);
+  `prop.sl_atr_multiple` and `prop.rr_target` are refused: they exist only after the stop is planned, which is
+  after the rules run.
 - Validation (Pydantic): feature exists in registry with `available_at_entry=True`; value type matches dtype;
   category values valid; numeric thresholds within the feature's observed range; scope values valid.
 - Evaluation is pure: `evaluate(rule, features: dict, proposal) -> bool`. A missing feature → rule does not
@@ -197,6 +207,8 @@ Validation output (all numbers) is stored in `rules.evidence` and shown in the d
 ## 7. Rule Engine (decision time) — `rules/engine.py`
 
 ```text
+# applies to whichever decision is taken — the deterministic baseline as much as the analyst — and to both
+# G-LLM shadow arms, so the comparison stays fair
 in_scope   = rules whose scope matches (symbol, direction, setup_tag, trigger_tf)
 matched    = [r for r in in_scope if evaluate(r, snapshot.features, proposal)]
 active     = [r for r in matched if r.status == ACTIVE]

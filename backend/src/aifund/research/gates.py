@@ -6,8 +6,8 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 from aifund.config.trading_config import LearningConfig, ResearchConfig
-from aifund.research.stats import Summary
 from aifund.research.walkforward import WalkForwardResult
+from aifund.stats import Summary
 
 DAYS_PER_MONTH = 30.44
 

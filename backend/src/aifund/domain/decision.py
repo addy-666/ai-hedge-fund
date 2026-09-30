@@ -12,7 +12,7 @@ from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictFloat, StrictInt, StrictStr
 
-from aifund.domain.enums import Direction, Timeframe
+from aifund.domain.enums import Direction, MistakeTag, ThesisVerdict, Timeframe
 from aifund.domain.values import UtcDatetime
 
 FeatureValue = StrictInt | StrictFloat | StrictBool | StrictStr | None
@@ -70,6 +70,18 @@ class TradeProposal(BaseModel):
     @property
     def is_trade(self) -> bool:
         return self.direction is not Direction.NONE and self.setup_tag != "none"
+
+
+class TradeReview(BaseModel):
+    """The trade reviewer's structured output (docs/04 §2). Tags explain an outcome; they are never rule
+    conditions (outcome information is not available at entry)."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
+
+    tags: list[MistakeTag] = Field(max_length=4)
+    thesis_verdict: ThesisVerdict
+    execution_quality: StrictInt = Field(ge=1, le=5)
+    lesson: StrictStr = Field(min_length=1, max_length=400)
 
 
 class FinalDecision(BaseModel):

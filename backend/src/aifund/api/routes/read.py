@@ -34,6 +34,7 @@ from aifund.api.schemas import (
     SystemOut,
     TradeDossier,
     TradeOut,
+    TradeReviewOut,
     Versions,
     VirtualTradeOut,
 )
@@ -41,6 +42,7 @@ from aifund.domain.enums import Side
 from aifund.market.feature_registry import FEATURE_SET_VERSION
 from aifund.persistence.repositories.api import BarCacheRepository
 from aifund.persistence.repositories.dashboard import DashboardQueries
+from aifund.persistence.repositories.learning import RulebookRepository, TradeReviewRepository
 from aifund.persistence.tables import DecisionRow, TradeRow
 from aifund.risk.limits import trading_day_start
 
@@ -67,6 +69,7 @@ def system(request: Request, _s: Authenticated) -> SystemOut:
         ]
         latest = q.latest_config()
         spent = q.llm_spend(day)
+        rulebook = RulebookRepository(s, ctx.clock(request)).version()
     engine_beat = next((b for b in beats if b.component == "engine"), None)
     return SystemOut(
         now=now,
@@ -80,7 +83,7 @@ def system(request: Request, _s: Authenticated) -> SystemOut:
             config_sha256=latest.sha256 if latest else None,
             feature_set=FEATURE_SET_VERSION,
             prompts=sorted(released_templates()),
-            rulebook=engine.rulebook_version if engine else 0,
+            rulebook=rulebook,
         ),
     )
 
@@ -256,8 +259,14 @@ def trade(request: Request, trade_id: str, _s: Authenticated) -> TradeDossier:
         decision = q.decision(t.decision_id) if t.decision_id else None
         deals = [DealOut.model_validate(d) for d in q.deals(t.position_id)]
         bars = _chart_bars(s, t)
+        review = TradeReviewRepository(s, ctx.clock(request)).get(t.id)
         dossier = TradeDossier.model_validate(t).model_copy(
-            update={"decision": _dossier(q, decision) if decision else None, "deals": deals, "bars": bars}
+            update={
+                "decision": _dossier(q, decision) if decision else None,
+                "deals": deals,
+                "bars": bars,
+                "review": TradeReviewOut.model_validate(review) if review else None,
+            }
         )
     markers = [
         Marker(

@@ -1,0 +1,47 @@
+You review one closed trade of a systematic trading desk, winners and losers alike. You explain the outcome;
+you do not decide anything. Your tags are counted across hundreds of trades, so be precise and honest:
+- A loss is not a mistake by itself. When the entry followed the playbook and the market simply went the
+  other way, say so with GOOD_TRADE_BAD_OUTCOME. Learning from variance is the failure this review prevents.
+- A win is not proof of a good trade. When the thesis was wrong or the entry was poor and it still paid,
+  say so with LUCKY_WIN.
+- Judge the entry with the information available at entry (the snapshot and candles before the entry).
+  What happened afterwards tells you whether the thesis played out, not what the entry should have seen.
+
+Tags (at most 4, only from this list):
+COUNTER_HTF_TREND (traded against the higher-timeframe trend), CHASED_EXTENSION (entered after an extended
+move), LOW_VOLATILITY_CHOP (no range to reach the target), VOLATILITY_SPIKE (a sudden expansion hit the stop),
+NEWS_EVENT (a scheduled release moved price), STOP_TOO_TIGHT, STOP_TOO_WIDE, TARGET_TOO_AMBITIOUS,
+LATE_SESSION_ENTRY, RANGE_MIDDLE_ENTRY (entered in the middle of a range), FAILED_BREAKOUT,
+THESIS_INVALIDATED_EARLY (the reason for the trade was gone soon after entry), SPREAD_OR_COST_DRAG,
+GOOD_TRADE_BAD_OUTCOME, GOOD_TRADE_GOOD_OUTCOME, LUCKY_WIN.
+
+Reply with ONE JSON object and nothing else:
+{
+ "tags": list of tags (0-4),
+ "thesis_verdict": "CORRECT" | "WRONG" | "UNCLEAR",
+ "execution_quality": 1-5 (5 = entry, stop and exit exactly as the playbook intends),
+ "lesson": one or two sentences (max 400 characters) a trader could apply to the NEXT entry
+}
+=====
+TRADE XAUUSD LONG mtf_trend_pullback | trigger M15 | opened 2026-09-28 10:00 UTC | closed 2026-09-28 10:45 UTC
+ENTRY 4150 | initial stop 4140 (1.03 ATR) | initial target 4170 | risk 1R = 10
+OUTCOME -1.00R (SL) | MAE -1R | MFE 0.8R | held 3 bars (45 min)
+PATH R at 25/50/75/100% of the holding time: +0.20 / +0.80 / -0.90 / -1.10
+
+THESIS AT ENTRY: Trend up, pullback into the EMA50 zone.
+KEY RISKS NAMED: US data at 12:30
+LESSONS SHOWN AT ENTRY: R-0042
+RULES MATCHED AT ENTRY: R-0042v1
+
+ENTRY SNAPSHOT (closed bars only)
+H1: adx14=27.4 ema50=4141.3
+H4: ema_stack=BULL
+M15: atr14=9.67 close=4150 ema50=4148.52 rsi14=44.1
+CTX: drawdown_pct=na regime=TREND session=LONDON spread_to_atr=0.029
+
+TRIGGER CANDLES in R from the entry price (+ = in the trade's favour), o/h/l/c; the entry bar is marked >
+ 09-28 09:45 -0.20 +0.10 -0.30 +0.00
+>09-28 10:00 +0.00 +0.30 -0.40 +0.20
+ 09-28 10:15 +0.20 +1.00 +0.10 +0.80
+ 09-28 10:30 +0.80 +0.90 -1.10 -0.90
+ 09-28 10:45 -0.90 -0.80 -1.20 -1.10

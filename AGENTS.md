@@ -58,6 +58,13 @@ cd frontend && npm run gen:api                                  # regenerate ope
 cd backend && uv run python scripts/demo_api.py --port 8765     # the API on a seeded throw-away DB (password "demo password")
 ```
 
+Learning loop (Phase 7; it runs inside the engine when `learning.enabled`):
+
+```bash
+cd backend && uv run python scripts/engine_command.py RUN_AUDIT   # an audit now (also: the Learning Lab button)
+cd backend && uv run python scripts/pull_vault_reviews.py --url https://<machine>.<tailnet>.ts.net --vault "<path>/TRADING BRAIN"   # Mac: new weekly reviews -> wiki/reviews
+```
+
 ## Invariants — never violate, never "temporarily" bypass
 
 1. **LLM output never reaches the broker directly.** Only `risk/manager.py` constructs `OrderIntent`; only

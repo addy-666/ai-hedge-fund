@@ -13,10 +13,9 @@ from aifund.research.ledger import (
     Origin,
     Split,
     Trial,
-    benjamini_hochberg,
     digest,
 )
-from aifund.research.stats import Summary
+from aifund.stats import Summary, benjamini_hochberg
 
 START, END = datetime(2025, 7, 1, tzinfo=UTC), datetime(2026, 6, 1, tzinfo=UTC)
 NOW = datetime(2026, 9, 29, 12, 0, tzinfo=UTC)

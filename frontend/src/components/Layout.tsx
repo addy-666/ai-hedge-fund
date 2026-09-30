@@ -7,7 +7,7 @@ import { ModeBadge, StatePill } from "./StatePill";
 import { Loading } from "./ui";
 
 const NAV = [
-  ["/", "Overview"], ["/positions", "Positions"], ["/decisions", "Decisions"], ["/journal", "Journal"],
+  ["/", "Overview"], ["/positions", "Positions"], ["/decisions", "Decisions"], ["/journal", "Journal"], ["/learning", "Learning Lab"],
   ["/analytics", "Analytics"], ["/agents", "Agents & LLM"], ["/settings", "Settings"], ["/system", "System"],
 ] as const;
 

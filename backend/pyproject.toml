@@ -120,7 +120,7 @@ layers = [
     "aifund.risk | aifund.rules | aifund.strategies",
     "aifund.market",
     "aifund.ports",
-    "aifund.domain",
+    "aifund.domain | aifund.stats",
 ]
 exhaustive = false
 
@@ -142,7 +142,7 @@ forbidden_modules = [
 [[tool.importlinter.contracts]]
 name = "Pure layers do no I/O"
 type = "forbidden"
-source_modules = ["aifund.domain", "aifund.risk", "aifund.rules", "aifund.ports"]
+source_modules = ["aifund.domain", "aifund.risk", "aifund.rules", "aifund.ports", "aifund.stats"]
 forbidden_modules = [
     "aifund.persistence", "aifund.adapters", "aifund.api", "aifund.engine",
     "sqlalchemy", "MetaTrader5", "structlog",
@@ -201,5 +201,8 @@ show_missing = true
 "aifund.adapters" = 93
 "aifund.engine" = 92
 "aifund.api" = 96
+"aifund.rules" = 99
+"aifund.stats" = 100
+"aifund.vault" = 95
 "aifund.research" = 100
 "aifund" = 96

@@ -269,7 +269,7 @@ async def test_learning_commands_unknown_types_and_crashing_handlers_fail_cleanl
 ) -> None:
     r = await rig(factory, clock)
     audit = await r.send(CommandType.RUN_AUDIT)
-    assert audit.result is not None and "Phase 7" in audit.result["error"]  # noqa: PT018
+    assert audit.result is not None and "learning.enabled is off" in audit.result["error"]  # noqa: PT018
     assert await r.poller.execute("LAUNCH_ROCKET", {}) == (
         False,
         {"error": "unknown command 'LAUNCH_ROCKET'"},

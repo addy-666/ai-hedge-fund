@@ -139,6 +139,185 @@
         "title": "AccountOut",
         "type": "object"
       },
+      "AuditRunDetail": {
+        "properties": {
+          "candidates": {
+            "anyOf": [
+              {
+                "items": {},
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Candidates"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "lessons_md": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lessons Md"
+          },
+          "miner_output": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Miner Output"
+          },
+          "n_trades": {
+            "title": "N Trades",
+            "type": "integer"
+          },
+          "n_virtual": {
+            "title": "N Virtual",
+            "type": "integer"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "trigger": {
+            "title": "Trigger",
+            "type": "string"
+          },
+          "validation": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Validation"
+          },
+          "window_from": {
+            "format": "date-time",
+            "title": "Window From",
+            "type": "string"
+          },
+          "window_to": {
+            "format": "date-time",
+            "title": "Window To",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "trigger",
+          "status",
+          "window_from",
+          "window_to",
+          "n_trades",
+          "n_virtual",
+          "created_at",
+          "finished_at",
+          "miner_output",
+          "candidates",
+          "validation",
+          "lessons_md"
+        ],
+        "title": "AuditRunDetail",
+        "type": "object"
+      },
+      "AuditRunOut": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "n_trades": {
+            "title": "N Trades",
+            "type": "integer"
+          },
+          "n_virtual": {
+            "title": "N Virtual",
+            "type": "integer"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "trigger": {
+            "title": "Trigger",
+            "type": "string"
+          },
+          "window_from": {
+            "format": "date-time",
+            "title": "Window From",
+            "type": "string"
+          },
+          "window_to": {
+            "format": "date-time",
+            "title": "Window To",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "trigger",
+          "status",
+          "window_from",
+          "window_to",
+          "n_trades",
+          "n_virtual",
+          "created_at",
+          "finished_at"
+        ],
+        "title": "AuditRunOut",
+        "type": "object"
+      },
       "BarOut": {
         "properties": {
           "close": {
@@ -1099,6 +1278,64 @@
         "title": "EquityPoint",
         "type": "object"
       },
+      "FeatureOut": {
+        "properties": {
+          "bounds": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bounds"
+          },
+          "categories": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Categories"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "dtype": {
+            "title": "Dtype",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "unit": {
+            "title": "Unit",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "dtype",
+          "unit",
+          "description",
+          "categories",
+          "bounds"
+        ],
+        "title": "FeatureOut",
+        "type": "object"
+      },
       "FieldError": {
         "properties": {
           "field": {
@@ -1862,6 +2099,436 @@
         "title": "PositionOut",
         "type": "object"
       },
+      "RuleCreated": {
+        "properties": {
+          "rule_id": {
+            "title": "Rule Id",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "rule_id",
+          "version",
+          "status"
+        ],
+        "title": "RuleCreated",
+        "type": "object"
+      },
+      "RuleDetail": {
+        "properties": {
+          "matches": {
+            "items": {
+              "$ref": "#/components/schemas/RuleMatch"
+            },
+            "title": "Matches",
+            "type": "array"
+          },
+          "rule": {
+            "$ref": "#/components/schemas/RuleOut"
+          },
+          "versions": {
+            "items": {
+              "$ref": "#/components/schemas/RuleOut"
+            },
+            "title": "Versions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "rule",
+          "versions",
+          "matches"
+        ],
+        "title": "RuleDetail",
+        "type": "object"
+      },
+      "RuleIn": {
+        "description": "An operator-authored rule: it becomes a CANDIDATE and goes through the same validator.",
+        "properties": {
+          "action": {
+            "additionalProperties": true,
+            "title": "Action",
+            "type": "object"
+          },
+          "conditions": {
+            "additionalProperties": true,
+            "title": "Conditions",
+            "type": "object"
+          },
+          "hypothesis": {
+            "maxLength": 1000,
+            "minLength": 10,
+            "title": "Hypothesis",
+            "type": "string"
+          },
+          "scope": {
+            "additionalProperties": true,
+            "title": "Scope",
+            "type": "object"
+          }
+        },
+        "required": [
+          "conditions",
+          "hypothesis"
+        ],
+        "title": "RuleIn",
+        "type": "object"
+      },
+      "RuleMatch": {
+        "properties": {
+          "bar_time": {
+            "format": "date-time",
+            "title": "Bar Time",
+            "type": "string"
+          },
+          "decision_id": {
+            "title": "Decision Id",
+            "type": "string"
+          },
+          "matched": {
+            "title": "Matched",
+            "type": "boolean"
+          },
+          "mode": {
+            "title": "Mode",
+            "type": "string"
+          },
+          "outcome": {
+            "title": "Outcome",
+            "type": "string"
+          },
+          "r": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "R"
+          },
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
+          }
+        },
+        "required": [
+          "decision_id",
+          "symbol",
+          "bar_time",
+          "outcome",
+          "mode",
+          "matched",
+          "r"
+        ],
+        "title": "RuleMatch",
+        "type": "object"
+      },
+      "RuleOut": {
+        "properties": {
+          "action": {
+            "additionalProperties": true,
+            "title": "Action",
+            "type": "object"
+          },
+          "activated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Activated At"
+          },
+          "approved_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approved By"
+          },
+          "audit_run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Audit Run Id"
+          },
+          "awaiting_approval": {
+            "default": false,
+            "title": "Awaiting Approval",
+            "type": "boolean"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "dsl": {
+            "additionalProperties": true,
+            "title": "Dsl",
+            "type": "object"
+          },
+          "evidence": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evidence"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "hypothesis": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hypothesis"
+          },
+          "origin": {
+            "title": "Origin",
+            "type": "string"
+          },
+          "retire_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retire Reason"
+          },
+          "retired_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retired At"
+          },
+          "review_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review At"
+          },
+          "rule_id": {
+            "title": "Rule Id",
+            "type": "string"
+          },
+          "shadow_started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shadow Started At"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "text": {
+            "default": "",
+            "title": "Text",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "rule_id",
+          "version",
+          "status",
+          "origin",
+          "dsl",
+          "hypothesis",
+          "evidence",
+          "audit_run_id",
+          "approved_by",
+          "created_at",
+          "shadow_started_at",
+          "activated_at",
+          "review_at",
+          "expires_at",
+          "retired_at",
+          "retire_reason"
+        ],
+        "title": "RuleOut",
+        "type": "object"
+      },
+      "RuleStatus": {
+        "description": "docs/02 \u00a72.3.",
+        "enum": [
+          "CANDIDATE",
+          "REJECTED",
+          "SHADOW",
+          "ACTIVE",
+          "RETIRED"
+        ],
+        "title": "RuleStatus",
+        "type": "string"
+      },
+      "RulebookDiff": {
+        "properties": {
+          "activated": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Activated",
+            "type": "array"
+          },
+          "deactivated": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Deactivated",
+            "type": "array"
+          },
+          "previous": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previous"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "shadowed": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Shadowed",
+            "type": "array"
+          },
+          "unshadowed": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Unshadowed",
+            "type": "array"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version",
+          "previous",
+          "activated",
+          "deactivated",
+          "shadowed",
+          "unshadowed",
+          "reason"
+        ],
+        "title": "RulebookDiff",
+        "type": "object"
+      },
+      "RulebookVersionOut": {
+        "properties": {
+          "active_rules": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Active Rules",
+            "type": "array"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "shadow_rules": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Shadow Rules",
+            "type": "array"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version",
+          "active_rules",
+          "shadow_rules",
+          "reason",
+          "created_at"
+        ],
+        "title": "RulebookVersionOut",
+        "type": "object"
+      },
       "SessionInfo": {
         "properties": {
           "csrf_token": {
@@ -2311,6 +2978,20 @@
             ],
             "title": "R Multiple"
           },
+          "review": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TradeReviewOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "review_status": {
+            "title": "Review Status",
+            "type": "string"
+          },
           "setup_tag": {
             "anyOf": [
               {
@@ -2381,7 +3062,8 @@
           "fee",
           "entry_slippage_points",
           "exit_slippage_points",
-          "bars_held"
+          "bars_held",
+          "review_status"
         ],
         "title": "TradeDossier",
         "type": "object"
@@ -2573,6 +3255,44 @@
           "decision_id"
         ],
         "title": "TradeOut",
+        "type": "object"
+      },
+      "TradeReviewOut": {
+        "description": "The trade reviewer's verdict (docs/04 \u00a72): explanations, never rule conditions.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "execution_quality": {
+            "title": "Execution Quality",
+            "type": "integer"
+          },
+          "lesson": {
+            "title": "Lesson",
+            "type": "string"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tags",
+            "type": "array"
+          },
+          "thesis_verdict": {
+            "title": "Thesis Verdict",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tags",
+          "thesis_verdict",
+          "execution_quality",
+          "lesson",
+          "created_at"
+        ],
+        "title": "TradeReviewOut",
         "type": "object"
       },
       "ValidationError": {
@@ -3023,6 +3743,94 @@
         "summary": "Summary",
         "tags": [
           "analytics"
+        ]
+      }
+    },
+    "/api/audits": {
+      "get": {
+        "operationId": "audits_api_audits_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AuditRunOut"
+                  },
+                  "title": "Response Audits Api Audits Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Audits",
+        "tags": [
+          "learning"
+        ]
+      }
+    },
+    "/api/audits/run": {
+      "post": {
+        "operationId": "run_audit_api_audits_run_post",
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandAccepted"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Run Audit",
+        "tags": [
+          "learning"
+        ]
+      }
+    },
+    "/api/audits/{run_id}": {
+      "get": {
+        "operationId": "audit_api_audits__run_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditRunDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Audit",
+        "tags": [
+          "learning"
         ]
       }
     },
@@ -3652,6 +4460,100 @@
         ]
       }
     },
+    "/api/exports/vault": {
+      "get": {
+        "description": "Weekly review notes waiting for the Mac (scripts/pull_vault_reviews.py), newest first.",
+        "operationId": "vault_exports_api_exports_vault_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "title": "Response Vault Exports Api Exports Vault Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Vault Exports",
+        "tags": [
+          "learning"
+        ]
+      }
+    },
+    "/api/exports/vault/{name}": {
+      "get": {
+        "operationId": "vault_export_api_exports_vault__name__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Vault Export",
+        "tags": [
+          "learning"
+        ]
+      }
+    },
+    "/api/features": {
+      "get": {
+        "description": "The rule-usable features (entry-time, known before the rules run) for the rule editor.",
+        "operationId": "features_api_features_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/FeatureOut"
+                  },
+                  "title": "Response Features Api Features Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Features",
+        "tags": [
+          "learning"
+        ]
+      }
+    },
     "/api/health": {
       "get": {
         "operationId": "health_api_health_get",
@@ -3931,6 +4833,343 @@
         "summary": "Close Position",
         "tags": [
           "commands"
+        ]
+      }
+    },
+    "/api/rulebook/versions": {
+      "get": {
+        "operationId": "rulebook_versions_api_rulebook_versions_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/RulebookVersionOut"
+                  },
+                  "title": "Response Rulebook Versions Api Rulebook Versions Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Rulebook Versions",
+        "tags": [
+          "learning"
+        ]
+      }
+    },
+    "/api/rulebook/versions/{version}/diff": {
+      "get": {
+        "operationId": "rulebook_diff_api_rulebook_versions__version__diff_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "schema": {
+              "title": "Version",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RulebookDiff"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rulebook Diff",
+        "tags": [
+          "learning"
+        ]
+      }
+    },
+    "/api/rules": {
+      "get": {
+        "operationId": "rules_api_rules_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/RuleStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/RuleOut"
+                  },
+                  "title": "Response Rules Api Rules Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rules",
+        "tags": [
+          "learning"
+        ]
+      },
+      "post": {
+        "operationId": "create_api_rules_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RuleIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuleCreated"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create",
+        "tags": [
+          "learning"
+        ]
+      }
+    },
+    "/api/rules/{rule_id}": {
+      "get": {
+        "operationId": "rule_api_rules__rule_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "rule_id",
+            "required": true,
+            "schema": {
+              "title": "Rule Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuleDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rule",
+        "tags": [
+          "learning"
+        ]
+      }
+    },
+    "/api/rules/{rule_id}/approve": {
+      "post": {
+        "operationId": "approve_api_rules__rule_id__approve_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "rule_id",
+            "required": true,
+            "schema": {
+              "title": "Rule Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "force",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Force",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandAccepted"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Approve",
+        "tags": [
+          "learning"
+        ]
+      }
+    },
+    "/api/rules/{rule_id}/reject": {
+      "post": {
+        "operationId": "reject_api_rules__rule_id__reject_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "rule_id",
+            "required": true,
+            "schema": {
+              "title": "Rule Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandAccepted"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reject",
+        "tags": [
+          "learning"
+        ]
+      }
+    },
+    "/api/rules/{rule_id}/retire": {
+      "post": {
+        "operationId": "retire_api_rules__rule_id__retire_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "rule_id",
+            "required": true,
+            "schema": {
+              "title": "Rule Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandAccepted"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Retire",
+        "tags": [
+          "learning"
         ]
       }
     },

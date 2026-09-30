@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from aifund.adapters.clock import SystemClock
 from aifund.api import auth
 from aifund.api.context import ConfigSource
-from aifund.api.routes import analytics, commands, read, ws
+from aifund.api.routes import analytics, commands, learning, read, ws
 from aifund.config.settings import PROJECT_ROOT, Settings
 from aifund.observability import register_settings_secrets
 from aifund.persistence.db import make_engine, make_session_factory, unit_of_work
@@ -41,6 +41,7 @@ def create_app(
     clock: ClockPort | None = None,
     dist: Path = DIST,
     log_file: Path = PROJECT_ROOT / "logs" / "engine.jsonl",
+    exports: Path = PROJECT_ROOT / "exports" / "vault",
 ) -> FastAPI:
     settings = settings or Settings()
     register_settings_secrets(settings)
@@ -58,6 +59,7 @@ def create_app(
     app.state.limiter = auth.LoginLimiter()
     app.state.config = ConfigSource(settings.CONFIG_PATH)
     app.state.log_file = log_file
+    app.state.exports = exports
 
     origins = [o.strip() for o in settings.API_ALLOWED_ORIGINS.split(",") if o.strip()]
     if origins:
@@ -92,7 +94,7 @@ def create_app(
     def health() -> dict[str, str]:
         return {"status": "ok"}
 
-    for router in (auth.router, read.router, analytics.router, commands.router, ws.router):
+    for router in (auth.router, read.router, analytics.router, commands.router, learning.router, ws.router):
         app.include_router(router)
 
     if (dist / "index.html").is_file():  # the built dashboard; any unknown path falls back to the SPA

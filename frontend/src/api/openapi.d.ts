@@ -72,6 +72,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/audits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Audits */
+        get: operations["audits_api_audits_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/audits/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Run Audit */
+        post: operations["run_audit_api_audits_run_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/audits/{run_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Audit */
+        get: operations["audit_api_audits__run_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/auth/login": {
         parameters: {
             query?: never;
@@ -260,6 +311,63 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/exports/vault": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Vault Exports
+         * @description Weekly review notes waiting for the Mac (scripts/pull_vault_reviews.py), newest first.
+         */
+        get: operations["vault_exports_api_exports_vault_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/exports/vault/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Vault Export */
+        get: operations["vault_export_api_exports_vault__name__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/features": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Features
+         * @description The rule-usable features (entry-time, known before the rules run) for the rule editor.
+         */
+        get: operations["features_api_features_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/health": {
         parameters: {
             query?: never;
@@ -365,6 +473,126 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/rulebook/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Rulebook Versions */
+        get: operations["rulebook_versions_api_rulebook_versions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/rulebook/versions/{version}/diff": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Rulebook Diff */
+        get: operations["rulebook_diff_api_rulebook_versions__version__diff_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/rules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Rules */
+        get: operations["rules_api_rules_get"];
+        put?: never;
+        /** Create */
+        post: operations["create_api_rules_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/rules/{rule_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Rule */
+        get: operations["rule_api_rules__rule_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/rules/{rule_id}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Approve */
+        post: operations["approve_api_rules__rule_id__approve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/rules/{rule_id}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reject */
+        post: operations["reject_api_rules__rule_id__reject_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/rules/{rule_id}/retire": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Retire */
+        post: operations["retire_api_rules__rule_id__retire_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/system": {
         parameters: {
             query?: never;
@@ -461,6 +689,78 @@ export interface components {
             open_positions: number;
             /** Open Risk Money */
             open_risk_money: string | null;
+        };
+        /** AuditRunDetail */
+        AuditRunDetail: {
+            /** Candidates */
+            candidates: unknown[] | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Finished At */
+            finished_at: string | null;
+            /** Id */
+            id: string;
+            /** Lessons Md */
+            lessons_md: string | null;
+            /** Miner Output */
+            miner_output: {
+                [key: string]: unknown;
+            } | null;
+            /** N Trades */
+            n_trades: number;
+            /** N Virtual */
+            n_virtual: number;
+            /** Status */
+            status: string;
+            /** Trigger */
+            trigger: string;
+            /** Validation */
+            validation: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Window From
+             * Format: date-time
+             */
+            window_from: string;
+            /**
+             * Window To
+             * Format: date-time
+             */
+            window_to: string;
+        };
+        /** AuditRunOut */
+        AuditRunOut: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Finished At */
+            finished_at: string | null;
+            /** Id */
+            id: string;
+            /** N Trades */
+            n_trades: number;
+            /** N Virtual */
+            n_virtual: number;
+            /** Status */
+            status: string;
+            /** Trigger */
+            trigger: string;
+            /**
+             * Window From
+             * Format: date-time
+             */
+            window_from: string;
+            /**
+             * Window To
+             * Format: date-time
+             */
+            window_to: string;
         };
         /** BarOut */
         BarOut: {
@@ -764,6 +1064,21 @@ export interface components {
              */
             ts: string;
         };
+        /** FeatureOut */
+        FeatureOut: {
+            /** Bounds */
+            bounds: number[] | null;
+            /** Categories */
+            categories: string[] | null;
+            /** Description */
+            description: string;
+            /** Dtype */
+            dtype: string;
+            /** Name */
+            name: string;
+            /** Unit */
+            unit: string;
+        };
         /** FieldError */
         FieldError: {
             /** Field */
@@ -1010,6 +1325,158 @@ export interface components {
             /** Volume */
             volume: string;
         };
+        /** RuleCreated */
+        RuleCreated: {
+            /** Rule Id */
+            rule_id: string;
+            /** Status */
+            status: string;
+            /** Version */
+            version: number;
+        };
+        /** RuleDetail */
+        RuleDetail: {
+            /** Matches */
+            matches: components["schemas"]["RuleMatch"][];
+            rule: components["schemas"]["RuleOut"];
+            /** Versions */
+            versions: components["schemas"]["RuleOut"][];
+        };
+        /**
+         * RuleIn
+         * @description An operator-authored rule: it becomes a CANDIDATE and goes through the same validator.
+         */
+        RuleIn: {
+            /** Action */
+            action?: {
+                [key: string]: unknown;
+            };
+            /** Conditions */
+            conditions: {
+                [key: string]: unknown;
+            };
+            /** Hypothesis */
+            hypothesis: string;
+            /** Scope */
+            scope?: {
+                [key: string]: unknown;
+            };
+        };
+        /** RuleMatch */
+        RuleMatch: {
+            /**
+             * Bar Time
+             * Format: date-time
+             */
+            bar_time: string;
+            /** Decision Id */
+            decision_id: string;
+            /** Matched */
+            matched: boolean;
+            /** Mode */
+            mode: string;
+            /** Outcome */
+            outcome: string;
+            /** R */
+            r: string | null;
+            /** Symbol */
+            symbol: string;
+        };
+        /** RuleOut */
+        RuleOut: {
+            /** Action */
+            action?: {
+                [key: string]: unknown;
+            };
+            /** Activated At */
+            activated_at: string | null;
+            /** Approved By */
+            approved_by: string | null;
+            /** Audit Run Id */
+            audit_run_id: string | null;
+            /**
+             * Awaiting Approval
+             * @default false
+             */
+            awaiting_approval: boolean;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Dsl */
+            dsl: {
+                [key: string]: unknown;
+            };
+            /** Evidence */
+            evidence: {
+                [key: string]: unknown;
+            } | null;
+            /** Expires At */
+            expires_at: string | null;
+            /** Hypothesis */
+            hypothesis: string | null;
+            /** Origin */
+            origin: string;
+            /** Retire Reason */
+            retire_reason: string | null;
+            /** Retired At */
+            retired_at: string | null;
+            /** Review At */
+            review_at: string | null;
+            /** Rule Id */
+            rule_id: string;
+            /** Shadow Started At */
+            shadow_started_at: string | null;
+            /** Status */
+            status: string;
+            /**
+             * Text
+             * @default
+             */
+            text: string;
+            /** Version */
+            version: number;
+        };
+        /**
+         * RuleStatus
+         * @description docs/02 §2.3.
+         * @enum {string}
+         */
+        RuleStatus: "CANDIDATE" | "REJECTED" | "SHADOW" | "ACTIVE" | "RETIRED";
+        /** RulebookDiff */
+        RulebookDiff: {
+            /** Activated */
+            activated: string[];
+            /** Deactivated */
+            deactivated: string[];
+            /** Previous */
+            previous: number | null;
+            /** Reason */
+            reason: string;
+            /** Shadowed */
+            shadowed: string[];
+            /** Unshadowed */
+            unshadowed: string[];
+            /** Version */
+            version: number;
+        };
+        /** RulebookVersionOut */
+        RulebookVersionOut: {
+            /** Active Rules */
+            active_rules: string[];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Reason */
+            reason: string;
+            /** Shadow Rules */
+            shadow_rules: string[];
+            /** Version */
+            version: number;
+        };
         /** SessionInfo */
         SessionInfo: {
             /** Csrf Token */
@@ -1124,6 +1591,9 @@ export interface components {
             position_id: number;
             /** R Multiple */
             r_multiple: string | null;
+            review?: components["schemas"]["TradeReviewOut"] | null;
+            /** Review Status */
+            review_status: string;
             /** Setup Tag */
             setup_tag: string | null;
             /** Side */
@@ -1180,6 +1650,25 @@ export interface components {
             symbol: string;
             /** Volume Opened */
             volume_opened: string;
+        };
+        /**
+         * TradeReviewOut
+         * @description The trade reviewer's verdict (docs/04 §2): explanations, never rule conditions.
+         */
+        TradeReviewOut: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Execution Quality */
+            execution_quality: number;
+            /** Lesson */
+            lesson: string;
+            /** Tags */
+            tags: string[];
+            /** Thesis Verdict */
+            thesis_verdict: string;
         };
         /** ValidationError */
         ValidationError: {
@@ -1352,6 +1841,77 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Summary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    audits_api_audits_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuditRunOut"][];
+                };
+            };
+        };
+    };
+    run_audit_api_audits_run_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommandAccepted"];
+                };
+            };
+        };
+    };
+    audit_api_audits__run_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuditRunDetail"];
                 };
             };
             /** @description Validation Error */
@@ -1721,6 +2281,77 @@ export interface operations {
             };
         };
     };
+    vault_exports_api_exports_vault_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": string[];
+                };
+            };
+        };
+    };
+    vault_export_api_exports_vault__name__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/plain": string;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    features_api_features_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeatureOut"][];
+                };
+            };
+        };
+    };
     health_api_health_get: {
         parameters: {
             query?: never;
@@ -1855,6 +2486,247 @@ export interface operations {
             header?: never;
             path: {
                 position_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommandAccepted"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rulebook_versions_api_rulebook_versions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RulebookVersionOut"][];
+                };
+            };
+        };
+    };
+    rulebook_diff_api_rulebook_versions__version__diff_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                version: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RulebookDiff"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rules_api_rules_get: {
+        parameters: {
+            query?: {
+                status?: components["schemas"]["RuleStatus"] | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RuleOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_api_rules_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RuleIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RuleCreated"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rule_api_rules__rule_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                rule_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RuleDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    approve_api_rules__rule_id__approve_post: {
+        parameters: {
+            query?: {
+                force?: boolean;
+            };
+            header?: never;
+            path: {
+                rule_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommandAccepted"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reject_api_rules__rule_id__reject_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                rule_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommandAccepted"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    retire_api_rules__rule_id__retire_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                rule_id: string;
             };
             cookie?: never;
         };
