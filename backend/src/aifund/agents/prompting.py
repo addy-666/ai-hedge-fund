@@ -26,6 +26,7 @@ from jinja2 import Environment, FileSystemLoader, StrictUndefined
 from aifund.config.playbooks import load_card
 from aifund.domain.decision import FeatureSnapshot, FeatureValue, SetupCandidate
 from aifund.domain.market import Bar, Position
+from aifund.market.feature_registry import XA_PREFIX
 from aifund.ports.llm import LLMMessage
 
 PROMPTS_DIR = Path(__file__).resolve().parent / "prompts"
@@ -96,13 +97,36 @@ def fmt(value: FeatureValue | Decimal | float | None) -> str:
 
 
 def feature_table(snapshot: FeatureSnapshot) -> str:
-    """One line per timeframe (and one for context): ``M15: atr14=9.67 rsi14=44.1 ...``, keys sorted."""
+    """One line per timeframe (and one for context): ``M15: atr14=9.67 rsi14=44.1 ...``, keys sorted.
+    Cross-asset features are left out: released v1 prompts keep exactly the inputs they were validated on
+    (``intermarket_table`` renders them for the prompts written for them)."""
     groups: dict[str, list[str]] = {}
     for key in sorted(snapshot.features):
         prefix, _, name = key.partition(".")
+        if prefix == XA_PREFIX:
+            continue
         groups.setdefault(prefix, []).append(f"{name}={fmt(snapshot.features[key])}")
     order = sorted(groups, key=lambda p: (p in ("ctx", "prop"), p))  # timeframes first, context last
     return "\n".join(f"{p.upper()}: {' '.join(groups[p])}" for p in order)
+
+
+def intermarket_table(snapshot: FeatureSnapshot) -> list[str]:
+    """One line per other instrument: ``EURUSD: corr100=0.41 ema_stack=BULL ret24_z=1.3 ...``, or
+    ``EURUSD: closed (no fresh bars)`` when every value is null. Empty without cross-asset features."""
+    groups: dict[str, dict[str, FeatureValue]] = {}
+    for key in sorted(snapshot.features):
+        prefix, _, rest = key.partition(".")
+        if prefix != XA_PREFIX:
+            continue
+        slug, _, name = rest.partition(".")
+        groups.setdefault(slug, {})[name] = snapshot.features[key]
+    lines = []
+    for slug, values in groups.items():
+        if all(v is None for v in values.values()):
+            lines.append(f"{slug.upper()}: closed (no fresh bars)")
+        else:
+            lines.append(f"{slug.upper()}: " + " ".join(f"{k}={fmt(v)}" for k, v in values.items()))
+    return lines
 
 
 def atr_candles(bars: Sequence[Bar], atr: Decimal, count: int = 20) -> list[dict[str, str]]:

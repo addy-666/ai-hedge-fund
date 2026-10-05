@@ -57,6 +57,7 @@ from aifund.engine.equity import EquityTracker
 from aifund.engine.rulebook import RulebookCache
 from aifund.execution.executor import ExecutionResult, Executor
 from aifund.market.bar_clock import BarClosed
+from aifund.market.cross_asset import CrossAssetInput
 from aifund.market.feature_registry import tf_prefix
 from aifund.market.features import PortfolioContext, SnapshotError, build_snapshot
 from aifund.market.news import NewsCalendar
@@ -234,6 +235,28 @@ class DecisionPipeline:
 
     async def _tx(self, fn: Callable[[Session], Any]) -> Any:
         return await asyncio.to_thread(self._tx_sync, fn)
+
+    async def _cross_input(self, symbol: str, bars: dict[Timeframe, list[Bar]]) -> CrossAssetInput | None:
+        """The other instruments' closed bars for the cross-asset features (roadmap 10.2), or None when
+        ``cross_asset`` is off. An instrument the broker cannot serve gets no bars, so its features are null:
+        missing context never blocks a decision and never becomes a guess (a rule or hypothesis that needs
+        it simply does not match)."""
+        ca = self._cfg.cross_asset
+        instruments = [i for i in self._cfg.instruments() if i.broker != symbol]
+        if not instruments:
+            return None
+        others: dict[str, list[Bar]] = {}
+        for inst in instruments:
+            try:
+                others[inst.slug] = await self._market.closed_bars(inst.broker, ca.timeframe, ca.bars)
+            except BrokerError as exc:
+                log.warning("cross_asset.unavailable", instrument=inst.broker, error=str(exc)[:200])
+                others[inst.slug] = []
+        subject = bars.get(ca.timeframe)
+        if subject is None:
+            subject = await self._market.closed_bars(symbol, ca.timeframe, ca.bars)
+        max_age = timedelta(minutes=ca.max_age_minutes)
+        return CrossAssetInput(timeframe=ca.timeframe, max_age=max_age, others=others, subject=subject)
 
     async def _cache_bars(self, bars: dict[Timeframe, list[Bar]]) -> None:
         """Keep the dashboard's chart cache current with the bars just read (new ones only; best effort)."""
@@ -456,6 +479,7 @@ class DecisionPipeline:
         tfs = [roles.trigger, roles.setup, *roles.context]
         bars = {tf: await self._market.closed_bars(event.symbol, tf, profile.bars_per_tf) for tf in tfs}
         await self._cache_bars(bars)
+        cross = await self._cross_input(event.symbol, bars)
         positions = await self._broker.positions()
         own = [p for p in positions if p.magic == self._cfg.engine.magic]
         try:
@@ -470,6 +494,7 @@ class DecisionPipeline:
                 min_bars=profile.bars_per_tf,
                 portfolio=PortfolioContext(len(own), 0.0, 0.0, 0, float(drawdown_pct(equity_state))),
                 news_minutes=news_minutes,
+                cross_asset=cross,
             )
         except SnapshotError as exc:
             self._end(record, DecisionOutcome.ERROR, exc.reason, exc.detail)

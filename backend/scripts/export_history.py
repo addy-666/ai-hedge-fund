@@ -2,6 +2,7 @@
 
     cd backend
     uv run python scripts/export_history.py                       # 24 months, M1..D1, all configured symbols
+                                                                  #   and cross_asset.references
     uv run python scripts/export_history.py --months 12 --timeframes M15,H1,H4,D1
     uv run python scripts/export_history.py --from 2024-01-01 --to 2024-07-01 --timeframes M1,M5 --merge
                                                                   # a date range added to the existing export
@@ -89,10 +90,12 @@ async def main(argv: list[str]) -> int:
         symbols = [s.strip() for s in args.symbols.split(",") if s.strip()]
     else:
         try:
-            symbols = [s.broker for s in load_trading_config(settings.CONFIG_PATH).config.symbols]
+            cfg = load_trading_config(settings.CONFIG_PATH).config
         except ConfigError as exc:
             print(f"Trading config problem (or pass --symbols):\n{exc}")
             return 2
+        # traded symbols, then the cross-asset references (data only, roadmap 10.1)
+        symbols = [s.broker for s in cfg.symbols] + [r.broker for r in cfg.cross_asset.references]
 
     gw = MT5Gateway(
         MT5Credentials(

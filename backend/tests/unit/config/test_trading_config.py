@@ -198,6 +198,44 @@ def test_non_finite_yaml_numbers_raise_config_error(value: str) -> None:
         parse_trading_config(text)
 
 
+# ---------------------------------------------------------------- cross-asset (roadmap 10.1)
+
+
+def test_cross_asset_universe(base: dict[str, Any]) -> None:
+    cfg = TradingConfig.model_validate(base)
+    assert [(i.canonical, i.traded, i.slug) for i in cfg.instruments()] == [
+        ("EURUSD", False, "eurusd"), ("XAUUSD", True, "xauusd"), ("BTCUSD", True, "btcusd"),
+        ("NAS100", True, "nas100"),
+    ]  # fmt: skip
+    assert cfg.cross_asset.timeframe is Timeframe.H1
+    refs_only = TradingConfig.model_validate(_mutated(base, "cross_asset.include_traded", False))
+    assert [i.broker for i in refs_only.instruments()] == ["EURUSD"]
+    off = TradingConfig.model_validate(_mutated(base, "cross_asset.enabled", False))
+    assert off.instruments() == []
+    without = {k: v for k, v in base.items() if k != "cross_asset"}
+    assert TradingConfig.model_validate(without).instruments() == []  # off unless configured
+
+
+@pytest.mark.parametrize(
+    ("value", "error"),
+    [
+        ([{"canonical": "XAUUSD", "broker": "GOLD"}], "canonical name is repeated"),
+        ([{"canonical": "GOLD", "broker": "XAUUSD"}], "broker symbol is repeated"),
+        ([{"canonical": "AAA", "broker": "A"}, {"canonical": "AAA", "broker": "B"}], "canonical name"),
+        ([{"canonical": "eurusd", "broker": "EURUSD"}], "pattern"),
+    ],
+)
+def test_cross_asset_references_are_validated(base: dict[str, Any], value: Any, error: str) -> None:
+    with pytest.raises(ValidationError, match=error):
+        TradingConfig.model_validate(_mutated(base, "cross_asset.references", value))
+
+
+@pytest.mark.parametrize(("path", "value"), [("cross_asset.timeframe", "D1"), ("cross_asset.bars", 100)])
+def test_cross_asset_bounds(base: dict[str, Any], path: str, value: Any) -> None:
+    with pytest.raises(ValidationError):
+        TradingConfig.model_validate(_mutated(base, path, value))
+
+
 # ---------------------------------------------------------------- committee (roadmap 8.3-8.4)
 
 

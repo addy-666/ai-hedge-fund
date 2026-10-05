@@ -223,9 +223,14 @@ async def run_mt5(settings: Settings, loaded: LoadedConfig, factory: Any, live_c
         try:
             account = await gw.connect()
             symbols = [s.broker for s in cfg.symbols]
+            references = [i.broker for i in cfg.instruments() if not i.traded]
 
             async def broker_checks() -> list[str]:
-                report = await gw.startup_checks(symbols, mode=cfg.engine.mode, require_hedging=True)
+                report = await gw.startup_checks(
+                    symbols, mode=cfg.engine.mode, require_hedging=True, references=references
+                )
+                for warning in report.warnings:
+                    log.warning("broker.startup_warning", detail=warning)
                 return report.problems
 
             guardian_dir = await gw.common_files_dir() or PROJECT_ROOT / "data" / "guardian"
@@ -288,10 +293,14 @@ async def run_sim(settings: Settings, loaded: LoadedConfig, args: argparse.Names
     cfg = cfg.model_copy(update={"symbols": [s for s in cfg.symbols if s.broker in symbols]})
     timeframes = sorted(
         {tf for p in cfg.profiles.values() for tf in (p.trigger_tf, p.setup_tf, *p.context_tfs)}
-        | {Timeframe.M1},
+        | {Timeframe.M1}
+        | ({cfg.cross_asset.timeframe} if cfg.cross_asset.enabled else set()),
         key=lambda t: t.minutes,
     )
-    feed = ReplayFeed.from_history(root, symbols, timeframes, clock)
+    references = [i.broker for i in cfg.instruments() if not i.traded]
+    feed = ReplayFeed.from_history(
+        root, symbols, timeframes, clock, references=references, reference_tf=cfg.cross_asset.timeframe
+    )
     broker = SimBroker(feed=feed, clock=clock, config=SimConfig(starting_balance=Decimal("10000")))
     async with httpx.AsyncClient() as client:
         notifier = LogNotifier()

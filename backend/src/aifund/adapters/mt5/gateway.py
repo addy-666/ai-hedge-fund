@@ -14,7 +14,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import importlib
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -270,7 +270,11 @@ class MT5Gateway:
 
     # ------------------------------------------------------------------ startup checks
 
-    async def startup_checks(self, symbols: list[str], *, mode: Mode, require_hedging: bool) -> StartupReport:
+    async def startup_checks(
+        self, symbols: list[str], *, mode: Mode, require_hedging: bool, references: Sequence[str] = ()
+    ) -> StartupReport:
+        """``references``: data-only instruments (cross-asset features, roadmap 10.1). One the terminal cannot
+        select is a warning, not a problem: its features are null, nothing is traded on it."""
         report = StartupReport()
         term = await self._run(lambda mt5: mt5.terminal_info())
         if term is None or not bool(term.connected):
@@ -301,6 +305,11 @@ class MT5Gateway:
                 continue
             if not report.specs[sym].trade_allowed:
                 report.warnings.append(f"symbol {sym}: not open for new entries (trade mode)")
+        for ref in references:
+            try:
+                await self.refresh_symbol_spec(ref)
+            except (GatewayError, m.MappingError) as exc:
+                report.warnings.append(f"reference {ref}: {exc} (its cross-asset features stay null)")
 
         try:
             report.server_offset, _ = await self.refresh_server_offset(symbols)

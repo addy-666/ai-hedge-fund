@@ -27,6 +27,7 @@ from aifund.domain.decision import FeatureSnapshot, FeatureValue
 from aifund.domain.enums import EmaStack, ReasonCode, Timeframe
 from aifund.domain.market import Bar, Tick
 from aifund.market import indicators as ind
+from aifund.market.cross_asset import CacheKey, CrossAssetError, CrossAssetInput, cross_features
 from aifund.market.feature_registry import FEATURE_SET_VERSION, tf_prefix
 from aifund.market.regime import classify_regime
 
@@ -194,11 +195,15 @@ def build_snapshot(
     stale_after: timedelta | None = None,
     tf_cache: MutableMapping[tuple[Timeframe, datetime, int], dict[str, FeatureValue]] | None = None,
     news_minutes: tuple[int | None, int | None] = (None, None),
+    cross_asset: CrossAssetInput | None = None,
+    xa_cache: MutableMapping[CacheKey, dict[str, FeatureValue]] | None = None,
 ) -> FeatureSnapshot:
     """``tf_cache`` (optional, ONE cache per symbol) reuses a timeframe's features while its window of bars is
     unchanged — keyed by the window's last bar time and length, so values are identical to a fresh build.
     Research uses it: the setup/context timeframes change only once per their own bar. ``news_minutes``:
-    (to the next, since the last) HIGH-impact event from the news calendar, when the engine has one."""
+    (to the next, since the last) HIGH-impact event from the news calendar, when the engine has one.
+    ``cross_asset``: the other instruments' closed bars (roadmap 10.2); None = no ``xa.*`` features at all
+    (``xa_cache``: like ``tf_cache``, one per symbol)."""
     timeframes = [trigger_tf, setup_tf, *context_tfs]
     for tf in timeframes:
         if tf not in bars:
@@ -264,6 +269,17 @@ def build_snapshot(
             "ctx.drawdown_pct": portfolio.drawdown_pct if portfolio else None,
         }
     )
+    if cross_asset is not None:
+        subject = cross_asset.subject if cross_asset.subject is not None else bars.get(cross_asset.timeframe)
+        try:
+            features.update(
+                cross_features(
+                    subject, cross_asset.others, timeframe=cross_asset.timeframe, as_of=as_of,
+                    max_age=cross_asset.max_age, cache=xa_cache,
+                )
+            )  # fmt: skip
+        except CrossAssetError as exc:
+            raise SnapshotError(exc.reason, exc.detail) from exc
     return FeatureSnapshot(
         symbol=symbol,
         trigger_tf=trigger_tf,

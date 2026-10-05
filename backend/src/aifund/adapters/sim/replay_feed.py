@@ -8,6 +8,7 @@ bar: bid = close, ask = bid + spread (bar spread in points × point), timestampe
 from __future__ import annotations
 
 import bisect
+from collections.abc import Sequence
 from datetime import datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -43,8 +44,17 @@ class ReplayFeed:
 
     @classmethod
     def from_history(
-        cls, root: Path, symbols: list[str], timeframes: list[Timeframe], clock: ClockPort
+        cls,
+        root: Path,
+        symbols: list[str],
+        timeframes: list[Timeframe],
+        clock: ClockPort,
+        *,
+        references: Sequence[str] = (),
+        reference_tf: Timeframe | None = None,
     ) -> ReplayFeed:
+        """``references``: data-only instruments (roadmap 10.1), loaded on ``reference_tf`` only — one that
+        was not exported is simply absent (its cross-asset features are null, as live)."""
         specs = hs.read_specs(root)
         missing = [s for s in symbols if s not in specs]
         if missing:
@@ -54,7 +64,12 @@ class ReplayFeed:
             for sym in symbols
             for tf in {*timeframes, QUOTE_TF}
         }
-        return cls(bars, {s: specs[s] for s in symbols}, clock)
+        found = [r for r in references if r in specs and reference_tf is not None]
+        for ref in found:
+            assert reference_tf is not None
+            if hs.bars_path(root, ref, reference_tf).is_file():
+                bars[(ref, reference_tf)] = hs.read_bars(root, ref, reference_tf, specs[ref].digits)
+        return cls(bars, {s: specs[s] for s in [*symbols, *found]}, clock)
 
     @property
     def specs(self) -> dict[str, SymbolSpec]:

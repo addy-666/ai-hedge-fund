@@ -12,7 +12,7 @@ from aifund.adapters.sim.replay_feed import ReplayFeed
 from aifund.adapters.sim.sim_broker import Fault, RejectWith, SimBroker, SimConfig
 from aifund.domain.enums import DealEntry, DealReason, Side, Timeframe
 from aifund.domain.market import Bar, FillingMode, OrderRequest, SymbolSpec, TradeAction
-from aifund.ports.broker import BrokerUnavailable
+from aifund.ports.broker import BrokerError, BrokerUnavailable
 
 T0 = datetime(2026, 9, 28, 10, 0, tzinfo=UTC)
 SYM = "XAUUSDm"
@@ -376,6 +376,20 @@ async def test_feed_loads_exported_history(tmp_path: object) -> None:
     tick = await feed.tick(SYM)
     assert tick is not None
     assert tick.bid == D("2350.75")
+
+    # cross-asset references (roadmap 10.1): only their timeframe; one never exported is simply absent
+    ref = SPEC.model_copy(update={"symbol": "EURUSD"})
+    eur = Bar(symbol="EURUSD", timeframe=Timeframe.H1, time=T0 - timedelta(hours=1), open=D("1.1"),
+              high=D("1.2"), low=D("1.0"), close=D("1.15"), tick_volume=1)  # fmt: skip
+    hs.write_bars(root, "EURUSD", Timeframe.H1, [eur])
+    hs.write_specs(root, {SYM: SPEC, "EURUSD": ref})
+    feed = ReplayFeed.from_history(
+        root, [SYM], [Timeframe.M15], clock, references=["EURUSD", "XAGUSD"], reference_tf=Timeframe.H1
+    )
+    assert [b.close for b in await feed.closed_bars("EURUSD", Timeframe.H1, 5)] == [D("1.15")]
+    assert set(feed.specs) == {SYM, "EURUSD"}
+    with pytest.raises(BrokerError):
+        await feed.closed_bars("XAGUSD", Timeframe.H1, 5)
 
 
 def test_adapters_satisfy_the_ports() -> None:

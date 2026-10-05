@@ -272,6 +272,20 @@ The authoritative list is `backend/src/aifund/market/feature_registry.py`; this 
 | v2 (2026-09-28) | `close` (price level — not scale-free, avoid in rules), `ema50_above_ema200`, `low_dist_ema50_atr`, `high_dist_ema50_atr`, `stoch_k`, `stoch_d` (Slow Stochastics 14,3,3), `stoch_cross_up`, `stoch_cross_down` |
 | Context (`ctx.`) | `session` (UTC: ASIA 23–07, LONDON 07–12, OVERLAP 12–16, NY 16–21, OFF 21–23), `day_of_week`, `minutes_to_next_high_impact_news`, `minutes_since_last_high_impact_news` (null until Phase 8), `spread_to_atr`, `regime`, `htf_trend_score` (Σ ±1 EMA stacks over setup + context TFs), `dist_pdh_atr`, `dist_pdl_atr` (previous closed D1 bar), `open_positions_count`, `symbol_open_risk_pct`, `portfolio_heat_pct`, `consecutive_losses_symbol`, `drawdown_pct` (portfolio fields filled by the pipeline) |
 | Proposal (`prop.`) | `direction`, `setup_tag`, `llm_confidence`, `sl_atr_multiple`, `rr_target`, `htf_alignment` (`ctx.htf_trend_score` × ±1 for LONG/SHORT) — filled at rule evaluation |
+| v3 cross-asset (`xa.<instrument>.`, 2026-10-06) | Another instrument X relative to this symbol S, on `cross_asset.timeframe` (H1) bars (`market/cross_asset.py`): `ret4_z`, `ret24_z` (X's log return over 4 / 24 bars ÷ (std of its 1-bar returns over 100 bars × √n)), `ema_stack`, `dist_ema50_atr` (X's own trend), `corr100` (correlation of the pair's 1-bar returns over the last 100 bars with the same open time), `rel_ret24_z` (S's `ret24_z` − X's), `ratio_z100` (z-score of log(S/X) over the last 100 matched bars), `gap_ret_z` (X's move while S was shut: S's last gap ≥ 6 h within its last 24 bars; null otherwise) |
+
+**Cross-asset features** (roadmap 10.2). The universe is `cross_asset.references` (data-only instruments,
+never traded) plus every traded symbol; a decision on S gets the `xa.*` features of every other instrument,
+named by its lower-case canonical name (`xa.eurusd.ret24_z`). The registry resolves any `xa.<slug>.<base>`, so
+references are configuration, not code. Only bars CLOSED at decision time are read; an instrument whose last
+bar closed more than `max_age_minutes` earlier (a market that is shut, a reference the terminal cannot
+serve, history that was never exported) gives **nulls** for that decision — a rule or hypothesis that needs
+them does not match, nothing is guessed and the decision is not blocked. The engine
+(`DecisionPipeline._cross_input`) and the research study (`research/signals.CrossAssetSpec`) call the same
+function on the same closed bars. Mirrors reflect **every** instrument at once ("long S when X rises" ↔
+"short S when X falls"): X's returns and trend negate, the pair's correlation is unchanged, relative strength
+and the log-ratio negate (the latter approximately). The released v1 prompts do not see them
+(`agents/prompting.feature_table` leaves `xa.*` out); `analyst_v2` and `researcher_v2` render them.
 
 Snapshots are refused (decision outcome with reason code, no LLM call) on `INSUFFICIENT_BARS`, `FORMING_BAR`
 (a bar not closed at decision time — an upstream lookahead bug) or `STALE_DATA` (unordered/duplicate bars,
@@ -447,4 +461,13 @@ learning:
 alerts:
   telegram: true
   daily_summary_utc: "21:05"
+
+cross_asset:                    # roadmap 10.1 (§3): off unless configured
+  enabled: true
+  timeframe: H1                 # M15 | H1 | H4
+  bars: 300                     # per instrument (>= 210: EMA200)
+  max_age_minutes: 120          # older last bar = market shut: nulls
+  include_traded: true          # the traded symbols are each other's references
+  references:                   # data only, never traded; startup warns (not refuses) on a missing one
+    - {canonical: EURUSD, broker: EURUSD}
 ```

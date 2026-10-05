@@ -7,6 +7,7 @@ default in an unattended trading process. The engine refuses to start on any val
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
 from typing import Annotated, Literal, Self
@@ -489,6 +490,42 @@ class ResearchConfig(_Strict):
     scheduled_llm_rounds: int = Field(default=1, ge=0, le=10)  # LLM researcher rounds per run (needs a key)
 
 
+class ReferenceConfig(_Strict):
+    """A data-only instrument (roadmap 10.1): its closed bars feed the cross-asset features; never traded."""
+
+    canonical: str = Field(pattern=r"^[A-Z0-9]{3,12}$")
+    broker: str = Field(min_length=1, max_length=32)
+
+
+@dataclass(frozen=True)
+class Instrument:
+    """One instrument of the cross-asset universe: a reference or a traded symbol."""
+
+    canonical: str
+    broker: str
+    traded: bool
+
+    @property
+    def slug(self) -> str:  # the feature-name part: xa.<slug>.<feature>
+        return self.canonical.lower()
+
+
+class CrossAssetConfig(_Strict):
+    """Cross-asset features (docs/02 §3, roadmap 10.2): each decision sees the other instruments' closed bars.
+
+    The universe is ``references`` plus (``include_traded``) every traded symbol; a decision on one symbol
+    gets the ``xa.<instrument>.*`` features of every OTHER instrument. An instrument whose last bar on
+    ``timeframe`` closed more than ``max_age_minutes`` before the decision (a closed market, missing data)
+    gives nulls for that decision: never a guess."""
+
+    enabled: bool = False
+    timeframe: Literal[Timeframe.M15, Timeframe.H1, Timeframe.H4] = Timeframe.H1
+    bars: int = Field(default=300, ge=210, le=2000)  # per instrument: EMA200 needs 200, z-scores 100
+    max_age_minutes: int = Field(default=120, ge=1, le=10_080)
+    include_traded: bool = True
+    references: list[ReferenceConfig] = Field(default_factory=list)
+
+
 class TradingConfig(_Strict):
     engine: EngineConfig
     strategy: StrategyConfig = StrategyConfig()
@@ -502,6 +539,7 @@ class TradingConfig(_Strict):
     learning: LearningConfig = LearningConfig()
     alerts: AlertsConfig = AlertsConfig()
     research: ResearchConfig = ResearchConfig()
+    cross_asset: CrossAssetConfig = CrossAssetConfig()
 
     @model_validator(mode="after")
     def _cross_checks(self) -> Self:
@@ -511,6 +549,11 @@ class TradingConfig(_Strict):
             raise ValueError("symbols: duplicate canonical names")
         if len(set(broker)) != len(broker):
             raise ValueError("symbols: duplicate broker symbols")
+        refs = self.cross_asset.references
+        if len({r.canonical for r in refs} | set(canon)) != len(refs) + len(canon):
+            raise ValueError("cross_asset.references: a canonical name is repeated or is a traded symbol")
+        if len({r.broker for r in refs} | set(broker)) != len(refs) + len(broker):
+            raise ValueError("cross_asset.references: a broker symbol is repeated or is a traded symbol")
         unknown = sorted({s.profile for s in self.symbols} - self.profiles.keys())
         if unknown:
             raise ValueError(f"symbols reference undefined profiles: {unknown}")
@@ -531,6 +574,16 @@ class TradingConfig(_Strict):
                 if model not in self.llm.pricing:
                     raise ValueError(f"llm.pricing has no prices for {model!r}: the daily budget needs them")
         return self
+
+    def instruments(self) -> list[Instrument]:
+        """The cross-asset universe (empty when ``cross_asset.enabled`` is off): references, then traded."""
+        ca = self.cross_asset
+        if not ca.enabled:
+            return []
+        out = [Instrument(r.canonical, r.broker, traded=False) for r in ca.references]
+        if ca.include_traded:
+            out += [Instrument(s.canonical, s.broker, traded=True) for s in self.symbols]
+        return out
 
     def symbol(self, canonical: str) -> SymbolConfig:
         for s in self.symbols:
