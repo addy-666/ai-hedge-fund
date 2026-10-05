@@ -81,11 +81,17 @@ class StrategyConfig(_Strict):
     # setup detectors the engine runs: built-in ids, or playbooks in config/playbooks/ that carry an APPROVED
     # DSL hypothesis (research drafts approved by the operator). Outside SIM each needs E1 evidence.
     detectors: list[str] = Field(default_factory=lambda: ["mtf_trend_pullback"], min_length=1)
+    # roadmap 10.4: a second analyst prompt decides beside the analyst on every candidate bar, in SHADOW only
+    # (SHADOW_CHALLENGER virtual trades; Analytics compares them). Never orders: to trade with it, make it
+    # analyst_prompt_version, which needs its own G-LLM sign-off. Idle while the analyst is off.
+    challenger_prompt_version: int | None = Field(default=None, ge=1)
 
     @model_validator(mode="after")
     def _orders_need_the_analyst(self) -> StrategyConfig:
         if self.analyst_orders and not self.analyst_enabled:
             raise ValueError("strategy.analyst_orders needs strategy.analyst_enabled")
+        if self.challenger_prompt_version == self.analyst_prompt_version:
+            raise ValueError("strategy.challenger_prompt_version must differ from analyst_prompt_version")
         return self
 
 
@@ -488,6 +494,7 @@ class ResearchConfig(_Strict):
     holdout_roll_days: int = Field(default=90, ge=30)  # new data needed before the holdout moves forward
     schedule_days: int = Field(default=7, ge=1)  # scheduled runs: at most this often, and only on new history
     scheduled_llm_rounds: int = Field(default=1, ge=0, le=10)  # LLM researcher rounds per run (needs a key)
+    researcher_prompt_version: int = Field(default=1, ge=1)  # agents/prompts/researcher_v<n>.j2 (v2: 10.3)
 
 
 class ReferenceConfig(_Strict):

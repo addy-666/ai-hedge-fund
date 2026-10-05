@@ -58,6 +58,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/analytics/challenger": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Challenger
+         * @description The challenger prompt's shadow record beside the analyst and the baseline: the prompt A/B (10.4).
+         */
+        get: operations["challenger_api_analytics_challenger_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/analytics/committee": {
         parameters: {
             query?: never;
@@ -337,6 +357,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/cross-asset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Cross Asset */
+        get: operations["cross_asset_api_cross_asset_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/decisions": {
         parameters: {
             query?: never;
@@ -451,7 +488,8 @@ export interface paths {
         };
         /**
          * Features
-         * @description The rule-usable features (entry-time, known before the rules run) for the rule editor.
+         * @description The rule-usable features (entry-time, known before the rules run) for the rule editor, with the
+         *     cross-asset features of the configured instruments (roadmap 10.5).
          */
         get: operations["features_api_features_get"];
         put?: never;
@@ -1008,6 +1046,34 @@ export interface components {
             /** Source */
             source: string;
         };
+        /**
+         * ChallengerComparison
+         * @description The challenger analyst prompt vs the analyst vs the baseline in shadow (roadmap 10.4).
+         */
+        ChallengerComparison: {
+            /** Agreement */
+            agreement: number | null;
+            /** Analyst Prompt */
+            analyst_prompt: string;
+            /** Arms */
+            arms: components["schemas"]["ArmStat"][];
+            /** Bars */
+            bars: number;
+            /** Challenger Prompt */
+            challenger_prompt: string | null;
+            /** Days */
+            days: number;
+            /** First */
+            first: string | null;
+            /** Last */
+            last: string | null;
+            /** Mode */
+            mode: string;
+            /** Risk Usd */
+            risk_usd: string | null;
+            vs_analyst: components["schemas"]["UpliftStat"] | null;
+            vs_baseline: components["schemas"]["UpliftStat"] | null;
+        };
         /** CommandAccepted */
         CommandAccepted: {
             /** Command Id */
@@ -1052,7 +1118,8 @@ export interface components {
         };
         /**
          * CommitteeComparison
-         * @description Committee vs analyst vs baseline in shadow (roadmap 8.4): paired bars, net of LLM cost in R.
+         * @description A contender vs analyst vs baseline in shadow, paired bars, net of LLM cost in R: the committee
+         *     (roadmap 8.4) or, as ``ChallengerComparison``, the challenger prompt (10.4).
          */
         CommitteeComparison: {
             /** Agreement */
@@ -1135,6 +1202,24 @@ export interface components {
             swap: string;
             /** Trades */
             trades: number;
+        };
+        /**
+         * CrossAssetOut
+         * @description The cross-asset universe and what each traded symbol's latest decision saw of it (roadmap 10.6).
+         */
+        CrossAssetOut: {
+            /** Enabled */
+            enabled: boolean;
+            /** Instruments */
+            instruments: string[];
+            /** Max Age Minutes */
+            max_age_minutes: number;
+            /** References */
+            references: string[];
+            /** Rows */
+            rows: components["schemas"]["IntermarketRow"][];
+            /** Timeframe */
+            timeframe: string;
         };
         /** DealOut */
         DealOut: {
@@ -1389,6 +1474,31 @@ export interface components {
             tp: string | null;
             /** Volume */
             volume: string;
+        };
+        /** IntermarketCell */
+        IntermarketCell: {
+            /** Corr100 */
+            corr100: number | null;
+            /** Ema Stack */
+            ema_stack: string | null;
+            /** Instrument */
+            instrument: string;
+            /** Open */
+            open: boolean;
+            /** Ret24 Z */
+            ret24_z: number | null;
+        };
+        /** IntermarketRow */
+        IntermarketRow: {
+            /**
+             * Bar Time
+             * Format: date-time
+             */
+            bar_time: string;
+            /** Cells */
+            cells: components["schemas"]["IntermarketCell"][];
+            /** Symbol */
+            symbol: string;
         };
         /** LLMCallOut */
         LLMCallOut: {
@@ -2110,6 +2220,38 @@ export interface operations {
             };
         };
     };
+    challenger_api_analytics_challenger_get: {
+        parameters: {
+            query?: {
+                from?: string | null;
+                to?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChallengerComparison"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     committee_api_analytics_committee_get: {
         parameters: {
             query?: {
@@ -2577,6 +2719,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ConfigVersionOut"][];
+                };
+            };
+        };
+    };
+    cross_asset_api_cross_asset_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CrossAssetOut"];
                 };
             };
         };

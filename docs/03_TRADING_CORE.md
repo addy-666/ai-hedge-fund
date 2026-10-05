@@ -233,6 +233,18 @@ out of `decisions.cost_usd` (which G-LLM charges to the analyst) and recorded in
 inside the committee is logged and never touches the real decision. No setting lets it send an order: that
 would need its own sign-off gate (a follow-up).
 
+**Challenger analyst** (roadmap 10.4, the prompt A/B): `strategy.challenger_prompt_version` (e.g. 2) runs a
+second analyst with that prompt — `analyst_v2.j2` is v1 plus an INTERMARKET block (the `xa.*` features as one
+line per other market, with a legend, and guidance to treat them as context) — concurrently with the analyst on
+every candidate bar, in **shadow only**. It is ruled like the analyst (learned rules, threshold) through its own
+portfolio manager whose calibration source (`challenger`) has no model: the analyst's calibration was fitted on
+another prompt. Its decision is stored under `decisions.proposal.challenger` (prompt version, verdict, proposal,
+final confidence, tradable, cost) and, when tradable, as a `SHADOW_CHALLENGER` virtual trade (migration
+`e7b1c4d9a2f3`); its LLM calls are booked as agent `challenger`. A failure inside it is logged and ignored; it
+idles while the analyst is off. To trade with a challenger that wins, make it `analyst_prompt_version`: that
+version needs its own G-LLM sign-off (`require_g_llm` checks the prompt version). The released v1 prompts never
+see the cross-asset features (`prompting.feature_table` leaves `xa.*` out).
+
 ---
 
 ## 9. Duplicate & reversal guards (`risk/guards.py`)

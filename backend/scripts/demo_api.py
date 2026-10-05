@@ -224,34 +224,94 @@ def seed(
     return {"decision": decision.id}
 
 
-def seed_committee(factory: sessionmaker[Session], clock: ClockPort, acc: str, t0: datetime) -> None:
-    """Six hourly bars the committee deliberated on in shadow beside the analyst (roadmap 8.4), each with
-    finished shadow trades: (baseline R, analyst R, committee R or None when it stayed out)."""
-    outcomes = [("-1", "-1", None), ("2", "2", "2"), ("1", "-1", "1"), ("0.5", None, None),
-                ("-1", "-1", "-1"), ("1.5", "1.5", "1.5")]  # fmt: skip
+def _seed_contender(
+    factory: sessionmaker[Session], clock: ClockPort, acc: str, t0: datetime, contender: str, arm: VirtualArm,
+    outcomes: list[tuple[str, str | None, str | None]], record: dict[str, object], tag: str,
+) -> None:  # fmt: skip
+    """Hourly bars a contender decided on in shadow beside the analyst, each with finished shadow trades:
+    (baseline R, analyst R or None, contender R or None when it stayed out)."""
     with unit_of_work(factory) as s:
-        for i, (base, analyst, committee) in enumerate(outcomes):
+        for i, (base, analyst, other) in enumerate(outcomes):
             bar = t0 - timedelta(hours=len(outcomes) - i)
-            record = {"combined": 72, "confidence": 65, "critic_penalty": 7, "tradable": committee is not None,
-                      "cost_usd": "0.0030", "calls": 2, "proposer": "trend", "specialists": {}}  # fmt: skip
             d = DecisionRepository(s, clock).add(
                 account_id=acc, symbol="XAUUSD", trigger_tf="M15", bar_time=bar, stage_reached="DECISION",
                 outcome=DecisionOutcome.SHADOW, setups=[{"setup_tag": "mtf_trend_pullback"}], model="deepseek-chat",
-                cost_usd=D("0.0010"), proposal={"source": "analyst", "committee": record},
+                cost_usd=D("0.0010"),
+                proposal={"source": "analyst", contender: {**record, "tradable": other is not None}},
             )  # fmt: skip
-            for arm, r in ((VirtualArm.SHADOW_BASELINE, base), (VirtualArm.SHADOW_ANALYST, analyst),
-                           (VirtualArm.SHADOW_COMMITTEE, committee)):  # fmt: skip
+            for a, r in (
+                (VirtualArm.SHADOW_BASELINE, base),
+                (VirtualArm.SHADOW_ANALYST, analyst),
+                (arm, other),
+            ):
                 if r is None:
                     continue
                 s.add(
                     VirtualTradeRow(
-                        id=f"VC{i}{arm.value[7]}", account_id=acc, decision_id=d.id, arm=arm, symbol="XAUUSD",
+                        id=f"V{tag}{i}{a.value[7]}", account_id=acc, decision_id=d.id, arm=a, symbol="XAUUSD",
                         side=Side.BUY, entry_time=bar + timedelta(minutes=15), sl_distance=D("10"),
                         tp_distance=D("20"), expires_at=bar + timedelta(hours=3),
                         expire_reason=CloseReason.TIME_STOP, status=VirtualStatus.CLOSED, created_at=bar,
                         entry_price=D("4150"), r_multiple=D(r),
                     )
                 )  # fmt: skip
+
+
+def seed_committee(factory: sessionmaker[Session], clock: ClockPort, acc: str, t0: datetime) -> None:
+    """Six hourly bars the committee deliberated on in shadow beside the analyst (roadmap 8.4)."""
+    outcomes = [("-1", "-1", None), ("2", "2", "2"), ("1", "-1", "1"), ("0.5", None, None),
+                ("-1", "-1", "-1"), ("1.5", "1.5", "1.5")]  # fmt: skip
+    record = {"combined": 72, "confidence": 65, "critic_penalty": 7, "cost_usd": "0.0030", "calls": 2,
+              "proposer": "trend", "specialists": {}}  # fmt: skip
+    _seed_contender(factory, clock, acc, t0, "committee", VirtualArm.SHADOW_COMMITTEE, outcomes, record, "C")
+
+
+def seed_challenger(factory: sessionmaker[Session], clock: ClockPort, acc: str, t0: datetime) -> None:
+    """Five hourly bars the challenger prompt (analyst_v2) decided on in shadow (roadmap 10.4), a day earlier."""
+    outcomes = [
+        ("1", "1", "1"),
+        ("-1", "-1", None),
+        ("2", None, "2"),
+        ("-1", "-1", "-1"),
+        ("0.5", "0.5", "1"),
+    ]
+    record = {
+        "prompt_version": "analyst_v2",
+        "verdict": "PROPOSAL",
+        "cost_usd": "0.0012",
+        "final_confidence": 70,
+    }
+    _seed_contender(factory, clock, acc, t0 - timedelta(days=1), "challenger", VirtualArm.SHADOW_CHALLENGER,
+                    outcomes, record, "X")  # fmt: skip
+
+
+def seed_cross_asset(factory: sessionmaker[Session], clock: ClockPort, acc: str, t0: datetime) -> None:
+    """One recent decision per traded symbol whose snapshot carries the cross-asset features (roadmap 10.6):
+    on a Saturday the index and EURUSD would be shut; here gold sees BTC and NAS100, BTC sees EURUSD shut."""
+    from aifund.domain.decision import FeatureSnapshot
+    from aifund.persistence.repositories.market import FeatureSnapshotRepository
+
+    seen = {
+        "XAUUSD": {"eurusd": (0.38, 1.4, "BULL"), "btcusd": (0.12, -0.6, "MIXED"), "nas100": (-0.21, -1.8, "BEAR")},
+        "BTCUSD": {"eurusd": None, "xauusd": (0.12, 0.9, "BULL"), "nas100": (0.47, -1.8, "BEAR")},
+        "NAS100.r": {"eurusd": (0.05, 1.4, "BULL"), "xauusd": (-0.21, 0.9, "BULL"), "btcusd": (0.47, -0.6, "MIXED")},
+    }  # fmt: skip
+    with unit_of_work(factory) as s:
+        for symbol, others in seen.items():
+            features: dict[str, object] = {}
+            for slug, values in others.items():
+                corr, ret, stack = values if values is not None else (None, None, None)
+                features |= {
+                    f"xa.{slug}.corr100": corr,
+                    f"xa.{slug}.ret24_z": ret,
+                    f"xa.{slug}.ema_stack": stack,
+                }
+            snap = FeatureSnapshot(symbol=symbol, trigger_tf=Timeframe.M15, bar_time=t0, feature_set_version=3,
+                                   features=features, bars_ref={Timeframe.M15: t0})  # fmt: skip
+            sid = FeatureSnapshotRepository(s, clock).get_or_add(snap).id
+            DecisionRepository(s, clock).add(account_id=acc, symbol=symbol, trigger_tf="M15", bar_time=t0,
+                                             stage_reached="SETUP", outcome=DecisionOutcome.NO_SETUP,
+                                             snapshot_id=sid)  # fmt: skip
 
 
 def seed_calibration(factory: sessionmaker[Session], clock: ClockPort, acc: str, t0: datetime) -> None:
@@ -440,6 +500,10 @@ def main(argv: list[str]) -> int:
     ids = seed(factory, clock, account, t0=clock.now() - timedelta(hours=2))
     seed_learning(factory, clock, ids["decision"])
     seed_committee(factory, clock, account, clock.now() - timedelta(hours=2))
+    seed_challenger(factory, clock, account, clock.now() - timedelta(hours=2))
+    seed_cross_asset(
+        factory, clock, account, clock.now().replace(second=0, microsecond=0) - timedelta(minutes=15)
+    )
     seed_calibration(factory, clock, account, clock.now())
     stop = threading.Event()
     worker = threading.Thread(

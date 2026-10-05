@@ -245,6 +245,7 @@ class VirtualArm(StrEnum):
     SHADOW_BASELINE = "SHADOW_BASELINE"  # what the deterministic baseline would have traded on this bar
     SHADOW_ANALYST = "SHADOW_ANALYST"  # what the analyst would have traded on this bar
     SHADOW_COMMITTEE = "SHADOW_COMMITTEE"  # what the Phase 8 committee would have traded (roadmap 8.4)
+    SHADOW_CHALLENGER = "SHADOW_CHALLENGER"  # what the challenger analyst prompt would have traded (10.4)
 
 
 class CloseReason(StrEnum):

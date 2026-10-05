@@ -133,6 +133,30 @@ def analyst_for(
     )
 
 
+def challenger_for(
+    settings: Settings,
+    cfg: TradingConfig,
+    factory: Any,
+    clock: ClockPort,
+    notifier: NotifierPort,
+    client: httpx.AsyncClient,
+) -> Analyst | None:
+    """The challenger analyst prompt in shadow (strategy.challenger_prompt_version, roadmap 10.4)."""
+    version = cfg.strategy.challenger_prompt_version
+    if version is None or not cfg.strategy.analyst_enabled:  # it decides beside the analyst only
+        return None
+    if settings.DEEPSEEK_API_KEY is None:
+        raise StartupError("strategy.challenger_prompt_version needs DEEPSEEK_API_KEY in .env")
+    return Analyst(
+        _llm(settings, cfg, factory, clock, notifier, client),
+        cfg.llm,
+        playbooks=PLAYBOOKS,
+        version=version,
+        record_parse=_recorder(factory, clock),
+        agent="challenger",  # llm_calls.agent: its spend apart from the analyst's
+    )
+
+
 def committee_for(
     settings: Settings,
     cfg: TradingConfig,
@@ -247,6 +271,7 @@ async def run_mt5(settings: Settings, loaded: LoadedConfig, factory: Any, live_c
                 g_llm=load_g_llm(EVIDENCE),
                 analyst=analyst_for(settings, cfg, factory, clock, notifier, client),
                 committee=committee_for(settings, cfg, factory, clock, notifier, client),
+                challenger=challenger_for(settings, cfg, factory, clock, notifier, client),
                 learners=learners_for(settings, cfg, factory, clock, notifier, client),
                 vault_exporter=ReviewExporter(factory, clock, out_dir=EXPORTS, playbooks=PLAYBOOKS),
                 guardian=GuardianFiles(guardian_dir),
@@ -310,6 +335,7 @@ async def run_sim(settings: Settings, loaded: LoadedConfig, args: argparse.Names
             account_login=1,
             analyst=analyst_for(settings, cfg, factory, clock, notifier, client),
             committee=committee_for(settings, cfg, factory, clock, notifier, client),
+            challenger=challenger_for(settings, cfg, factory, clock, notifier, client),
             learners=learners_for(settings, cfg, factory, clock, notifier, client),
         )
         engine = Engine(

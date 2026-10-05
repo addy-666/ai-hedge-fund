@@ -42,6 +42,7 @@ cd backend && uv run python scripts/replay.py --from 2026-06-15 --to 2026-09-27 
 cd backend && uv run python scripts/research.py baseline   # edge study: grid, walk-forward, gate E1 (docs/09); --spend-holdout once
 cd backend && uv run python scripts/research.py baseline --detector nr7_breakout   # the same for failure_test_2b / sr_fade_range
 cd backend && uv run python scripts/research.py dsl --file ideas.json   # operator entry hypotheses (docs/09 §5) through the research loop
+cd backend && uv run python scripts/research.py dsl --file ../config/research/intermarket_nas100.json --symbols NAS100.r   # curated cross-asset hypotheses, one file per symbol (docs/09 §6)
 cd backend && uv run python scripts/research.py llm --rounds 1   # LLM researcher proposes, the loop judges (DEEPSEEK_API_KEY, llm.pricing, migrated DB)
 cd backend && uv run python scripts/research.py scheduled   # the weekly run: only on new history, rolls the holdout; --force
 cd backend && uv run python scripts/export_history.py --update   # Windows: merge the bars since the last export (the weekly research task)

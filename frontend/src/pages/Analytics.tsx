@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { ApiError } from "../api/client";
-import { useBreakdown, useCalibration, useCalibrationAction, useCommittee, useCosts, useSummary } from "../api/queries";
-import type { CalibrationOut, CommitteeComparison } from "../api/types";
+import { useBreakdown, useCalibration, useCalibrationAction, useChallenger, useCommittee, useCosts, useSummary } from "../api/queries";
+import type { CalibrationOut, ChallengerComparison, CommitteeComparison } from "../api/types";
 import { KpiTile } from "../components/KpiTile";
 import { ReauthDialog } from "../components/ReauthDialog";
 import { Reliability } from "../components/Reliability";
@@ -14,15 +14,18 @@ const pct = (v: number | null | undefined) => (v === null || v === undefined ? "
 const uplift = (u: CommitteeComparison["vs_analyst"]) =>
   !u ? "–" : `${u.mean_r >= 0 ? "+" : ""}${u.mean_r.toFixed(3)}R [${ratio(u.ci_low, 3)}, ${ratio(u.ci_high, 3)}]`;
 
-export function CommitteeCard({ data }: { data: CommitteeComparison | undefined }) {
+/** A contender in shadow beside the analyst and the baseline: the committee (8.4) or the challenger prompt (10.4). */
+export function ContenderCard({ data, name, off, intro }: {
+  data: CommitteeComparison | undefined; name: string; off: string; intro?: string;
+}) {
   if (!data) return <Loading />;
   if (data.bars === 0)
-    return <Empty>No committee shadow yet{data.mode === "off" ? " (committee.mode is off)" : ""}.</Empty>;
+    return <Empty>No {name.toLowerCase()} shadow yet{data.mode === "off" ? ` (${off})` : ""}.</Empty>;
   return (
     <div className="space-y-2">
       <p className="text-sm text-slate-400">
-        {data.bars} paired bars over {data.days.toFixed(1)} days (mode {data.mode}); an arm that stayed out earned 0R.
-        Agreement {pct(data.agreement)}.
+        {intro ? `${intro} ` : ""}{data.bars} paired bars over {data.days.toFixed(1)} days (mode {data.mode}); an arm that
+        stayed out earned 0R. Agreement {pct(data.agreement)}.
       </p>
       <Table head={["Arm", "Trades", "Total", "R / trade", "Win rate", "LLM cost"]}>
         {data.arms.map((a) => (
@@ -31,11 +34,20 @@ export function CommitteeCard({ data }: { data: CommitteeComparison | undefined 
         ))}
       </Table>
       <p className="text-sm">
-        Committee uplift per bar, net of LLM cost (90% CI): vs analyst <span data-testid="vs-analyst">{uplift(data.vs_analyst)}</span>,
+        {name} uplift per bar, net of LLM cost (90% CI): vs analyst <span data-testid="vs-analyst">{uplift(data.vs_analyst)}</span>,
         vs baseline {uplift(data.vs_baseline)}{data.risk_usd ? ` (1R = ${money(data.risk_usd)})` : " (no equity yet: cost not in R)"}.
       </p>
     </div>
   );
+}
+
+export function CommitteeCard({ data }: { data: CommitteeComparison | undefined }) {
+  return <ContenderCard data={data} name="Committee" off="committee.mode is off" />;
+}
+
+export function ChallengerCard({ data }: { data: ChallengerComparison | undefined }) {
+  const intro = data?.challenger_prompt ? `${data.challenger_prompt} vs ${data.analyst_prompt}:` : undefined;
+  return <ContenderCard data={data} name="Challenger" off="strategy.challenger_prompt_version is not set" intro={intro} />;
 }
 
 type CalAction = { version?: number; action: "approve" | "reject" | "fit" };
@@ -113,6 +125,7 @@ export function Analytics() {
   const rows = useBreakdown(dim, days);
   const costs = useCosts(days);
   const committee = useCommittee(days);
+  const challenger = useChallenger(days);
   const s = summary.data;
   return (
     <div className="space-y-4">
@@ -140,6 +153,9 @@ export function Analytics() {
       </Card>
       <Card title="Committee vs analyst (shadow)">
         <CommitteeCard data={committee.data} />
+      </Card>
+      <Card title="Challenger prompt vs analyst (shadow A/B)">
+        <ChallengerCard data={challenger.data} />
       </Card>
       <div className="grid gap-4 md:grid-cols-2">
         <Card title="Costs">

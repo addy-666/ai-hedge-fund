@@ -273,3 +273,12 @@ def test_the_committee_runs_beside_the_analyst(base: dict[str, Any]) -> None:
     raw["strategy"]["baseline_enabled"] = True
     with pytest.raises(ValidationError, match="runs beside the analyst"):
         TradingConfig.model_validate(raw)
+
+
+def test_the_challenger_prompt(base: dict[str, Any]) -> None:
+    """Roadmap 10.4: another analyst prompt in shadow; idle (not refused) when the analyst is off."""
+    assert TradingConfig.model_validate(base).strategy.challenger_prompt_version == 2
+    with pytest.raises(ValidationError, match="must differ"):
+        TradingConfig.model_validate(_mutated(base, "strategy.challenger_prompt_version", 1))
+    off = _mutated(_mutated(base, "strategy.analyst_enabled", False), "strategy.baseline_enabled", True)
+    assert TradingConfig.model_validate(off).strategy.challenger_prompt_version == 2

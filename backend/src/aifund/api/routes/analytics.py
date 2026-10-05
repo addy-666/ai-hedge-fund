@@ -21,6 +21,7 @@ from aifund.api.schemas import (
     CalibrationModelOut,
     CalibrationOut,
     CalibrationSourceOut,
+    ChallengerComparison,
     CommitteeComparison,
     Costs,
     Summary,
@@ -195,20 +196,20 @@ def _uplift(stats: Stats | None) -> UpliftStat | None:
     return UpliftStat(n=stats.n, mean_r=round(stats.mean, 4), ci_low=stats.ci_low, ci_high=stats.ci_high)
 
 
-@router.get("/committee")
-def committee(request: Request, _s: Authenticated, start: From = None, end: To = None) -> CommitteeComparison:
-    """The committee's shadow record beside the analyst and the baseline (roadmap 8.4)."""
+def _comparison(
+    request: Request, start: datetime | None, end: datetime | None, contender: str
+) -> dict[str, Any]:
+    """The fields of a contender's comparison (committee or challenger) over the window."""
     start, end = _window(request, start, end)
     cfg = ctx.state(request).config.current().config
     account = ctx.account(request)
     with ctx.read(request) as s:
-        bars = VirtualTradeRepository(s, ctx.clock(request)).committee_bars(account, start, end)
+        bars = VirtualTradeRepository(s, ctx.clock(request)).contender_bars(account, start, end, contender)
         latest = EquitySnapshotRepository(s).latest(account)
     risk_usd = latest.equity * cfg.risk.risk_per_trade_pct / 100 if latest is not None else None
-    report = compare(bars, risk_usd=risk_usd if risk_usd and risk_usd > 0 else None)
+    report = compare(bars, risk_usd=risk_usd if risk_usd and risk_usd > 0 else None, contender=contender)
     days = (report.last - report.first).total_seconds() / 86400 if report.first and report.last else 0.0
-    return CommitteeComparison(
-        mode=cfg.committee.mode,
+    return dict(
         bars=report.bars,
         first=report.first,
         last=report.last,
@@ -228,6 +229,28 @@ def committee(request: Request, _s: Authenticated, start: From = None, end: To =
         risk_usd=report.risk_usd.quantize(Decimal("0.01")) if report.risk_usd is not None else None,
         vs_analyst=_uplift(report.vs_analyst),
         vs_baseline=_uplift(report.vs_baseline),
+    )
+
+
+@router.get("/committee")
+def committee(request: Request, _s: Authenticated, start: From = None, end: To = None) -> CommitteeComparison:
+    """The committee's shadow record beside the analyst and the baseline (roadmap 8.4)."""
+    mode = ctx.state(request).config.current().config.committee.mode
+    return CommitteeComparison(mode=mode, **_comparison(request, start, end, "committee"))
+
+
+@router.get("/challenger")
+def challenger(
+    request: Request, _s: Authenticated, start: From = None, end: To = None
+) -> ChallengerComparison:
+    """The challenger prompt's shadow record beside the analyst and the baseline: the prompt A/B (10.4)."""
+    strategy = ctx.state(request).config.current().config.strategy
+    version = strategy.challenger_prompt_version
+    return ChallengerComparison(
+        mode="shadow" if version is not None else "off",
+        analyst_prompt=f"analyst_v{strategy.analyst_prompt_version}",
+        challenger_prompt=f"analyst_v{version}" if version is not None else None,
+        **_comparison(request, start, end, "challenger"),
     )
 
 

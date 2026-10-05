@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from aifund.adapters.clock import SystemClock
 from aifund.api import auth
 from aifund.api.context import ConfigSource
-from aifund.api.routes import analytics, commands, learning, read, rollout, ws
+from aifund.api.routes import analytics, commands, cross_asset, learning, read, rollout, ws
 from aifund.config.settings import PROJECT_ROOT, Settings
 from aifund.observability import register_settings_secrets
 from aifund.persistence.db import make_engine, make_session_factory, unit_of_work
@@ -101,6 +101,7 @@ def create_app(
         commands.router,
         learning.router,
         rollout.router,
+        cross_asset.router,
         ws.router,
     )
     for router in routers:

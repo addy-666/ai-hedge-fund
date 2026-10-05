@@ -114,6 +114,7 @@ async def replay(
     committee: Committee | None = None,
     committee_mode: str | None = None,
     extra: dict | None = None,  # type: ignore[type-arg]  # more series for the feed (cross-asset references)
+    challenger: Analyst | None = None,
 ) -> ReplayReport:
     cfg = load_trading_config(CONFIG).config
     risk = cfg.risk.model_copy(
@@ -147,7 +148,7 @@ async def replay(
         cfg, broker=broker, market=feed, factory=factory, clock=clock, executor=executor, risk=risk,
         detectors=detectors, equity=tracker, account_id="acc",
         profile_override={"intraday_m15": profile}, analyst=analyst,
-        news=news, committee=committee,
+        news=news, committee=committee, challenger=challenger,
     )  # fmt: skip
     bar_clock = BarClock(feed, clock, [("XAUUSD", Timeframe.M15)], DecisionCursorStore(factory))
     manager = PositionManager(cfg.position_management, cfg.risk.stops, magic=cfg.engine.magic, account=1)

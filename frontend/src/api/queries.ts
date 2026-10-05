@@ -2,7 +2,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "./client";
 import type {
-  AccountOut, BreakdownRow, CalibrationOut, RolloutOut, CommandOut, CommitteeComparison, ConfigOut, ConfigSaved, ConfigVersionOut, Costs, DecisionDossier,
+  AccountOut, BreakdownRow, CalibrationOut, RolloutOut, CommandOut, ChallengerComparison, CommitteeComparison, CrossAssetOut, ConfigOut, ConfigSaved, ConfigVersionOut, Costs, DecisionDossier,
   DecisionOut, EquityPoint, LLMUsageRow, LogLine, Me, Page, PositionOut, Summary, SystemOut, TradeDossier,
   TradeOut, VirtualTradeOut, RuleOut, RuleDetail, RuleIn, RuleCreated, RulebookVersionOut, RulebookDiff,
   AuditRunOut, AuditRunDetail, FeatureOut,
@@ -89,6 +89,16 @@ export const useCommittee = (days: number) =>
         from: new Date(Date.now() - days * 86_400_000).toISOString(),
       }),
   });
+export const useChallenger = (days: number) =>
+  useQuery({
+    queryKey: ["challenger", days],
+    queryFn: () =>
+      api.get<ChallengerComparison>("/api/analytics/challenger", {
+        from: new Date(Date.now() - days * 86_400_000).toISOString(),
+      }),
+  });
+export const useCrossAsset = () =>
+  useQuery({ queryKey: ["cross-asset"], queryFn: () => api.get<CrossAssetOut>("/api/cross-asset") });
 export const useCalibration = () =>
   useQuery({ queryKey: ["calibration"], queryFn: () => api.get<CalibrationOut>("/api/analytics/calibration") });
 export function useCalibrationAction() {

@@ -66,18 +66,32 @@ class History:
         return cls({key: Series.of(key[1], b) for key, b in bars.items()}, specs)
 
     @classmethod
-    def load(cls, root: Path, symbols: list[str], timeframes: Iterable[Timeframe]) -> History:
-        """Read the Parquet export (``scripts/export_history.py``); missing files are simply absent."""
+    def load(
+        cls,
+        root: Path,
+        symbols: list[str],
+        timeframes: Iterable[Timeframe],
+        *,
+        references: Iterable[str] = (),
+        reference_tf: Timeframe | None = None,
+    ) -> History:
+        """Read the Parquet export (``scripts/export_history.py``); missing files are simply absent.
+        ``references``: cross-asset instruments (roadmap 10.3), read on ``reference_tf`` only; one that was
+        never exported is skipped (its features are null, as live)."""
         specs = hs.read_specs(root)
         missing = [s for s in symbols if s not in specs]
         if missing:
             raise hs.HistoryError(f"no specs for {missing} in {root}")
+        wanted = {s: set(timeframes) for s in symbols}
+        for ref in references:
+            if ref in specs and reference_tf is not None:
+                wanted.setdefault(ref, set()).add(reference_tf)
         series: dict[tuple[str, Timeframe], Series] = {}
-        for symbol in symbols:
-            for tf in set(timeframes):
+        for symbol, tfs in wanted.items():
+            for tf in tfs:
                 if hs.bars_path(root, symbol, tf).is_file():
                     series[(symbol, tf)] = Series.of(tf, hs.read_bars(root, symbol, tf, specs[symbol].digits))
-        return cls(series, {s: specs[s] for s in symbols})
+        return cls(series, {s: specs[s] for s in wanted})
 
     def get(self, symbol: str, timeframe: Timeframe) -> Series | None:
         return self._series.get((symbol, timeframe))

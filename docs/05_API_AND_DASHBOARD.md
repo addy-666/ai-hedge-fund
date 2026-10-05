@@ -53,6 +53,8 @@
 | POST | `/api/calibration/{version}/approve\|reject`, `/api/calibration/fit` | Commands `APPROVE_CALIBRATION` (re-auth: it can raise confidences over the threshold), `REJECT_CALIBRATION`, `FIT_CALIBRATION` |
 | GET | `/api/rollout` / POST `/api/rollout/signoff` | The rollout level from the config, its measured exit gates (docs/06 §10) and the sign-offs; signing off needs re-auth, is refused (409) while a measured gate fails, and is recorded in `audit_log` (9.6-9.7) |
 | GET | `/api/analytics/committee?from&to` | Committee vs analyst vs baseline in shadow (8.4): paired bars, per-arm trades/R/win rate/LLM cost, agreement, committee uplift per bar net of LLM cost with its 90% CI |
+| GET | `/api/analytics/challenger?from&to` | The challenger prompt vs analyst vs baseline in shadow (10.4, the prompt A/B): the committee report's fields for `SHADOW_CHALLENGER`, plus `analyst_prompt` / `challenger_prompt` |
+| GET | `/api/cross-asset` | The cross-asset universe (10.6): each instrument's last closed bar on `cross_asset.timeframe` and whether it is fresh, and the pair correlations (`xa.*.corr100`) from each symbol's latest snapshot |
 | GET | `/api/analytics/costs` | Spread/commission/swap/slippage totals and per trade |
 | GET | `/api/llm/usage?from&to` | Calls, tokens, cache hit rate, cost, latency p50/p95, error rate per agent/model |
 | GET | `/api/bars?symbol&tf&from&to` | Bars for charts, from `bar_cache` (the pipeline upserts the closed bars it reads; the API never asks MT5) |

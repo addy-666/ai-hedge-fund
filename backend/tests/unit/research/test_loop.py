@@ -51,6 +51,7 @@ class Synthetic:
         self.edge_until = edge_until
         rng = random.Random(seed)
         self.symbols = ["XAUUSD"]
+        self.instruments: list[str] = []
         step = (WINDOW.end - WINDOW.start) / events
         self.planted = planted
         self.events = [

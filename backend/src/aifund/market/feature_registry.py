@@ -263,6 +263,7 @@ XA_FEATURES: tuple[tuple[str, FeatureType, str, str, tuple[str, ...] | None, Mir
      "more within the last 24 bars) / (1-bar std x sqrt bars); null without such a gap", None, _NEG),
 )  # fmt: skip
 XA_PREFIX = "xa"
+BASES = tuple(base for base, *_ in XA_FEATURES)  # the cross-asset base names, in registry order
 _XA_NAME = re.compile(r"^xa\.([a-z0-9]{3,12})\.([a-z0-9_]+)$")
 _XA_BASES = {base: (dtype, unit, desc, cats, mirror) for base, dtype, unit, desc, cats, mirror in XA_FEATURES}
 

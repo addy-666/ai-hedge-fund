@@ -332,9 +332,10 @@ class ArmStat(BaseModel):
 
 
 class CommitteeComparison(BaseModel):
-    """Committee vs analyst vs baseline in shadow (roadmap 8.4): paired bars, net of LLM cost in R."""
+    """A contender vs analyst vs baseline in shadow, paired bars, net of LLM cost in R: the committee
+    (roadmap 8.4) or, as ``ChallengerComparison``, the challenger prompt (10.4)."""
 
-    mode: str  # committee.mode now
+    mode: str  # committee.mode now; for the challenger "shadow" or "off"
     bars: int
     first: datetime | None
     last: datetime | None
@@ -344,6 +345,38 @@ class CommitteeComparison(BaseModel):
     risk_usd: Decimal | None
     vs_analyst: UpliftStat | None
     vs_baseline: UpliftStat | None
+
+
+class ChallengerComparison(CommitteeComparison):
+    """The challenger analyst prompt vs the analyst vs the baseline in shadow (roadmap 10.4)."""
+
+    analyst_prompt: str  # e.g. analyst_v1
+    challenger_prompt: str | None  # e.g. analyst_v2; None when no challenger is configured
+
+
+class IntermarketCell(BaseModel):
+    instrument: str  # canonical
+    open: bool  # its bars were fresh at that decision (False: market shut, missing data)
+    corr100: float | None
+    ret24_z: float | None
+    ema_stack: str | None
+
+
+class IntermarketRow(BaseModel):
+    symbol: str  # canonical
+    bar_time: datetime  # the decision bar the snapshot belongs to
+    cells: list[IntermarketCell]
+
+
+class CrossAssetOut(BaseModel):
+    """The cross-asset universe and what each traded symbol's latest decision saw of it (roadmap 10.6)."""
+
+    enabled: bool
+    timeframe: str
+    max_age_minutes: int
+    instruments: list[str]  # canonical, references first
+    references: list[str]  # the data-only ones
+    rows: list[IntermarketRow]
 
 
 class CalibrationBin(BaseModel):

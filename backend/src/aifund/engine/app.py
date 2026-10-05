@@ -82,6 +82,7 @@ class Options:
     g_llm: Sequence[GLlmSignoff] = ()
     analyst: Analyst | None = None
     committee: Committee | None = None  # the Phase 8 committee in shadow (committee.mode)
+    challenger: Analyst | None = None  # the challenger prompt in shadow (strategy.challenger_prompt_version)
     learners: tuple[Reviewer | None, Auditor | None] = (None, None)  # the learning loop's LLM agents
     vault_exporter: ReviewExporter | None = None  # weekly review notes for the TRADING BRAIN vault
     guardian: GuardianFiles | None = None
@@ -137,6 +138,7 @@ class Engine:
                 trading_enabled=self.entries_allowed,
                 analyst=opts.analyst,
                 committee=opts.committee,
+                challenger=opts.challenger,
                 evidence=opts.evidence,
                 g_llm=opts.g_llm,
                 news=opts.calendar.current if opts.calendar is not None else None,

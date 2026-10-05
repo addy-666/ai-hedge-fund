@@ -32,6 +32,7 @@ from aifund.market.conditions import Condition
 from aifund.market.feature_registry import (
     NEEDS_TIMEFRAME,
     NOT_YET_COMPUTED,
+    XA_PREFIX,
     FeatureSource,
     FeatureSpec,
     tf_prefix,
@@ -39,7 +40,7 @@ from aifund.market.feature_registry import (
 from aifund.strategies.base import TfRoles, num
 
 MAX_PREDICATES = 6  # per side: a hypothesis with more conditions is a curve fit, not a mechanism
-SNAPSHOT_SOURCES = (FeatureSource.BARS, FeatureSource.CONTEXT)
+SNAPSHOT_SOURCES = (FeatureSource.BARS, FeatureSource.CONTEXT, FeatureSource.CROSS_ASSET)
 
 
 def entry_feature(spec: FeatureSpec) -> str | None:
@@ -115,6 +116,11 @@ class EntryHypothesis(BaseModel):
 
     def params_sha256(self) -> str:
         return cnd.sha256(self.behaviour())
+
+    def instruments(self) -> set[str]:
+        """Cross-asset instrument slugs the hypothesis reads (``xa.<slug>.<feature>``, roadmap 10.3)."""
+        names = {n for c in (self.long, self.short_condition) if c is not None for n in cnd.features_of(c)}
+        return {n.split(".")[1] for n in names if n.startswith(f"{XA_PREFIX}.")}
 
     def timeframes(self) -> set[Timeframe]:
         names = {n for c in (self.long, self.short_condition) if c is not None for n in cnd.features_of(c)}

@@ -1,0 +1,137 @@
+[
+  {
+    "id": "XA-NAS-1",
+    "version": 1,
+    "setup_tag": "nas_crypto_risk_on_pullback",
+    "long": {
+      "all": [
+        {
+          "feature": "xa.btcusd.ret24_z",
+          "op": ">",
+          "value": 0.5
+        },
+        {
+          "feature": "h1.ema_stack",
+          "op": "==",
+          "value": "BULL"
+        },
+        {
+          "feature": "m15.dist_ema20_atr",
+          "op": "<",
+          "value": 0.0
+        }
+      ]
+    },
+    "short": "mirror",
+    "invalidation": {
+      "type": "atr",
+      "tf": "trigger",
+      "k": 1.5
+    },
+    "target": {
+      "type": "rr",
+      "rr": 2.0
+    },
+    "mechanism": "Bitcoin and the Nasdaq share risk appetite: a strong crypto day confirms an H1 index uptrend, so a dip below the M15 EMA20 is a pullback to buy."
+  },
+  {
+    "id": "XA-NAS-2",
+    "version": 1,
+    "setup_tag": "nas_weekend_gap_follow",
+    "long": {
+      "all": [
+        {
+          "feature": "xa.btcusd.gap_ret_z",
+          "op": ">",
+          "value": 1.0
+        },
+        {
+          "feature": "m15.candle_dir",
+          "op": "==",
+          "value": "BULL"
+        }
+      ]
+    },
+    "short": "mirror",
+    "invalidation": {
+      "type": "atr",
+      "tf": "trigger",
+      "k": 1.5
+    },
+    "target": {
+      "type": "rr",
+      "rr": 2.0
+    },
+    "mechanism": "Crypto trades through the weekend while the index is shut; a large weekend crypto move is risk sentiment the index has not priced, and it catches up in the first day after the open."
+  },
+  {
+    "id": "XA-NAS-3",
+    "version": 1,
+    "setup_tag": "nas_weak_dollar_trend",
+    "long": {
+      "all": [
+        {
+          "feature": "xa.eurusd.ret24_z",
+          "op": ">",
+          "value": 0.5
+        },
+        {
+          "feature": "h1.ema50_slope_atr",
+          "op": ">",
+          "value": 0.0
+        },
+        {
+          "feature": "m15.stoch_cross_up",
+          "op": "==",
+          "value": true
+        }
+      ]
+    },
+    "short": "mirror",
+    "invalidation": {
+      "type": "atr",
+      "tf": "trigger",
+      "k": 1.5
+    },
+    "target": {
+      "type": "rr",
+      "rr": 2.0
+    },
+    "mechanism": "A weakening dollar eases financial conditions for US equities; with the H1 EMA50 rising, a fresh M15 stochastic turn times the continuation."
+  },
+  {
+    "id": "XA-NAS-4",
+    "version": 1,
+    "setup_tag": "nas_btc_relative_revert",
+    "long": {
+      "all": [
+        {
+          "feature": "xa.btcusd.ratio_z100",
+          "op": "<",
+          "value": -2.0
+        },
+        {
+          "feature": "xa.btcusd.corr100",
+          "op": ">",
+          "value": 0.2
+        },
+        {
+          "feature": "m15.rsi14",
+          "op": "<",
+          "value": 40
+        }
+      ]
+    },
+    "short": "mirror",
+    "invalidation": {
+      "type": "atr",
+      "tf": "trigger",
+      "k": 1.5
+    },
+    "target": {
+      "type": "rr",
+      "rr": 2.0
+    },
+    "mechanism": "When the index is two standard deviations cheap against bitcoin while both still co-move, the relative stretch tends to revert from the index's side."
+  }
+]

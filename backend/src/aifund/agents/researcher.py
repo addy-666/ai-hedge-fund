@@ -60,6 +60,7 @@ class ResearchBrief:
     playbooks: list[PlaybookCard]
     ledger: list[LedgerLine]
     tables: list[Table] = field(default_factory=list)
+    instruments: list[str] = field(default_factory=list)  # cross-asset slugs with data (roadmap 10.3)
 
 
 @dataclass(frozen=True)
@@ -125,6 +126,15 @@ def feature_lines(roles: TfRoles) -> tuple[list[dict[str, str]], list[dict[str, 
     return tf_rows, ctx_rows
 
 
+def xa_feature_lines() -> list[dict[str, str]]:
+    """The cross-asset features as ``xa.<instrument>.<base>`` rows (researcher_v2, roadmap 10.3)."""
+    rows = []
+    for base, *_ in reg.XA_FEATURES:
+        spec = reg.xa_spec("instrument", base)
+        rows.append(_line(spec, f"xa.<instrument>.{base}", prefix="xa."))
+    return rows
+
+
 def _num(x: float | None) -> str:
     return "na" if x is None else f"{x:+.3f}"
 
@@ -166,6 +176,8 @@ class Researcher:
             prefixes=", ".join(f"{tf_prefix(tf)}." for tf in timeframes),
             tf_features=tf_rows,
             ctx_features=ctx_rows,
+            xa_features=xa_feature_lines() if brief.instruments else [],
+            instruments=", ".join(brief.instruments),
             playbooks=brief.playbooks,
             ledger=[
                 dict(
@@ -196,7 +208,7 @@ class Researcher:
                 return result
             else:
                 self._account(result, response)
-                problems = self._collect(response.text, attempt, brief.roles, result, seen)
+                problems = self._collect(response.text, attempt, brief, result, seen)
                 await self._record(response, attempt, problems)
                 messages.append(LLMMessage(role="assistant", content=response.text))
             if not problems or len(result.hypotheses) >= self._max:
@@ -214,7 +226,7 @@ class Researcher:
         return result
 
     def _collect(
-        self, text: str, attempt: int, roles: TfRoles, result: ResearcherResult, seen: set[str]
+        self, text: str, attempt: int, brief: ResearchBrief, result: ResearcherResult, seen: set[str]
     ) -> list[str]:
         try:
             data = json.loads(text)
@@ -229,7 +241,7 @@ class Researcher:
             if len(result.hypotheses) >= self._max:
                 result.rejected.append(Rejected(attempt, item, f"over the limit of {self._max} hypotheses"))
                 continue
-            parsed = _parse(item, roles)
+            parsed = _parse(item, brief.roles, brief.instruments)
             if isinstance(parsed, str):
                 result.rejected.append(Rejected(attempt, item, parsed))
                 problems.append(f"hypothesis {i}: {parsed}")
@@ -265,7 +277,7 @@ class Researcher:
             await self._record_parse(response.call_id, None, not problems, error)
 
 
-def _parse(item: Any, roles: TfRoles) -> EntryHypothesis | str:
+def _parse(item: Any, roles: TfRoles, instruments: Sequence[str] = ()) -> EntryHypothesis | str:
     if not isinstance(item, dict):
         return "a hypothesis must be a JSON object"
     body = {k: v for k, v in item.items() if k not in ("id", "version")} | {"id": "H-new", "version": 1}
@@ -278,4 +290,8 @@ def _parse(item: Any, roles: TfRoles) -> EntryHypothesis | str:
         )[:500]
     except ValueError as exc:
         return str(exc)[:500]
+    unknown = sorted(h.instruments() - set(instruments))
+    if unknown:  # a name the registry accepts, but no data: it could never fire and would only cost FDR
+        have = ", ".join(instruments) or "none"
+        return f"no cross-asset data for {', '.join(unknown)} (instruments: {have})"
     return h.model_copy(update={"id": f"H-{h.params_sha256()[:10]}"})

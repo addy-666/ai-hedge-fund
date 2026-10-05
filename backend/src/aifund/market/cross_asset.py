@@ -31,7 +31,7 @@ from aifund.domain.decision import FeatureValue
 from aifund.domain.enums import EmaStack, ReasonCode, Timeframe
 from aifund.domain.market import Bar
 from aifund.market import indicators as ind
-from aifund.market.feature_registry import XA_FEATURES, xa_name
+from aifund.market.feature_registry import BASES, xa_name
 
 VOL_WINDOW = 100  # 1-bar log returns for the volatility that scales every return z
 PAIR_WINDOW = 100  # matched bars for the correlation and the log-ratio z-score
@@ -39,7 +39,6 @@ MIN_PAIRS = 60  # fewer matched returns than this: the pair features are null
 GAP = timedelta(hours=6)  # a pause in S's bars at least this long is a market closure
 GAP_LOOKBACK = 24  # bars of S searched for that closure
 FLAT = 1e-9  # a log-ratio std below this is price rounding, not a spread to score
-BASES = tuple(base for base, *_ in XA_FEATURES)
 
 
 class CrossAssetError(Exception):

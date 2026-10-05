@@ -22,6 +22,9 @@ strategy:
                                 #   baseline's decisions become shadow virtual trades; the baseline trades if
                                 #   enabled). On outside SIM needs a sign-off: scripts/uplift_report.py
   analyst_prompt_version: 1     # agents/prompts/analyst_v<n>.j2
+  challenger_prompt_version: 2  # roadmap 10.4: analyst_v2 (+ INTERMARKET) decides beside v1 in SHADOW only;
+                                #   Analytics > Challenger compares them on the same bars net of LLM cost.
+                                #   ~1 extra LLM call per candidate bar. null = off
 
 committee:                      # Phase 8 (docs/03 §8): specialists per setup family + a risk critic
   mode: "off"                   # "shadow": on every bar with a candidate, record what the committee would
@@ -224,6 +227,7 @@ research:                     # evidence gates (docs/09 §7). Never lower a gate
   commission_per_lot: 0       # round turn; Vantage standard accounts charge none (spread only)
   slippage_points: 0
   max_hypotheses_per_run: 5
+  researcher_prompt_version: 2  # v2 shows the LLM researcher the cross-asset features (roadmap 10.3)
 
 cross_asset:                  # roadmap 10.1-10.2: every decision sees the other markets (xa.<instrument>.* features)
   enabled: true

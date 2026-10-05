@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useLogs, useSystem } from "../api/queries";
 import { EngineControls } from "../components/EngineControls";
+import { CrossAssetCard } from "../components/CrossAsset";
 import { RolloutCard } from "../components/Rollout";
 import { Card, Loading, Select, Table, Td } from "../components/ui";
 import { age, utc } from "../lib/format";
@@ -37,6 +38,7 @@ export function System() {
         </Card>
       </div>
       <RolloutCard />
+      <CrossAssetCard />
       <Card title="Engine log (tail)" actions={<Select label="level" value={level} onChange={setLevel} options={["error", "warning", "info"]} />}>
         <div className="max-h-96 overflow-auto font-mono text-xs">
           {(logs.data ?? []).slice().reverse().map((l, i) => (

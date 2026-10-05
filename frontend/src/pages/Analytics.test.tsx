@@ -1,8 +1,8 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-import type { CalibrationOut, CommitteeComparison } from "../api/types";
-import { CalibrationView, CommitteeCard } from "./Analytics";
+import type { CalibrationOut, ChallengerComparison, CommitteeComparison } from "../api/types";
+import { CalibrationView, ChallengerCard, CommitteeCard } from "./Analytics";
 
 const DATA: CommitteeComparison = {
   mode: "shadow", bars: 6, first: "2026-10-01T00:00:00Z", last: "2026-10-01T05:00:00Z", days: 0.21,
@@ -28,6 +28,25 @@ describe("committee card", () => {
   it("says why it is empty", () => {
     render(<CommitteeCard data={{ ...DATA, bars: 0, mode: "off" }} />);
     expect(screen.getByText("No committee shadow yet (committee.mode is off).")).toBeInTheDocument();
+  });
+});
+
+describe("challenger card (roadmap 10.4)", () => {
+  const challenger: ChallengerComparison = {
+    ...DATA, analyst_prompt: "analyst_v1", challenger_prompt: "analyst_v2",
+    arms: DATA.arms.map((a) => (a.arm === "committee" ? { ...a, arm: "challenger" } : a)),
+  };
+
+  it("names the two prompts and reuses the comparison", () => {
+    render(<ChallengerCard data={challenger} />);
+    expect(screen.getByText(/analyst_v2 vs analyst_v1: 6 paired bars/)).toBeInTheDocument();
+    expect(screen.getByText("challenger")).toBeInTheDocument();
+    expect(screen.getByText(/Challenger uplift per bar/)).toBeInTheDocument();
+  });
+
+  it("says how to turn it on", () => {
+    render(<ChallengerCard data={{ ...challenger, bars: 0, mode: "off", challenger_prompt: null }} />);
+    expect(screen.getByText("No challenger shadow yet (strategy.challenger_prompt_version is not set).")).toBeInTheDocument();
   });
 });
 
