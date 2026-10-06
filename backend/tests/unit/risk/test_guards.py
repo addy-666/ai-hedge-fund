@@ -165,3 +165,100 @@ def test_precedence_idempotency_first_foreign_before_reversal() -> None:
 
 def test_none_direction_is_rejected() -> None:
     assert reason(replace(BASE, direction=Direction.NONE)) is ReasonCode.INTERNAL_ERROR
+
+
+# ---------------------------------------------------------------- family slots (roadmap 10.8-10.9)
+
+SLOTS = GuardsConfig(family_slots=True)
+HEDGE = GuardsConfig(family_slots=True, hedge_across_families=True)
+
+
+def fam(
+    *positions: tuple[Side, str | None, int], direction: Direction = L, **changes: object
+) -> GuardContext:
+    """A candidate of the breakout family with engine positions (side, family, ticket) on the symbol."""
+    return replace(
+        BASE, direction=direction, family="breakout",
+        broker_positions=[position(side, ticket=t) for side, _, t in positions],
+        position_families={t: f for _, f, t in positions if f is not None}, **changes,
+    )  # type: ignore[arg-type]  # fmt: skip
+
+
+def run_slots(ctx: GuardContext, cfg: GuardsConfig = SLOTS, *, per_symbol: int = 3, per_day: int = 12):  # type: ignore[no-untyped-def]
+    return evaluate_guards(
+        ctx, cfg, max_positions_per_symbol=per_symbol, max_trades_per_symbol_per_day=per_day
+    )
+
+
+def test_another_family_may_stack_the_same_direction() -> None:
+    assert run_slots(fam((Side.BUY, "trend", 501))).action is GuardAction.OPEN
+    # without family slots the same facts are a duplicate, as before
+    legacy = run_slots(fam((Side.BUY, "trend", 501)), CFG)
+    assert legacy.rejection is not None
+    assert legacy.rejection.reason is ReasonCode.DUPLICATE_SAME_DIRECTION
+
+
+def test_within_a_family_the_old_rules_hold() -> None:
+    same = run_slots(fam((Side.BUY, "breakout", 501)))
+    assert same.rejection is not None
+    assert same.rejection.reason is ReasonCode.DUPLICATE_SAME_DIRECTION
+    opposite = run_slots(fam((Side.SELL, "breakout", 501)))  # a reversal of its own position: 75 < 65 + 15
+    assert opposite.rejection is not None
+    assert opposite.rejection.reason is ReasonCode.REVERSAL_WEAK
+    strong = run_slots(fam((Side.SELL, "breakout", 501), final_confidence=85))
+    assert (strong.action, strong.target_position.ticket) == (GuardAction.CLOSE_ONLY, 501)  # type: ignore[union-attr]
+
+
+def test_a_position_of_unknown_family_conflicts_with_every_family() -> None:
+    """Opened before 10.7 (no setup tag): treated as this family's, the conservative reading."""
+    dup = run_slots(fam((Side.BUY, None, 501)))
+    assert dup.rejection is not None
+    assert dup.rejection.reason is ReasonCode.DUPLICATE_SAME_DIRECTION
+    rev = run_slots(fam((Side.SELL, None, 501)))
+    assert rev.rejection is not None
+    assert rev.rejection.reason is ReasonCode.REVERSAL_WEAK
+
+
+def test_an_opposite_signal_from_another_family_hedges_only_when_allowed() -> None:
+    ctx = fam((Side.SELL, "reversal", 501))
+    assert run_slots(ctx, HEDGE).action is GuardAction.OPEN  # operator decision 2026-10-06
+    refused = run_slots(ctx, SLOTS)
+    assert refused.rejection is not None
+    assert refused.rejection.reason is ReasonCode.HEDGE_OFF
+    assert "reversal position 501" in refused.rejection.detail
+    # the family's own opposite position still goes through the reversal rules first
+    both = fam((Side.SELL, "reversal", 501), (Side.SELL, "breakout", 502), final_confidence=85)
+    assert run_slots(both, HEDGE).target_position.ticket == 502  # type: ignore[union-attr]
+
+
+def test_the_count_cap_stays_the_hard_limit() -> None:
+    ctx = fam((Side.BUY, "trend", 501), (Side.SELL, "reversal", 502))
+    assert run_slots(ctx, HEDGE, per_symbol=3).action is GuardAction.OPEN
+    full = run_slots(ctx, HEDGE, per_symbol=2)
+    assert full.rejection is not None
+    assert full.rejection.reason is ReasonCode.MAX_PER_SYMBOL
+
+
+@pytest.mark.parametrize(
+    ("today_symbol", "today_strategy", "cap", "expected"),
+    [
+        (2, 2, 3, None),  # under both
+        (2, 3, 3, ReasonCode.DAILY_STRATEGY_CAP),  # this strategy is done for the day on this symbol
+        (2, 4, 5, None),  # a trending day raised its cap to 5
+        (2, 9, None, None),  # no strategy cap configured
+        (12, 0, 3, ReasonCode.DAILY_SYMBOL_CAP),  # the hard per-symbol ceiling comes first
+    ],
+)
+def test_the_daily_cap_per_strategy(
+    today_symbol: int, today_strategy: int, cap: int | None, expected: ReasonCode | None
+) -> None:
+    ctx = replace(BASE, trades_today=today_symbol, trades_today_strategy=today_strategy, strategy_cap=cap)
+    verdict = run_slots(ctx)
+    assert (verdict.rejection.reason if verdict.rejection else None) is expected
+
+
+def test_without_a_family_the_slots_do_not_apply() -> None:
+    ctx = replace(fam((Side.BUY, "trend", 501)), family=None)
+    verdict = run_slots(ctx, HEDGE)
+    assert verdict.rejection is not None
+    assert verdict.rejection.reason is ReasonCode.DUPLICATE_SAME_DIRECTION

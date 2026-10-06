@@ -13,6 +13,9 @@ engine:
   auto_resume_after_crash: false
   bar_close_grace_s: 3
   max_deviation_points: 20
+  demo_orders_without_evidence: false  # roadmap 10.11, DEMO only (refused in any other mode): true = send DEMO
+                                       #   orders for detectors without E1 evidence and an analyst without a
+                                       #   G-LLM sign-off, so the L2 plumbing soak can start. LIVE still needs E1.
 
 strategy:
   analyst_enabled: true         # false = deterministic baseline only (LLM outage fallback)
@@ -106,11 +109,19 @@ risk:
   commission_per_lot_roundtrip: auto
   max_margin_utilisation: 0.30
   limits:
-    max_open_positions: 5
-    max_positions_per_symbol: 1
+    max_open_positions: 6           # 3.0% heat / 0.5% risk = 6 full-size positions at most anyway
+    max_positions_per_symbol: 3     # with guards.family_slots: one per family (trend / breakout / reversal)
     max_portfolio_heat_pct: 3.0
     max_bucket_heat_pct: 1.5
-    max_trades_per_symbol_per_day: 4
+    max_symbol_heat_pct: 1.0        # roadmap 10.8: stacked families on one symbol ride the same price
+    max_trades_per_symbol_per_day: 12   # the hard per-symbol ceiling
+    strategy_daily_cap:             # roadmap 10.9: per strategy (setup tag) per symbol per trading day
+      base: 3
+      max: 5
+      by_family_regime:             # the setup-TF regime (ctx.regime) lifts a family to its best conditions
+        trend: {TREND_UP: 5, TREND_DOWN: 5}
+        breakout: {QUIET: 5}
+        reversal: {RANGE: 5}
     daily_loss_limit_pct: 3.0
     weekly_loss_limit_pct: 6.0
     max_drawdown_pct: 10.0
@@ -125,6 +136,9 @@ risk:
     max_reversals_per_symbol_per_day: 1
     flip_flop_window: 3
     flip_flop_lock_bars: 8
+    family_slots: true              # roadmap 10.8: one position per (symbol, committee family); duplicates,
+                                    #   reversals, cooldowns and flip-flops are judged within the family
+    hedge_across_families: true     # an opposite signal of another family opens a hedge (operator 2026-10-06)
   news:
     enabled: false              # needs the Guardian EA calendar export (mql5/GuardianEA.mq5); true = fail closed without it
     blackout_minutes_before: 15

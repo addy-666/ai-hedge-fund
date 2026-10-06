@@ -60,6 +60,17 @@ def test_a_demo_period_that_meets_every_gate_is_ready() -> None:
     assert report.ready
 
 
+def test_the_demo_override_is_said_but_does_not_block_l2() -> None:
+    """Roadmap 10.11: L2 tests the order plumbing, so the override is a note there; L3 needs evidence."""
+    c = cfg()
+    c = c.model_copy(update={"engine": c.engine.model_copy(update={"demo_orders_without_evidence": True})})
+    report = evaluate(c, facts(), NOW)
+    (note,) = [g for g in report.gates if g.name == "evidence_override"]
+    assert (note.status, note.value) == (GateStatus.MANUAL, "ON: DEMO orders without E1 / G-LLM evidence")
+    assert "E1 + E2" in note.need
+    assert report.ready
+
+
 @pytest.mark.parametrize(
     ("over", "gate"),
     [

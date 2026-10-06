@@ -14,6 +14,7 @@ from aifund.domain._issuance import issue_order_intent
 from aifund.domain.enums import (
     CommandStatus,
     CommandType,
+    DecisionOutcome,
     Direction,
     EngineState,
     IntentKind,
@@ -26,6 +27,7 @@ from aifund.domain.errors import DuplicateIntentError, InvariantViolation
 from aifund.domain.ids import new_id
 from aifund.domain.intent import OrderIntent, intent_comment, make_idempotency_key
 from aifund.persistence.db import unit_of_work
+from aifund.persistence.repositories.decisions import DecisionRepository
 from aifund.persistence.repositories.intents import IntentRepository
 from aifund.persistence.repositories.system import (
     AuditLogRepository,
@@ -44,7 +46,11 @@ EXAMPLE_CONFIG = Path(__file__).resolve().parents[3] / "config" / "trading.examp
 
 
 def _intent(
-    *, bar_offset_min: int = 0, direction: Direction = Direction.LONG, symbol: str = "XAUUSDm"
+    *,
+    bar_offset_min: int = 0,
+    direction: Direction = Direction.LONG,
+    symbol: str = "XAUUSDm",
+    setup_tag: str | None = None,
 ) -> OrderIntent:
     intent_id = new_id()
     key = make_idempotency_key(
@@ -73,6 +79,7 @@ def _intent(
         risk_pct=Decimal("0.5"),
         magic=26092801,
         comment=intent_comment(intent_id),
+        setup_tag=setup_tag,
         created_at=T0,
     )
     return issue_order_intent(**fields)
@@ -93,6 +100,49 @@ def test_intent_is_persisted_pending_with_exact_values(
         assert row.status is IntentStatus.PENDING
         assert row.volume == Decimal("0.10")
         assert row.sl == Decimal("2335.00")
+
+
+def test_an_open_intent_carries_its_strategy_and_today_counts_per_strategy(
+    factory: sessionmaker[Session], clock: FakeClock
+) -> None:
+    """Roadmap 10.7 / 10.9: the setup tag is the open position's strategy; the strategy cap counts FILLED
+    opens of that tag on that symbol since the trading day started."""
+    nr7 = [_intent(bar_offset_min=15 * i, setup_tag="nr7_breakout") for i in range(3)]
+    other = _intent(bar_offset_min=60, setup_tag="failure_test_2b")
+    with unit_of_work(factory) as s:
+        repo = IntentRepository(s, clock)
+        for i, intent in enumerate([*nr7, other]):
+            repo.add(intent, account_id="acc")
+            if i != 2:  # the third nr7 never filled
+                repo.transition(intent.id, IntentStatus.SENT)
+                repo.transition(intent.id, IntentStatus.FILLED, position_id=900 + i)
+    with factory() as s:
+        repo = IntentRepository(s, clock)
+        assert repo.opens_today("XAUUSDm", "nr7_breakout", T0) == 2
+        assert repo.opens_today("XAUUSDm", "nr7_breakout", T0 + timedelta(minutes=1)) == 0  # not today
+        assert repo.opens_today("XAUUSDm", "failure_test_2b", T0) == 1
+        assert repo.opens_today("BTCUSD", "nr7_breakout", T0) == 0
+        assert {pid: r.setup_tag for pid, r in repo.filled_opens([900, 901, 903]).items()} == {
+            900: "nr7_breakout", 901: "nr7_breakout", 903: "failure_test_2b",
+        }  # fmt: skip
+
+
+def test_recent_directions_can_be_one_familys(factory: sessionmaker[Session], clock: FakeClock) -> None:
+    """Roadmap 10.8: with family slots the flip-flop lock reads only the family's own proposals."""
+    with unit_of_work(factory) as s:
+        repo = DecisionRepository(s, clock)
+        for i, (direction, tag) in enumerate([("LONG", "a"), ("SHORT", "b"), ("SHORT", "a"), ("NONE", "a"),
+                                               ("LONG", "b"), ("LONG", "a")]):  # fmt: skip
+            repo.add(account_id="acc", symbol="X", trigger_tf="M15", bar_time=T0 + timedelta(minutes=15 * i),
+                     stage_reached="DECISION", outcome=DecisionOutcome.SHADOW,
+                     proposal={"direction": direction, "setup_tag": tag})  # fmt: skip
+    with factory() as s:
+        repo = DecisionRepository(s, clock)
+        everything = repo.recent_directions("X", "M15")
+        assert [d.value for d in everything] == ["LONG", "SHORT", "SHORT", "LONG", "LONG"]
+        family = repo.recent_directions("X", "M15", setup_tags=["a"])
+        assert [d.value for d in family] == ["LONG", "SHORT", "LONG"]
+        assert [d.value for d in repo.recent_directions("X", "M15", limit=1, setup_tags=["b"])] == ["LONG"]
 
 
 def test_duplicate_idempotency_key_raises_domain_error_and_keeps_transaction_usable(

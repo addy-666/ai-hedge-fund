@@ -80,6 +80,8 @@ class OrderIntent(BaseModel):
     """Target position for CLOSE / REVERSE_CLOSE / MODIFY_SLTP / FLATTEN."""
     close_reason: CloseReason | None = None
     """Why a closing intent closes (TIME_STOP, FLATTEN, REVERSAL, ...): the reconciler's close reason."""
+    setup_tag: str | None = Field(default=None, pattern=r"^[a-z0-9_]{3,40}$")
+    """The strategy an OPEN intent trades (roadmap 10.7): its position's family for the family slots."""
     created_at: UtcDatetime
 
     _issued: bool = PrivateAttr(default=False)

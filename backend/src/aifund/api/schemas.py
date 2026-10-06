@@ -58,6 +58,7 @@ class SystemOut(BaseModel):
     llm_spent_today_usd: Decimal
     llm_budget_usd: Decimal
     versions: Versions
+    evidence_override: bool = False  # engine.demo_orders_without_evidence (roadmap 10.11)
 
 
 class LimitHeadroom(BaseModel):

@@ -14,6 +14,12 @@ export function System() {
   if (system.isLoading || !s) return <Loading />;
   return (
     <div className="space-y-4">
+      {s.evidence_override && (
+        <p role="alert" className="rounded border border-amber-700 bg-amber-950/50 p-2 text-sm text-amber-200">
+          Evidence override ON: DEMO orders run for detectors without E1 evidence and an analyst without a
+          G-LLM sign-off (<code>engine.demo_orders_without_evidence</code>). Never valid in LIVE.
+        </p>
+      )}
       <div className="grid gap-4 md:grid-cols-2">
         <Card title="Engine">
           <dl className="num grid grid-cols-[8rem_1fr] gap-x-3 gap-y-1 text-[0.8125rem]">

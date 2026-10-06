@@ -156,6 +156,10 @@ def evaluate(cfg: TradingConfig, facts: RolloutFacts, now: datetime) -> Report:
                       "99.5% uptime, sane funnel, within budget")]  # fmt: skip
     elif level is Level.L2:
         gates = demo_gates(facts, now)
+        if cfg.engine.demo_orders_without_evidence:  # roadmap 10.11: said, not blocking (L2 tests plumbing)
+            gates.append(Gate("evidence_override", GateStatus.MANUAL,
+                              "ON: DEMO orders without E1 / G-LLM evidence",
+                              "L3 trades only strategies with E1 + E2: turn it off first"))  # fmt: skip
     elif level is Level.L3:
         gates = live_micro_gates(facts, cfg, now)
     else:

@@ -31,8 +31,8 @@ from aifund.api.schemas import (
     FieldError,
 )
 from aifund.config.loader import ConfigError, parse_trading_config
-from aifund.config.trading_config import TradingConfig
-from aifund.domain.enums import CommandType, Mode
+from aifund.config.trading_config import StrategyDailyCap, TradingConfig
+from aifund.domain.enums import CommandType, Mode, Regime
 from aifund.persistence.repositories.dashboard import DashboardQueries
 from aifund.persistence.repositories.system import (
     AuditLogRepository,
@@ -69,7 +69,13 @@ RISKIER_WHEN_HIGHER = (
     "risk.limits.max_notional_leverage",
 )
 RISKIER_WHEN_LOWER = ("risk.confidence_threshold",)
-RISKIER_WHEN_TRUE = ("engine.allow_live", "strategy.analyst_orders")
+RISKIER_WHEN_TRUE = (
+    "engine.allow_live",
+    "strategy.analyst_orders",
+    "engine.demo_orders_without_evidence",  # roadmap 10.11
+    "risk.guards.family_slots",  # 10.8: more than one position per symbol
+    "risk.guards.hedge_across_families",
+)
 RISKIER_WHEN_FALSE = ("strategy.dry_run", "risk.news.enabled")
 
 
@@ -175,9 +181,24 @@ def riskier(old: TradingConfig, new: TradingConfig) -> list[str]:
     for path in RISKIER_WHEN_FALSE:
         if not _get(new, path) and _get(old, path):
             out.append(f"{path} turned off")
+    old_heat, new_heat = old.risk.limits.max_symbol_heat_pct, new.risk.limits.max_symbol_heat_pct
+    if old_heat is not None and (new_heat is None or new_heat > old_heat):
+        out.append("risk.limits.max_symbol_heat_pct raised")
+    if _cap_raised(old.risk.limits.strategy_daily_cap, new.risk.limits.strategy_daily_cap):
+        out.append("risk.limits.strategy_daily_cap raised")
     if new.engine.mode is not old.engine.mode and new.engine.mode in (Mode.DEMO, Mode.LIVE):
         out.append(f"engine.mode -> {new.engine.mode.value}")
     return out
+
+
+def _cap_raised(old: StrategyDailyCap | None, new: StrategyDailyCap | None) -> bool:
+    """A strategy daily cap that allows more somewhere (or is turned off) needs re-auth (roadmap 10.9)."""
+    if old is None:
+        return False  # turning it on only tightens
+    if new is None or new.base > old.base or new.max > old.max:
+        return True
+    families = set(old.by_family_regime) | set(new.by_family_regime)
+    return any(new.cap(f, r.value) > old.cap(f, r.value) for f in families for r in Regime)
 
 
 @router.put("/config", response_model=ConfigSaved, responses={422: {"model": list[FieldError]}})

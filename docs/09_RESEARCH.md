@@ -223,7 +223,12 @@ profile (trigger/setup/context) it was researched with; changed parameters make 
 pipeline checks every (symbol, detector) it would run when it is constructed and refuses to start, listing
 every problem. SIM is exempt, and so is any configuration that cannot send an order: a **dry run**
 (`strategy.dry_run`), or the analyst in shadow with the baseline off (`analyst_orders: false`,
-`baseline_enabled: false`) — a shadow run is how a strategy collects forward (E2) evidence. E2 and G-LLM are tracked on the dashboard and signed off in
+`baseline_enabled: false`) — a shadow run is how a strategy collects forward (E2) evidence. **DEMO-only override**
+(roadmap 10.11, operator decision 2026-10-06): `engine.demo_orders_without_evidence` waives E1 and G-LLM in DEMO
+— on a DEMO account, which the MT5 startup check enforces — so the L2 order-plumbing soak can run before any
+strategy has an edge. The config schema refuses it in every other mode, the gate functions ignore it outside
+DEMO, every boot records an `evidence.override` event and a WARN notification, and the System page and the
+L2 gates say it is on. LIVE always needs E1 (and E2 for L3). E2 and G-LLM are tracked on the dashboard and signed off in
 `audit_log` (operator), like the L2/L3 rollout gates.
 
 Implementation (R.9, G-LLM): while the analyst is enabled, every bar with a candidate records two SHADOW

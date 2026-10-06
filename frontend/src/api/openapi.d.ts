@@ -1919,6 +1919,11 @@ export interface components {
             engine: components["schemas"]["EngineStateOut"] | null;
             /** Engine Stale */
             engine_stale: boolean;
+            /**
+             * Evidence Override
+             * @default false
+             */
+            evidence_override: boolean;
             /** Heartbeats */
             heartbeats: components["schemas"]["HeartbeatOut"][];
             /** Llm Budget Usd */

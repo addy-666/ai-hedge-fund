@@ -633,6 +633,49 @@ def test_riskier_names_every_change_that_takes_more_risk() -> None:
     assert riskier(bold, safe) == []
 
 
+def test_loosening_the_part_b_controls_needs_a_fresh_password() -> None:
+    """Roadmap 10.8-10.11: more positions per symbol, hedges, a higher or removed symbol heat or strategy
+    cap and the DEMO evidence override all take more risk; tightening them does not ask."""
+    from aifund.api.routes.commands import riskier
+    from aifund.config.loader import load_trading_config
+    from aifund.config.trading_config import StrategyDailyCap
+
+    base = load_trading_config(EXAMPLE).config
+    limits, guards = base.risk.limits, base.risk.guards
+    tight = base.model_copy(update={"risk": base.risk.model_copy(update={
+        "guards": guards.model_copy(update={"family_slots": False, "hedge_across_families": False}),
+        "limits": limits.model_copy(update={"max_symbol_heat_pct": D("0.5"),
+                                            "strategy_daily_cap": StrategyDailyCap(base=2, max=3)}),
+    })})  # fmt: skip
+    assert riskier(base, tight) == []
+    assert riskier(tight, base) == [
+        "risk.guards.family_slots turned on",
+        "risk.guards.hedge_across_families turned on",
+        "risk.limits.max_symbol_heat_pct raised",
+        "risk.limits.strategy_daily_cap raised",
+    ]
+    capped = limits.strategy_daily_cap
+    assert capped is not None
+    one_regime = capped.model_copy(
+        update={"by_family_regime": {**capped.by_family_regime, "reversal": {"RANGE": 4}}}
+    )
+    off = base.model_copy(update={"risk": base.risk.model_copy(update={"limits": limits.model_copy(update={
+        "max_symbol_heat_pct": None, "strategy_daily_cap": None})})})  # fmt: skip
+    regime = base.model_copy(update={"risk": base.risk.model_copy(update={"limits": limits.model_copy(update={
+        "strategy_daily_cap": one_regime})})})  # fmt: skip
+    assert riskier(base, off) == [
+        "risk.limits.max_symbol_heat_pct raised",
+        "risk.limits.strategy_daily_cap raised",
+    ]
+    assert riskier(base, regime) == []  # RANGE for reversal went 5 -> 4: tighter
+    assert riskier(regime, base) == ["risk.limits.strategy_daily_cap raised"]
+    demo = base.engine.model_copy(update={"mode": Mode.DEMO})
+    on = base.model_copy(update={"engine": demo.model_copy(update={"demo_orders_without_evidence": True})})
+    assert riskier(base.model_copy(update={"engine": demo}), on) == [
+        "engine.demo_orders_without_evidence turned on"
+    ]
+
+
 def test_the_built_dashboard_is_served_with_a_spa_fallback(db_url: str, engine: Any, tmp_path: Path) -> None:
     dist = tmp_path / "dist"
     (dist / "assets").mkdir(parents=True)

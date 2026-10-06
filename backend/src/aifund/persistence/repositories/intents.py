@@ -54,6 +54,7 @@ class IntentRepository:
             magic=intent.magic,
             position_ticket=intent.position_ticket,
             close_reason=intent.close_reason,
+            setup_tag=intent.setup_tag,
             status=IntentStatus.PENDING,
             attempts=0,
             created_at=intent.created_at,
@@ -92,6 +93,19 @@ class IntentRepository:
             )
         ).all()
         return {r.position_id: r for r in rows if r.position_id is not None}
+
+    def opens_today(self, symbol: str, setup_tag: str, since: datetime) -> int:
+        """FILLED OPEN intents of this strategy on ``symbol`` since ``since`` (the 10.9 strategy cap)."""
+        rows = self._s.scalars(
+            select(OrderIntentRow.id).where(
+                OrderIntentRow.kind == IntentKind.OPEN,
+                OrderIntentRow.status == IntentStatus.FILLED,
+                OrderIntentRow.symbol == symbol,
+                OrderIntentRow.setup_tag == setup_tag,
+                OrderIntentRow.created_at >= since,
+            )
+        ).all()
+        return len(rows)
 
     def filled_opens_without_trade(self) -> Sequence[OrderIntentRow]:
         """FILLED OPEN intents whose position has no trade row yet (e.g. it closed before a reconcile)."""

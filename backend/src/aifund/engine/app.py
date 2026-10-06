@@ -24,6 +24,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 
+import structlog
 from sqlalchemy.orm import Session, sessionmaker
 
 from aifund.agents.analyst import Analyst
@@ -59,7 +60,7 @@ from aifund.execution.executor import Executor
 from aifund.market.bar_clock import BarClock
 from aifund.persistence.db import unit_of_work
 from aifund.persistence.repositories.cursors import DecisionCursorStore
-from aifund.persistence.repositories.system import HeartbeatRepository
+from aifund.persistence.repositories.system import EventRepository, HeartbeatRepository
 from aifund.ports.broker import BrokerPort, MarketDataPort
 from aifund.ports.system import ClockPort, NotifierPort, Severity
 from aifund.reconcile.enrichment import Enricher
@@ -71,6 +72,8 @@ from aifund.risk.position_manager import PositionManager
 from aifund.vault.review_exporter import ReviewExporter
 
 LIVE = ALL_STATES - {EngineState.STOPPED}
+OVERRIDE_EVENT = "evidence.override"  # recorded on every boot with engine.demo_orders_without_evidence
+log = structlog.get_logger(__name__)
 
 
 @dataclass(frozen=True)
@@ -304,7 +307,24 @@ class Engine:
             "Engine restarted",
             f"{persisted.value} -> {self.state.state.value} ({self.cfg.engine.mode.value})",
         )
+        if self.cfg.engine.demo_orders_without_evidence:  # the config allows it in DEMO only (10.11)
+            await self._record_override()
         return self.state.state
+
+    async def _record_override(self) -> None:
+        """Say loudly, on every boot, that DEMO orders run without research evidence (roadmap 10.11)."""
+        detail = (
+            "engine.demo_orders_without_evidence: DEMO orders for detectors without E1 evidence and an "
+            "analyst without a G-LLM sign-off. Never valid in LIVE."
+        )
+
+        def record() -> None:
+            with unit_of_work(self.factory) as s:
+                EventRepository(s, self.clock).append(OVERRIDE_EVENT, Severity.WARN, {"detail": detail})
+
+        await asyncio.to_thread(record)
+        log.warning("evidence.override", detail=detail)
+        await self.notifier.notify(Severity.WARN, "Evidence override ON (DEMO)", detail)
 
     # ------------------------------------------------------------------ loops (docs/01 §6)
 

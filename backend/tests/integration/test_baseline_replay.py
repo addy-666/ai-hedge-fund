@@ -25,7 +25,13 @@ from aifund.adapters.sim.sim_broker import SimBroker, SimConfig
 from aifund.agents.analyst import Analyst
 from aifund.agents.committee import Committee
 from aifund.config.loader import load_trading_config
-from aifund.config.trading_config import CommitteeConfig, ProfileConfig, StrategyConfig, SymbolConfig
+from aifund.config.trading_config import (
+    CommitteeConfig,
+    ProfileConfig,
+    RiskConfig,
+    StrategyConfig,
+    SymbolConfig,
+)
 from aifund.domain.decision import FeatureSnapshot, SetupCandidate
 from aifund.domain.enums import DecisionOutcome, Direction, ReasonCode, Timeframe
 from aifund.engine.equity import EquitySnapshotter, EquityTracker
@@ -115,6 +121,9 @@ async def replay(
     committee_mode: str | None = None,
     extra: dict | None = None,  # type: ignore[type-arg]  # more series for the feed (cross-asset references)
     challenger: Analyst | None = None,
+    detectors: Callable[[SymbolConfig, TfRoles], list[Any]] | None = None,
+    families: dict[str, list[str]] | None = None,  # committee.families: the strategy families (10.8)
+    risk_config: RiskConfig | None = None,
 ) -> ReplayReport:
     cfg = load_trading_config(CONFIG).config
     risk = cfg.risk.model_copy(
@@ -126,8 +135,10 @@ async def replay(
             "strategy": strategy,
             "risk": risk,
             "committee": CommitteeConfig(
-                mode=committee_mode or ("shadow" if committee is not None else "off")
+                mode=committee_mode or ("shadow" if committee is not None else "off"),
+                **({"families": families} if families else {}),
             ),
+            **({"risk": risk_config} if risk_config is not None else {}),
         }
     )
     profile = ProfileConfig(trigger_tf=Timeframe.M15, setup_tf=Timeframe.H1, context_tfs=[Timeframe.H4])
@@ -137,7 +148,7 @@ async def replay(
     executor = Executor(broker, feed, factory, clock, account_id="acc")
     risk = RiskManager(cfg.risk, magic=cfg.engine.magic, broker=broker, clock=clock)
 
-    def detectors(_s: SymbolConfig, _r: TfRoles) -> list[HourlyStub]:
+    def hourly(_s: SymbolConfig, _r: TfRoles) -> list[HourlyStub]:
         return [HourlyStub()]
 
     analyst = None
@@ -146,7 +157,7 @@ async def replay(
     tracker = EquityTracker.for_engine(cfg.engine)  # shared by the pipeline and the snapshotter
     pipeline = DecisionPipeline(
         cfg, broker=broker, market=feed, factory=factory, clock=clock, executor=executor, risk=risk,
-        detectors=detectors, equity=tracker, account_id="acc",
+        detectors=detectors or hourly, equity=tracker, account_id="acc",
         profile_override={"intraday_m15": profile}, analyst=analyst,
         news=news, committee=committee, challenger=challenger,
     )  # fmt: skip
@@ -177,6 +188,8 @@ async def replay(
         factory=factory,
         magic=cfg.engine.magic,
         end=end,
+        max_positions_per_symbol=cfg.risk.limits.max_positions_per_symbol,
+        family_of=cfg.committee.strategy_family if cfg.risk.guards.family_slots else None,
     )  # fmt: skip
 
 

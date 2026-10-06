@@ -125,10 +125,16 @@ def problem(d: Deployment, records: Sequence[EvidenceRecord]) -> str | None:
 
 
 def require_evidence(
-    deployments: Iterable[Deployment], records: Sequence[EvidenceRecord], *, mode: Mode, dry_run: bool
+    deployments: Iterable[Deployment],
+    records: Sequence[EvidenceRecord],
+    *,
+    mode: Mode,
+    dry_run: bool,
+    demo_override: bool = False,
 ) -> None:
-    """Gate E1 at startup: raise EvidenceError listing every deployment without passing evidence."""
-    if mode is Mode.SIM or dry_run:
+    """Gate E1 at startup: raise EvidenceError listing every deployment without passing evidence.
+    ``demo_override`` (``engine.demo_orders_without_evidence``, roadmap 10.11) waives it in DEMO only."""
+    if mode is Mode.SIM or dry_run or (demo_override and mode is Mode.DEMO):
         return
     problems = [p for d in deployments if (p := problem(d, records)) is not None]
     if problems:
@@ -181,10 +187,17 @@ def write_g_llm(directory: Path, signoff: GLlmSignoff) -> Path:
 
 
 def require_g_llm(
-    signoffs: Sequence[GLlmSignoff], *, prompt_version: str, model: str, mode: Mode, analyst_orders: bool
+    signoffs: Sequence[GLlmSignoff],
+    *,
+    prompt_version: str,
+    model: str,
+    mode: Mode,
+    analyst_orders: bool,
+    demo_override: bool = False,
 ) -> None:
-    """Outside SIM the analyst may send orders only with a sign-off for this prompt version and model."""
-    if mode is Mode.SIM or not analyst_orders:
+    """Outside SIM the analyst may send orders only with a sign-off for this prompt version and model
+    (``demo_override``: waived in DEMO only, roadmap 10.11)."""
+    if mode is Mode.SIM or not analyst_orders or (demo_override and mode is Mode.DEMO):
         return
     if not any(s.prompt_version == prompt_version and s.model == model for s in signoffs):
         raise EvidenceError(

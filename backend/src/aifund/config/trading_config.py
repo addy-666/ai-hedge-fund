@@ -15,7 +15,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from aifund.domain.enums import AssetClass, Mode, ObjectionSeverity, ReversalMode, Timeframe
+from aifund.domain.enums import AssetClass, Mode, ObjectionSeverity, Regime, ReversalMode, Timeframe
 
 _HHMM = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 
@@ -50,6 +50,9 @@ class EngineConfig(_Strict):
     auto_resume_after_crash: bool = False
     bar_close_grace_s: int = Field(default=3, ge=0, le=60)
     max_deviation_points: int = Field(default=20, ge=0, le=1000)
+    # roadmap 10.11 (operator decision 2026-10-06): in DEMO only, send orders for detectors without E1
+    # evidence and for an analyst without a G-LLM sign-off: the L2 order plumbing soaks before an edge exists.
+    demo_orders_without_evidence: bool = False
 
     _hhmm = field_validator("trading_day_boundary")(_check_hhmm)
 
@@ -66,6 +69,8 @@ class EngineConfig(_Strict):
     def _live_requires_allow_live(self) -> Self:
         if self.mode is Mode.LIVE and not self.allow_live:
             raise ValueError("mode LIVE requires engine.allow_live: true")
+        if self.demo_orders_without_evidence and self.mode is not Mode.DEMO:
+            raise ValueError(f"engine.demo_orders_without_evidence is DEMO-only (mode is {self.mode.value})")
         return self
 
 
@@ -151,6 +156,14 @@ class CommitteeConfig(_Strict):
 
     def family_of(self, setup_tag: str) -> str | None:
         return next((f for f, tags in self.families.items() if setup_tag in tags), None)
+
+    def strategy_family(self, setup_tag: str) -> str:
+        """The family a strategy belongs to for the guards (roadmap 10.8): unmapped tags are their own."""
+        return self.family_of(setup_tag) or setup_tag
+
+    def family_tags(self, family: str) -> list[str]:
+        """The setup tags of a family (a tag that is its own family: just itself)."""
+        return list(self.families.get(family, [family]))
 
     def weight(self, family: str) -> Decimal:
         return self.weights.get(family, Decimal(1))
@@ -289,12 +302,38 @@ class StopsConfig(_Strict):
         return self
 
 
+class StrategyDailyCap(_Strict):
+    """Trades per strategy (setup tag) per symbol per trading day (roadmap 10.9): ``base``, or the value the
+    strategy's family names for the current setup-TF regime in ``by_family_regime``, never above ``max``."""
+
+    base: int = Field(default=3, ge=1, le=50)
+    max: int = Field(default=5, ge=1, le=50)
+    by_family_regime: dict[str, dict[Regime, int]] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _within(self) -> Self:
+        if self.base > self.max:
+            raise ValueError("strategy_daily_cap.base must be <= max")
+        for family, caps in self.by_family_regime.items():
+            for regime, n in caps.items():
+                if not 1 <= n <= self.max:
+                    where = f"strategy_daily_cap.{family}.{regime.value}"
+                    raise ValueError(f"{where}: {n} is not within 1..{self.max}")
+        return self
+
+    def cap(self, family: str | None, regime: str | None) -> int:
+        caps = self.by_family_regime.get(family or "", {})
+        return next((n for r, n in caps.items() if r == regime), self.base)  # Regime is a StrEnum
+
+
 class LimitsConfig(_Strict):
     max_open_positions: int = Field(default=5, ge=1, le=50)
     max_positions_per_symbol: int = Field(default=1, ge=1, le=5)
     max_portfolio_heat_pct: Pct = Decimal("3.0")
     max_bucket_heat_pct: Pct = Decimal("1.5")
-    max_trades_per_symbol_per_day: int = Field(default=4, ge=1, le=100)
+    max_trades_per_symbol_per_day: int = Field(default=4, ge=1, le=100)  # the hard per-symbol ceiling
+    max_symbol_heat_pct: Pct | None = None  # open initial risk on one symbol (10.8); None = off
+    strategy_daily_cap: StrategyDailyCap | None = None  # per strategy per symbol per day (10.9); None = off
     daily_loss_limit_pct: Pct = Decimal("3.0")
     weekly_loss_limit_pct: Pct = Decimal("6.0")
     max_drawdown_pct: Pct = Decimal("10.0")
@@ -312,6 +351,8 @@ class LimitsConfig(_Strict):
             )
         if self.max_positions_per_symbol > self.max_open_positions:
             raise ValueError("limits.max_positions_per_symbol must be <= max_open_positions")
+        if self.max_symbol_heat_pct is not None and self.max_symbol_heat_pct > self.max_bucket_heat_pct:
+            raise ValueError("limits.max_symbol_heat_pct must be <= max_bucket_heat_pct")
         return self
 
 
@@ -325,6 +366,16 @@ class GuardsConfig(_Strict):
     max_reversals_per_symbol_per_day: int = Field(default=1, ge=0, le=20)
     flip_flop_window: int = Field(default=3, ge=2, le=20)
     flip_flop_lock_bars: int = Field(default=8, ge=0, le=500)
+    # roadmap 10.8: one position slot per (symbol, strategy family); duplicates, reversals, cooldowns and the
+    # flip-flop lock are judged within the family. Off = one engine position per symbol as before.
+    family_slots: bool = False
+    hedge_across_families: bool = False  # an opposite signal of another family opens a hedge (needs slots)
+
+    @model_validator(mode="after")
+    def _hedge_needs_slots(self) -> Self:
+        if self.hedge_across_families and not self.family_slots:
+            raise ValueError("guards.hedge_across_families needs guards.family_slots")
+        return self
 
 
 ImpactLevel = Literal["HIGH", "MEDIUM", "LOW"]
