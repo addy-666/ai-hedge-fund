@@ -2,7 +2,7 @@ import { Fragment, useState } from "react";
 import { useClosePosition, usePositions } from "../api/queries";
 import type { PositionOut } from "../api/types";
 import { Dialog } from "../components/Dialog";
-import { Button, Card, Empty, ErrorNote, Loading, Table, Td } from "../components/ui";
+import { Button, Card, Empty, ErrorNote, Loading, ROW_CLICK, ROW_SELECTED, Table, Td } from "../components/ui";
 import { money, r, tone, utc } from "../lib/format";
 
 export function Positions() {
@@ -19,8 +19,8 @@ export function Positions() {
         <Table head={["Symbol", "Side", "Volume", "Entry", "SL", "TP", "Last", "R now", "Age", "Setup", ""]}>
           {rows.map((p) => (
             <Fragment key={p.trade_id}>
-              <tr className="cursor-pointer hover:bg-zinc-800/40" onClick={() => setExpanded(expanded === p.trade_id ? null : p.trade_id)}>
-                <Td>{p.symbol}{p.status === "ORPHAN_OPEN" && <span className="ml-1 text-xs text-amber-300">orphan</span>}</Td>
+              <tr className={`${ROW_CLICK} ${expanded === p.trade_id ? ROW_SELECTED : ""}`} onClick={() => setExpanded(expanded === p.trade_id ? null : p.trade_id)}>
+                <Td className="font-medium text-zinc-100">{p.symbol}{p.status === "ORPHAN_OPEN" && <span className="ml-1 text-xs text-amber-300">orphan</span>}</Td>
                 <Td className={p.side === "BUY" ? "text-emerald-400" : "text-rose-400"}>{p.side}</Td>
                 <Td>{p.volume}</Td><Td>{money(p.open_price)}</Td><Td>{money(p.sl)}</Td><Td>{money(p.tp)}</Td>
                 <Td>{money(p.last_price)}</Td><Td className={tone(p.r_now)}>{r(p.r_now)}</Td>
@@ -28,7 +28,7 @@ export function Positions() {
                 <Td><Button variant="danger" onClick={(e) => { e.stopPropagation(); setConfirm(p); }}>Close</Button></Td>
               </tr>
               {expanded === p.trade_id && (
-                <tr><Td className="text-xs text-zinc-400">
+                <tr className="bg-zinc-950/60"><Td colSpan={11} className="py-2 text-xs text-zinc-400">
                   opened {utc(p.open_time)} · position #{p.position_id}{p.thesis ? ` · ${p.thesis}` : ""}
                 </Td></tr>
               )}

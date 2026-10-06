@@ -10,7 +10,7 @@ import {
 import type { RuleOut } from "../api/types";
 import { Dialog } from "../components/Dialog";
 import { ReauthDialog } from "../components/ReauthDialog";
-import { Badge, Button, Card, Empty, ErrorNote, Loading, Table, Td } from "../components/ui";
+import { Badge, Button, Card, Empty, ErrorNote, Loading, Table, Td, ROW_CLICK, ROW_SELECTED } from "../components/ui";
 import { r, utc } from "../lib/format";
 
 const COLUMNS = ["CANDIDATE", "SHADOW", "ACTIVE", "RETIRED", "REJECTED"] as const;
@@ -85,9 +85,9 @@ function RuleDetailPanel({ id }: { id: string }) {
       {failures.length > 0 && <ul className="mb-2 list-disc pl-5 text-xs text-rose-300">{failures.map((f) => <li key={f}>{f}</li>)}</ul>}
       {sent && <p role="status" className="mb-2 text-sm text-emerald-300">{sent}</p>}
       {act.error && !(act.error instanceof ApiError && act.error.needsReauth) && <ErrorNote error={act.error} />}
-      <h3 className="mb-1 mt-3 text-xs uppercase text-zinc-500">Evidence</h3>
+      <h3 className="mb-1 mt-3 label text-[0.625rem] text-amber-400/70">Evidence</h3>
       <pre className="max-h-48 overflow-auto rounded bg-zinc-950 p-2 text-xs">{JSON.stringify(e, null, 1)}</pre>
-      <h3 className="mb-1 mt-3 text-xs uppercase text-zinc-500">Matched decisions (newest first)</h3>
+      <h3 className="mb-1 mt-3 label text-[0.625rem] text-amber-400/70">Matched decisions (newest first)</h3>
       {matches.length === 0 ? <Empty>No matches recorded yet.</Empty> : (
         <Table head={["Bar (UTC)", "Symbol", "Outcome", "Mode", "R"]}>
           {matches.map((m) => (
@@ -98,7 +98,7 @@ function RuleDetailPanel({ id }: { id: string }) {
       )}
       {versions.length > 1 && (
         <>
-          <h3 className="mb-1 mt-3 text-xs uppercase text-zinc-500">Versions</h3>
+          <h3 className="mb-1 mt-3 label text-[0.625rem] text-amber-400/70">Versions</h3>
           <Table head={["Version", "Status", "Rule"]}>
             {versions.map((v) => <tr key={v.version}><Td>v{v.version}</Td><Td>{v.status}</Td><Td>{v.text}</Td></tr>)}
           </Table>
@@ -133,7 +133,7 @@ function RulesBoard() {
           const inCol = all.filter((x) => x.status === col);
           return (
             <div key={col} aria-label={`${col} rules`} className="space-y-2">
-              <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-400">{col} ({inCol.length})</h3>
+              <h3 className="label text-[0.625rem] text-amber-400/80">{col} ({inCol.length})</h3>
               {inCol.map((x) => <RuleCard key={`${x.rule_id}v${x.version}`} rule={x} selected={open === x.rule_id} onOpen={() => setOpen(x.rule_id)} />)}
             </div>
           );
@@ -156,7 +156,7 @@ function Audits() {
         {(audits.data ?? []).length === 0 ? <Empty>No audits yet.</Empty> : (
           <Table head={["When", "Trigger", "Status", "n"]}>
             {(audits.data ?? []).map((a) => (
-              <tr key={a.id} onClick={() => setOpen(a.id)} className={`cursor-pointer hover:bg-zinc-800/40 ${open === a.id ? "bg-zinc-800/60" : ""}`}>
+              <tr key={a.id} onClick={() => setOpen(a.id)} className={`${ROW_CLICK} ${open === a.id ? ROW_SELECTED : ""}`}>
                 <Td>{utc(a.created_at)}</Td><Td>{a.trigger}</Td><Td>{a.status}</Td><Td>{a.n_trades}+{a.n_virtual}v</Td>
               </tr>
             ))}
@@ -166,13 +166,13 @@ function Audits() {
       {open && audit.data && (
         <Card title="Report">
           <pre className="mb-3 whitespace-pre-wrap rounded bg-zinc-950 p-2 text-xs">{audit.data.lessons_md ?? ""}</pre>
-          <h3 className="mb-1 text-xs uppercase text-zinc-500">Miner clusters</h3>
+          <h3 className="mb-1 label text-[0.625rem] text-amber-400/70">Miner clusters</h3>
           {clusters.length === 0 ? <Empty>None survived.</Empty> : (
             <Table head={["Id", "Cluster", "n", "Mean R", "p"]}>
               {clusters.map((c) => <tr key={c.id}><Td>{c.id}</Td><Td>{c.text}</Td><Td>{c.n}</Td><Td>{r(c.mean_r)}</Td><Td>{c.p_value.toFixed(4)}</Td></tr>)}
             </Table>
           )}
-          <h3 className="mb-1 mt-3 text-xs uppercase text-zinc-500">Candidates and the validator</h3>
+          <h3 className="mb-1 mt-3 label text-[0.625rem] text-amber-400/70">Candidates and the validator</h3>
           {results.length === 0 ? <Empty>No candidates.</Empty> : (
             <ul className="space-y-1 text-sm">
               {results.map((v) => (
@@ -229,7 +229,7 @@ function RuleEditor() {
         <label>Direction <select aria-label="direction" className="w-full rounded bg-zinc-800 px-2 py-1" value={direction} onChange={(e) => setDirection(e.target.value)}><option value="">both</option><option>LONG</option><option>SHORT</option></select></label>
         <label>Setups <input aria-label="setups" className="w-full rounded bg-zinc-800 px-2 py-1" placeholder="empty = all" value={setups} onChange={(e) => setSetups(e.target.value)} /></label>
       </div>
-      <h3 className="mb-1 mt-3 text-xs uppercase text-zinc-500">Conditions (all must hold)</h3>
+      <h3 className="mb-1 mt-3 label text-[0.625rem] text-amber-400/70">Conditions (all must hold)</h3>
       {preds.map((p, i) => (
         <div key={i} className="mb-1 flex gap-2">
           <input aria-label={`feature ${i + 1}`} list="features" className="flex-1 rounded bg-zinc-800 px-2 py-1 text-sm" placeholder="feature, e.g. h1.rsi14" value={p.feature} onChange={(e) => set(i, { feature: e.target.value })} />
@@ -263,7 +263,7 @@ function Rulebook() {
         {(versions.data ?? []).length === 0 ? <Empty>No rulebook yet.</Empty> : (
           <Table head={["Version", "When", "Active", "Shadow", "Why"]}>
             {(versions.data ?? []).map((v) => (
-              <tr key={v.version} onClick={() => setOpen(v.version)} className={`cursor-pointer hover:bg-zinc-800/40 ${open === v.version ? "bg-zinc-800/60" : ""}`}>
+              <tr key={v.version} onClick={() => setOpen(v.version)} className={`${ROW_CLICK} ${open === v.version ? ROW_SELECTED : ""}`}>
                 <Td>v{v.version}</Td><Td>{utc(v.created_at)}</Td><Td>{v.active_rules.length}</Td><Td>{v.shadow_rules.length}</Td>
                 <Td className="text-xs text-zinc-400">{v.reason}</Td>
               </tr>

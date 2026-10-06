@@ -1,11 +1,14 @@
 <!doctype html>
-<html lang="en" class="dark">
+<html lang="en" data-theme="dark">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>aifund</title>
+    <script>
+      try { if (localStorage.getItem("aifund.theme") === "light") document.documentElement.dataset.theme = "light"; } catch (e) {}
+    </script>
   </head>
-  <body class="bg-zinc-950 text-zinc-100">
+  <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

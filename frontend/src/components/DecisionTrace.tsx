@@ -6,8 +6,8 @@ import { Badge } from "./ui";
 
 function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className="grid grid-cols-[9rem_1fr] gap-2 border-b border-zinc-800/60 py-1 text-sm last:border-0">
-      <div className="text-zinc-500">{label}</div>
+    <div className="grid grid-cols-[8rem_1fr] gap-3 border-b border-zinc-800/60 py-1.5 text-sm last:border-0">
+      <div className="label pt-0.5 text-[0.625rem] text-amber-400/70">{label}</div>
       <div className="min-w-0 break-words">{children}</div>
     </div>
   );
