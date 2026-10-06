@@ -133,6 +133,30 @@ def analyst_for(
     )
 
 
+def challenger_for(
+    settings: Settings,
+    cfg: TradingConfig,
+    factory: Any,
+    clock: ClockPort,
+    notifier: NotifierPort,
+    client: httpx.AsyncClient,
+) -> Analyst | None:
+    """The challenger analyst prompt in shadow (strategy.challenger_prompt_version, roadmap 10.4)."""
+    version = cfg.strategy.challenger_prompt_version
+    if version is None or not cfg.strategy.analyst_enabled:  # it decides beside the analyst only
+        return None
+    if settings.DEEPSEEK_API_KEY is None:
+        raise StartupError("strategy.challenger_prompt_version needs DEEPSEEK_API_KEY in .env")
+    return Analyst(
+        _llm(settings, cfg, factory, clock, notifier, client),
+        cfg.llm,
+        playbooks=PLAYBOOKS,
+        version=version,
+        record_parse=_recorder(factory, clock),
+        agent="challenger",  # llm_calls.agent: its spend apart from the analyst's
+    )
+
+
 def committee_for(
     settings: Settings,
     cfg: TradingConfig,
@@ -223,9 +247,14 @@ async def run_mt5(settings: Settings, loaded: LoadedConfig, factory: Any, live_c
         try:
             account = await gw.connect()
             symbols = [s.broker for s in cfg.symbols]
+            references = [i.broker for i in cfg.instruments() if not i.traded]
 
             async def broker_checks() -> list[str]:
-                report = await gw.startup_checks(symbols, mode=cfg.engine.mode, require_hedging=True)
+                report = await gw.startup_checks(
+                    symbols, mode=cfg.engine.mode, require_hedging=True, references=references
+                )
+                for warning in report.warnings:
+                    log.warning("broker.startup_warning", detail=warning)
                 return report.problems
 
             guardian_dir = await gw.common_files_dir() or PROJECT_ROOT / "data" / "guardian"
@@ -242,6 +271,7 @@ async def run_mt5(settings: Settings, loaded: LoadedConfig, factory: Any, live_c
                 g_llm=load_g_llm(EVIDENCE),
                 analyst=analyst_for(settings, cfg, factory, clock, notifier, client),
                 committee=committee_for(settings, cfg, factory, clock, notifier, client),
+                challenger=challenger_for(settings, cfg, factory, clock, notifier, client),
                 learners=learners_for(settings, cfg, factory, clock, notifier, client),
                 vault_exporter=ReviewExporter(factory, clock, out_dir=EXPORTS, playbooks=PLAYBOOKS),
                 guardian=GuardianFiles(guardian_dir),
@@ -288,10 +318,14 @@ async def run_sim(settings: Settings, loaded: LoadedConfig, args: argparse.Names
     cfg = cfg.model_copy(update={"symbols": [s for s in cfg.symbols if s.broker in symbols]})
     timeframes = sorted(
         {tf for p in cfg.profiles.values() for tf in (p.trigger_tf, p.setup_tf, *p.context_tfs)}
-        | {Timeframe.M1},
+        | {Timeframe.M1}
+        | ({cfg.cross_asset.timeframe} if cfg.cross_asset.enabled else set()),
         key=lambda t: t.minutes,
     )
-    feed = ReplayFeed.from_history(root, symbols, timeframes, clock)
+    references = [i.broker for i in cfg.instruments() if not i.traded]
+    feed = ReplayFeed.from_history(
+        root, symbols, timeframes, clock, references=references, reference_tf=cfg.cross_asset.timeframe
+    )
     broker = SimBroker(feed=feed, clock=clock, config=SimConfig(starting_balance=Decimal("10000")))
     async with httpx.AsyncClient() as client:
         notifier = LogNotifier()
@@ -301,6 +335,7 @@ async def run_sim(settings: Settings, loaded: LoadedConfig, args: argparse.Names
             account_login=1,
             analyst=analyst_for(settings, cfg, factory, clock, notifier, client),
             committee=committee_for(settings, cfg, factory, clock, notifier, client),
+            challenger=challenger_for(settings, cfg, factory, clock, notifier, client),
             learners=learners_for(settings, cfg, factory, clock, notifier, client),
         )
         engine = Engine(

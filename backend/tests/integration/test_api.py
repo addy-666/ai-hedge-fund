@@ -207,9 +207,11 @@ def test_read_contracts_on_a_seeded_database(
     assert {h["component"] for h in system["heartbeats"]} == {"engine", "loop.decisions"}
     assert system["versions"]["prompts"] == [
         "analyst_v1.j2",
+        "analyst_v2.j2",
         "auditor_v1.j2",
         "critic_v1.j2",
         "researcher_v1.j2",
+        "researcher_v2.j2",
         "reviewer_v1.j2",
         "specialist_v1.j2",
     ]
@@ -378,6 +380,71 @@ def test_the_committee_comparison(
     assert out["agreement"] == 0.8  # 4 of the 5 bars where either traded (the same side here)
     assert out["vs_analyst"]["n"] == 6
     assert out["vs_analyst"]["mean_r"] == round((3.5 - 0.5) / 6 - (0.003 - 0.001) / 49.75, 4)
+
+
+def test_the_challenger_comparison(
+    client: TestClient, factory: sessionmaker[Session], clock: FakeClock, config_path: Path
+) -> None:
+    """Roadmap 10.4: the challenger prompt's shadow record, like the committee's (the example runs v2)."""
+    login(client)
+    empty = client.get("/api/analytics/challenger").json()
+    assert (empty["bars"], empty["mode"], empty["analyst_prompt"], empty["challenger_prompt"]) == (
+        0, "shadow", "analyst_v1", "analyst_v2",
+    )  # fmt: skip
+    acc = account(config_path)
+    seed(factory, clock, acc)  # equity 9950 -> one trade risks 49.75
+    demo = load("demo_api")
+    demo.seed_committee(factory, clock, acc, clock.now())
+    demo.seed_challenger(factory, clock, acc, clock.now())
+    out = client.get("/api/analytics/challenger").json()
+    assert out["bars"] == 5  # the committee's bars are not the challenger's
+    arms = {a["arm"]: a for a in out["arms"]}
+    assert (arms["challenger"]["trades"], arms["challenger"]["total_r"], arms["challenger"]["cost_usd"]) == (
+        4, "3", "0.0060",
+    )  # fmt: skip
+    assert (arms["analyst"]["trades"], arms["analyst"]["total_r"]) == (4, "-0.5")
+    assert out["agreement"] == 0.6  # 3 of the 5 bars where either traded
+    assert out["vs_analyst"]["mean_r"] == round((3 - (-0.5)) / 5 - (0.0012 - 0.001) / 49.75, 4)
+    assert client.get("/api/analytics/committee").json()["bars"] == 6
+
+
+def test_the_cross_asset_view(
+    client: TestClient, factory: sessionmaker[Session], clock: FakeClock, config_path: Path
+) -> None:
+    """Roadmap 10.6: the universe from the config, and what each symbol's newest decision saw of it."""
+    from aifund.domain.decision import FeatureSnapshot
+    from aifund.domain.enums import DecisionOutcome, Timeframe
+    from aifund.persistence.repositories.decisions import DecisionRepository
+    from aifund.persistence.repositories.market import FeatureSnapshotRepository
+
+    login(client)
+    empty = client.get("/api/cross-asset").json()
+    assert (empty["enabled"], empty["timeframe"], empty["references"], empty["rows"]) == (
+        True, "H1", ["EURUSD"], [],
+    )  # fmt: skip
+    assert empty["instruments"] == ["EURUSD", "XAUUSD", "BTCUSD", "NAS100"]
+    acc = account(config_path)
+    for i, corr in enumerate((0.1, 0.42)):  # the newer decision wins
+        features = {
+            "xa.eurusd.corr100": corr, "xa.eurusd.ret24_z": 1.25, "xa.eurusd.ema_stack": "BULL",
+            "xa.btcusd.corr100": None, "xa.btcusd.ret24_z": None, "xa.btcusd.ema_stack": None,
+        }  # fmt: skip
+        bar = T0 + timedelta(minutes=15 * i)
+        snap = FeatureSnapshot(symbol="XAUUSD", trigger_tf=Timeframe.M15, bar_time=bar, feature_set_version=3,
+                               features=features, bars_ref={Timeframe.M15: bar})  # fmt: skip
+        with unit_of_work(factory) as s:
+            sid = FeatureSnapshotRepository(s, clock).get_or_add(snap).id
+            DecisionRepository(s, clock).add(account_id=acc, symbol="XAUUSD", trigger_tf="M15", bar_time=bar,
+                                             stage_reached="SETUP", outcome=DecisionOutcome.NO_SETUP,
+                                             snapshot_id=sid)  # fmt: skip
+    (row,) = client.get("/api/cross-asset").json()["rows"]
+    assert (row["symbol"], row["bar_time"]) == ("XAUUSD", "2026-09-28T09:15:00Z")
+    cells = {c["instrument"]: c for c in row["cells"]}
+    assert set(cells) == {"EURUSD", "BTCUSD", "NAS100"}  # never itself
+    assert cells["EURUSD"] == {"instrument": "EURUSD", "open": True, "corr100": 0.42, "ret24_z": 1.25,
+                               "ema_stack": "BULL"}  # fmt: skip
+    assert cells["BTCUSD"]["open"] is False  # all null: shut or missing
+    assert cells["NAS100"]["open"] is False  # not in the snapshot at all
 
 
 # ---------------------------------------------------------------- 6.3 commands and config
@@ -621,6 +688,8 @@ def test_learning_lab_reads_rules_rulebook_audits_and_features(
     names = {f["name"]: f for f in client.get("/api/features").json()}
     assert names["m15.rsi14"]["bounds"] == [0.0, 100.0] and "ctx.session" in names  # noqa: PT018
     assert "prop.rr_target" not in names and "prop.direction" not in names  # noqa: PT018
+    assert names["xa.eurusd.corr100"]["unit"] == "corr"  # the configured instruments (roadmap 10.5)
+    assert "xa.xagusd.corr100" not in names
 
 
 def test_rule_actions_are_engine_commands_with_reauth_for_blocks_and_force(

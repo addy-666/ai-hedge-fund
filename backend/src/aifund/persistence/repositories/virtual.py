@@ -14,12 +14,15 @@ from sqlalchemy.orm import Session
 from aifund.domain.enums import VirtualArm, VirtualStatus
 from aifund.domain.errors import InvariantViolation
 from aifund.domain.ids import new_id
-from aifund.domain.trade import CommitteeBar
+from aifund.domain.trade import ContenderBar
 from aifund.persistence.tables import DecisionRow, VirtualTradeRow
 from aifund.ports.system import ClockPort
 
 ACTIVE = (VirtualStatus.PENDING, VirtualStatus.OPEN)
-SHADOW_ARMS = (VirtualArm.SHADOW_BASELINE, VirtualArm.SHADOW_ANALYST, VirtualArm.SHADOW_COMMITTEE)
+CONTENDERS = {  # the record key in decisions.proposal -> the contender's shadow arm
+    "committee": VirtualArm.SHADOW_COMMITTEE,  # roadmap 8.4
+    "challenger": VirtualArm.SHADOW_CHALLENGER,  # roadmap 10.4
+}
 _TRANSITIONS = {
     VirtualStatus.PENDING: {
         VirtualStatus.OPEN,
@@ -122,9 +125,12 @@ class VirtualTradeRepository:
             )
         return sorted(out, key=lambda p: (p.bar_time, p.symbol))
 
-    def committee_bars(self, account_id: str, start: datetime, end: datetime) -> list[CommitteeBar]:
-        """Bars in [start, end) where the committee deliberated beside the analyst (roadmap 8.4) and every
-        shadow arm has finished, oldest first: what each arm earned (0 when it did not trade) and its cost."""
+    def contender_bars(
+        self, account_id: str, start: datetime, end: datetime, contender: str = "committee"
+    ) -> list[ContenderBar]:
+        """Bars in [start, end) where ``contender`` (a ``CONTENDERS`` key) decided beside the analyst and
+        every shadow arm has finished, oldest first: each arm's R (0 when it did not trade) and its cost."""
+        arm = CONTENDERS[contender]
         decisions = self._s.scalars(
             select(DecisionRow).where(
                 DecisionRow.account_id == account_id,
@@ -134,41 +140,40 @@ class VirtualTradeRepository:
                 DecisionRow.proposal.is_not(None),
             )
         ).all()
-        deliberated = {
-            d.id: d for d in decisions if isinstance(d.proposal, dict) and d.proposal.get("committee")
-        }
-        if not deliberated:
+        decided = {d.id: d for d in decisions if isinstance(d.proposal, dict) and d.proposal.get(contender)}
+        if not decided:
             return []
+        shadow = (VirtualArm.SHADOW_BASELINE, VirtualArm.SHADOW_ANALYST, arm)
         rows = self._s.scalars(
             select(VirtualTradeRow).where(
-                VirtualTradeRow.decision_id.in_(list(deliberated)), VirtualTradeRow.arm.in_(SHADOW_ARMS)
+                VirtualTradeRow.decision_id.in_(list(decided)), VirtualTradeRow.arm.in_(shadow)
             )
         ).all()
         arms: dict[str, dict[VirtualArm, VirtualTradeRow]] = {}
         for row in rows:
             arms.setdefault(row.decision_id, {})[row.arm] = row
         out = []
-        for decision_id, d in deliberated.items():
+        for decision_id, d in decided.items():
             mine = arms.get(decision_id, {})
             if any(r.status in ACTIVE for r in mine.values()):
                 continue
-            base, analyst, committee = (mine.get(a) for a in SHADOW_ARMS)
-            record = d.proposal["committee"] if isinstance(d.proposal, dict) else {}
+            base, analyst, other = (mine.get(a) for a in shadow)
+            record = d.proposal[contender] if isinstance(d.proposal, dict) else {}
             out.append(
-                CommitteeBar(
+                ContenderBar(
                     decision_id=decision_id,
                     symbol=d.symbol,
                     bar_time=d.bar_time,
                     baseline_r=_earned(base),
                     analyst_r=_earned(analyst),
-                    committee_r=_earned(committee),
+                    contender_r=_earned(other),
                     baseline_traded=_traded(base),
                     analyst_traded=_traded(analyst),
-                    committee_traded=_traded(committee),
+                    contender_traded=_traded(other),
                     analyst_direction=analyst.side.value if _traded(analyst) and analyst else None,
-                    committee_direction=committee.side.value if _traded(committee) and committee else None,
+                    contender_direction=other.side.value if _traded(other) and other else None,
                     analyst_cost_usd=d.cost_usd or Decimal(0),
-                    committee_cost_usd=Decimal(str(record.get("cost_usd") or 0)),
+                    contender_cost_usd=Decimal(str(record.get("cost_usd") or 0)),
                 )
             )
         return sorted(out, key=lambda b: (b.bar_time, b.symbol))

@@ -33,6 +33,7 @@ from aifund.agents.prompting import (
     candidate_lines,
     feature_table,
     fmt,
+    intermarket_table,
     load_playbook,
     position_line,
 )
@@ -130,6 +131,7 @@ class Analyst:
             ask=fmt(inp.tick.ask),
             spread_points=inp.spread_points,
             feature_table=feature_table(inp.snapshot),
+            intermarket=intermarket_table(inp.snapshot),  # analyst_v2+ (roadmap 10.4); v1 does not render it
             atr=fmt(inp.trigger_atr),
             candles=atr_candles(inp.trigger_bars, inp.trigger_atr),
             candidates=candidate_lines(inp.candidates),

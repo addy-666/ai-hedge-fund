@@ -58,20 +58,21 @@ def gets_virtual_trade(outcome: DecisionOutcome, reason: ReasonCode | None) -> b
 
 
 @dataclass(frozen=True)
-class CommitteeBar:
-    """One bar the committee deliberated on beside the analyst (roadmap 8.4): each shadow arm's R (0 when it
-    did not trade), whether it traded, its direction and the LLM spend of each side."""
+class ContenderBar:
+    """One bar a contender decided on beside the analyst in shadow — the committee (roadmap 8.4) or the
+    challenger analyst (10.4): each shadow arm's R (0 when it did not trade), whether it traded, its direction
+    and the LLM spend of each side."""
 
     decision_id: str
     symbol: str
     bar_time: datetime
     baseline_r: Decimal
     analyst_r: Decimal
-    committee_r: Decimal
+    contender_r: Decimal
     analyst_traded: bool
-    committee_traded: bool
+    contender_traded: bool
     baseline_traded: bool
     analyst_direction: str | None  # of the shadow trade, when there was one
-    committee_direction: str | None
+    contender_direction: str | None
     analyst_cost_usd: Decimal
-    committee_cost_usd: Decimal
+    contender_cost_usd: Decimal

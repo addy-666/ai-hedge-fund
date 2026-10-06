@@ -80,3 +80,32 @@ def test_the_release_hash_ignores_line_endings(tmp_path: Path) -> None:
     crlf = tmp_path / "analyst_v1.j2"
     crlf.write_bytes(source.replace(b"\r\n", b"\n").replace(b"\n", b"\r\n"))  # a Windows checkout
     assert template_sha256(crlf) == template_sha256(PROMPTS_DIR / "analyst_v1.j2")
+
+
+def test_the_intermarket_block_is_for_v2_only() -> None:
+    """Roadmap 10.4: v1 renders exactly as released even with cross-asset features in the snapshot;
+    analyst_v2 shows them, one line per other market, a shut one as such."""
+    from dataclasses import replace
+
+    from aifund.agents.prompting import feature_table, intermarket_table
+
+    inp = analyst_input()
+    xa = {"xa.eurusd.corr100": 0.41, "xa.eurusd.ret24_z": 1.3, "xa.eurusd.ema_stack": "BULL",
+          "xa.btcusd.corr100": None, "xa.btcusd.ret24_z": None}  # fmt: skip
+    snap = inp.snapshot.model_copy(update={"features": {**inp.snapshot.features, **xa}})
+    assert feature_table(snap) == feature_table(inp.snapshot)
+    assert intermarket_table(snap) == [
+        "BTCUSD: closed (no fresh bars)",
+        "EURUSD: corr100=0.41 ema_stack=BULL ret24_z=1.3",
+    ]
+    assert intermarket_table(inp.snapshot) == []
+    analyst = Analyst(llm=None, cfg=CFG, playbooks=PLAYBOOKS)  # type: ignore[arg-type]
+    with_xa = replace(inp, snapshot=snap)
+    v1 = PromptLibrary().render("analyst", 1, analyst.context(with_xa)).messages
+    assert "\n".join(f"=== {m.role} ===\n{m.content}" for m in v1) + "\n" == GOLDEN.read_text()
+    (system, user) = PromptLibrary().render("analyst", 2, analyst.context(with_xa)).messages
+    assert "INTERMARKET shows the other markets we watch" in system.content
+    assert "EURUSD: corr100=0.41 ema_stack=BULL ret24_z=1.3" in user.content
+    assert "how XAUUSD and it moved together" in user.content
+    (_, empty) = PromptLibrary().render("analyst", 2, analyst.context(inp)).messages
+    assert "(no other markets)" in empty.content

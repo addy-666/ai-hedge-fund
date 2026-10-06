@@ -228,10 +228,12 @@ def fit_calibration(request: Request, _s: Mutating) -> CommandAccepted:
 
 
 @router.get("/features")
-def features(_s: Authenticated) -> list[FeatureOut]:
-    """The rule-usable features (entry-time, known before the rules run) for the rule editor."""
+def features(request: Request, _s: Authenticated) -> list[FeatureOut]:
+    """The rule-usable features (entry-time, known before the rules run) for the rule editor, with the
+    cross-asset features of the configured instruments (roadmap 10.5)."""
+    slugs = [i.slug for i in ctx.state(request).config.current().config.instruments()]
     out = []
-    for name, spec in sorted(reg.registry().items()):
+    for name, spec in sorted(reg.registry(instruments=slugs).items()):
         if not minable(name):
             continue
         out.append(

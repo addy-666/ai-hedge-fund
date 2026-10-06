@@ -193,6 +193,20 @@ class DashboardQueries:
             return {}
         return {d.id: d for d in self._s.scalars(select(DecisionRow).where(DecisionRow.id.in_(ids))).all()}
 
+    def latest_snapshot(self, account: str, symbol: str) -> FeatureSnapshotRow | None:
+        """The feature snapshot of the newest decision on ``symbol`` that has one (roadmap 10.6)."""
+        snapshot_id = self._s.scalar(
+            select(DecisionRow.snapshot_id)
+            .where(
+                DecisionRow.account_id == account,
+                DecisionRow.symbol == symbol,
+                DecisionRow.snapshot_id.is_not(None),
+            )
+            .order_by(DecisionRow.bar_time.desc())
+            .limit(1)
+        )
+        return self._s.get(FeatureSnapshotRow, snapshot_id) if snapshot_id else None
+
     def snapshots_by_id(self, ids: Sequence[str]) -> dict[str, FeatureSnapshotRow]:
         if not ids:
             return {}

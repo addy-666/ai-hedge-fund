@@ -1,0 +1,145 @@
+[
+  {
+    "id": "XA-XAU-1",
+    "version": 1,
+    "setup_tag": "xau_usd_weakness_pullback",
+    "long": {
+      "all": [
+        {
+          "feature": "xa.eurusd.ret24_z",
+          "op": ">",
+          "value": 0.5
+        },
+        {
+          "feature": "h1.ema_stack",
+          "op": "==",
+          "value": "BULL"
+        },
+        {
+          "feature": "m15.rsi14",
+          "op": "between",
+          "value": [
+            35,
+            50
+          ]
+        }
+      ]
+    },
+    "short": "mirror",
+    "invalidation": {
+      "type": "atr",
+      "tf": "trigger",
+      "k": 1.5
+    },
+    "target": {
+      "type": "rr",
+      "rr": 2.0
+    },
+    "mechanism": "Gold is priced in dollars: a weakening dollar (EURUSD up over the last day) supports an H1 gold uptrend, so an M15 pullback in it should resume rather than reverse."
+  },
+  {
+    "id": "XA-XAU-2",
+    "version": 1,
+    "setup_tag": "xau_dollar_trend_aligned",
+    "long": {
+      "all": [
+        {
+          "feature": "xa.eurusd.ema_stack",
+          "op": "==",
+          "value": "BULL"
+        },
+        {
+          "feature": "h4.ema50_above_ema200",
+          "op": "==",
+          "value": true
+        },
+        {
+          "feature": "m15.stoch_cross_up",
+          "op": "==",
+          "value": true
+        }
+      ]
+    },
+    "short": "mirror",
+    "invalidation": {
+      "type": "atr",
+      "tf": "trigger",
+      "k": 1.5
+    },
+    "target": {
+      "type": "rr",
+      "rr": 2.0
+    },
+    "mechanism": "When the dollar's H1 trend (EURUSD stack) and gold's H4 trend agree, a fresh stochastic turn on M15 is a timing entry into a trend both markets confirm."
+  },
+  {
+    "id": "XA-XAU-3",
+    "version": 1,
+    "setup_tag": "xau_risk_off_bid",
+    "long": {
+      "all": [
+        {
+          "feature": "xa.nas100.ret24_z",
+          "op": "<",
+          "value": -1.0
+        },
+        {
+          "feature": "h1.dist_ema50_atr",
+          "op": ">",
+          "value": -1.0
+        },
+        {
+          "feature": "m15.candle_dir",
+          "op": "==",
+          "value": "BULL"
+        }
+      ]
+    },
+    "short": null,
+    "invalidation": {
+      "type": "atr",
+      "tf": "trigger",
+      "k": 1.5
+    },
+    "target": {
+      "type": "rr",
+      "rr": 2.0
+    },
+    "mechanism": "A sharp one-day equity sell-off sends money to gold as a haven; gold holding near its H1 EMA50 with a bullish M15 bar shows that bid arriving. Not symmetric: rallies in equities do not sell gold the same way."
+  },
+  {
+    "id": "XA-XAU-4",
+    "version": 1,
+    "setup_tag": "xau_eurusd_relative_revert",
+    "long": {
+      "all": [
+        {
+          "feature": "xa.eurusd.ratio_z100",
+          "op": "<",
+          "value": -2.0
+        },
+        {
+          "feature": "xa.eurusd.corr100",
+          "op": ">",
+          "value": 0.2
+        },
+        {
+          "feature": "m15.rsi14",
+          "op": "<",
+          "value": 45
+        }
+      ]
+    },
+    "short": "mirror",
+    "invalidation": {
+      "type": "atr",
+      "tf": "trigger",
+      "k": 1.5
+    },
+    "target": {
+      "type": "rr",
+      "rr": 2.0
+    },
+    "mechanism": "Gold and EURUSD share the dollar factor; when gold is two standard deviations cheap against EURUSD while the pair still co-moves, the gap tends to close from gold's side."
+  }
+]

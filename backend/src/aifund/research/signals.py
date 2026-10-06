@@ -37,6 +37,7 @@ from aifund.domain.decision import FeatureSnapshot, FeatureValue, SetupCandidate
 from aifund.domain.enums import CloseReason, Direction, Timeframe, VirtualStatus
 from aifund.domain.market import SymbolSpec, Tick
 from aifund.domain.values import to_decimal
+from aifund.market.cross_asset import CacheKey, CrossAssetInput
 from aifund.market.feature_registry import tf_prefix
 from aifund.market.features import SnapshotError, build_snapshot
 from aifund.market.sessions import SessionCalendar, calendars
@@ -78,6 +79,35 @@ class CostModel:
 
 
 @dataclass(frozen=True)
+class CrossAssetSpec:
+    """The other instruments a study reads for the cross-asset features: as the engine does (roadmap 10.2)."""
+
+    timeframe: Timeframe
+    bars: int
+    max_age: timedelta
+    others: tuple[tuple[str, str], ...]  # (slug, broker symbol) of every instrument but the studied one
+
+    @classmethod
+    def from_config(cls, cfg: TradingConfig, symbol: SymbolConfig) -> CrossAssetSpec | None:
+        others = tuple((i.slug, i.broker) for i in cfg.instruments() if i.broker != symbol.broker)
+        if not others:
+            return None
+        ca = cfg.cross_asset
+        return cls(ca.timeframe, ca.bars, timedelta(minutes=ca.max_age_minutes), others)
+
+    def input(self, history: History, subject: Series | None, close: datetime) -> CrossAssetInput:
+        """The bars closed at ``close``; an instrument without history gets none (null features, as live)."""
+        others = {}
+        for slug, broker in self.others:
+            series = history.get(broker, self.timeframe)
+            others[slug] = series.closed_at(close, self.bars) if series is not None else []
+        return CrossAssetInput(
+            timeframe=self.timeframe, max_age=self.max_age, others=others,
+            subject=subject.closed_at(close, self.bars) if subject is not None else None,
+        )  # fmt: skip
+
+
+@dataclass(frozen=True)
 class StudySpec:
     symbol: SymbolConfig
     roles: TfRoles
@@ -87,6 +117,7 @@ class StudySpec:
     session: SessionCalendar | None
     costs: CostModel = CostModel()
     non_overlapping: bool = True
+    cross: CrossAssetSpec | None = None  # the cross-asset features (roadmap 10.2); None = none
 
     @classmethod
     def from_config(
@@ -108,6 +139,7 @@ class StudySpec:
             session=calendars(cfg.sessions).get(symbol.session) if symbol.session else None,
             costs=costs or CostModel(),
             non_overlapping=non_overlapping,
+            cross=CrossAssetSpec.from_config(cfg, symbol),
         )
 
     @property
@@ -187,6 +219,8 @@ def run_study(
     span = timedelta(minutes=roles.trigger.minutes)
     gated = not spec.symbol.trade_weekends and spec.session is not None
     cache: MutableMapping[tuple[Timeframe, datetime, int], dict[str, FeatureValue]] = {}
+    xa_cache: MutableMapping[CacheKey, dict[str, FeatureValue]] = {}
+    cross_subject = history.get(sym, spec.cross.timeframe) if spec.cross is not None else None
     result = StudyResult(symbol=sym, start=start, end=end)
     busy_until: datetime | None = None
 
@@ -218,6 +252,8 @@ def run_study(
                 tick=tick,
                 min_bars=spec.bars_per_tf,
                 tf_cache=cache,
+                cross_asset=None if spec.cross is None else spec.cross.input(history, cross_subject, close),
+                xa_cache=xa_cache,
             )
         except SnapshotError as exc:
             result.skipped[f"{Skip.SNAPSHOT}_{exc.reason}"] += 1

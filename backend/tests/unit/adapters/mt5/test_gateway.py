@@ -316,6 +316,18 @@ async def test_startup_checks_catch_every_unsafe_condition(clock: FakeClock) -> 
     await gateway.close()
 
 
+async def test_a_missing_reference_instrument_is_only_a_warning(gw: MT5Gateway) -> None:
+    """Data-only instruments (roadmap 10.1) are selected too; one the terminal lacks never blocks trading."""
+    report = await gw.startup_checks(
+        ["XAUUSDm"], mode=Mode.DEMO, require_hedging=True, references=["XAUUSDm", "NOPE"]
+    )
+    assert report.ok, report.problems
+    assert [w for w in report.warnings if w.startswith("reference")] == [
+        next(w for w in report.warnings if w.startswith("reference NOPE:"))
+    ]
+    assert "cross-asset features stay null" in report.warnings[-1]
+
+
 async def test_live_mode_requires_a_real_account(gw: MT5Gateway) -> None:
     report = await gw.startup_checks(["XAUUSDm"], mode=Mode.LIVE, require_hedging=False)
     assert "mode LIVE but the account is DEMO" in report.problems

@@ -3,7 +3,9 @@
 It is the contract between the feature builder, the learned-rule DSL, the pattern miner and the LLM
 auditor: rules may only reference names listed here with ``available_at_entry=True``. Per-timeframe
 features are named ``<tf>.<base>`` (``m15.rsi14``, ``h1.adx14``); context features ``ctx.<name>``;
-proposal fields ``prop.<name>`` (filled at rule-evaluation time, not by the snapshot builder).
+proposal fields ``prop.<name>`` (filled at rule-evaluation time, not by the snapshot builder); cross-asset
+features ``xa.<instrument>.<base>`` (``xa.eurusd.ret24_z``: another instrument relative to this symbol,
+roadmap 10.2). The instruments come from configuration, so ``get`` resolves any ``xa.<slug>.<base>`` name.
 
 Changing what a feature means or adding one = bump FEATURE_SET_VERSION.
 """
@@ -17,7 +19,8 @@ from enum import StrEnum
 
 from aifund.domain.enums import Direction, EmaStack, Regime, Timeframe
 
-FEATURE_SET_VERSION = 2  # v2 (2026-09-28): close, ema50_above_ema200, *_dist_ema50_atr, stochastics
+FEATURE_SET_VERSION = 3  # v2 (2026-09-28): close, ema50_above_ema200, *_dist_ema50_atr, stochastics;
+#                          v3 (2026-10-06): cross-asset features xa.<instrument>.*
 
 
 class FeatureType(StrEnum):
@@ -54,6 +57,7 @@ class Mirror:
 class FeatureSource(StrEnum):
     BARS = "bars"  # computed from closed bars of one timeframe
     CONTEXT = "context"  # time, quote, cross-timeframe, calendar
+    CROSS_ASSET = "cross_asset"  # another instrument's closed bars, relative to this symbol (roadmap 10.2)
     PORTFOLIO = "portfolio"  # account/positions state at decision time (filled by the pipeline)
     PROPOSAL = "proposal"  # the analyst's proposal (filled at rule evaluation)
 
@@ -238,6 +242,48 @@ NOT_YET_COMPUTED = frozenset(  # live only (the Guardian EA's calendar, roadmap 
 )
 NEEDS_TIMEFRAME = {"ctx.dist_pdh_atr": Timeframe.D1, "ctx.dist_pdl_atr": Timeframe.D1}  # context from D1 bars
 
+# Cross-asset base names: the full name is "xa.<instrument>.<base>" (instrument = lower-case canonical name).
+# "The pair" is this symbol and the instrument, compared on bars with the same open time. Mirrors reflect
+# EVERY instrument at once (the whole market turned upside down), so "long S when X rises" mirrors to
+# "short S when X falls": X's own moves negate, the pair's correlation is unchanged.
+XA_FEATURES: tuple[tuple[str, FeatureType, str, str, tuple[str, ...] | None, Mirror], ...] = (
+    ("ret4_z", _F, "z", "log return over the last 4 bars / (std of 1-bar log returns over 100 bars x 2)",
+     None, _NEG),
+    ("ret24_z", _F, "z", "log return over the last 24 bars / (1-bar log-return std over 100 bars x sqrt 24)",
+     None, _NEG),
+    ("ema_stack", _C, "", "the instrument's EMA20/50/200 stack: BULL, BEAR or MIXED", _STACK, _CAT),
+    ("dist_ema50_atr", _F, "ATR", "the instrument's (close - EMA50) / ATR14", None, _NEG),
+    ("corr100", _F, "corr", "correlation of the pair's 1-bar log returns over the last 100 matched bars",
+     None, _SAME),
+    ("rel_ret24_z", _F, "z", "this symbol's 24-bar return z minus the instrument's (relative strength)",
+     None, _NEG),
+    ("ratio_z100", _F, "z", "z-score of log(this close / instrument close) over the last 100 matched bars",
+     None, _NEG),  # approximate under reflection, like bb_width
+    ("gap_ret_z", _F, "z", "the instrument's log return while this symbol was closed (its last gap of 6 h or "
+     "more within the last 24 bars) / (1-bar std x sqrt bars); null without such a gap", None, _NEG),
+)  # fmt: skip
+XA_PREFIX = "xa"
+BASES = tuple(base for base, *_ in XA_FEATURES)  # the cross-asset base names, in registry order
+_XA_NAME = re.compile(r"^xa\.([a-z0-9]{3,12})\.([a-z0-9_]+)$")
+_XA_BASES = {base: (dtype, unit, desc, cats, mirror) for base, dtype, unit, desc, cats, mirror in XA_FEATURES}
+
+
+def xa_name(slug: str, base: str) -> str:
+    return f"{XA_PREFIX}.{slug}.{base}"
+
+
+def xa_spec(slug: str, base: str) -> FeatureSpec:
+    dtype, unit, desc, cats, mirror = _XA_BASES[base]
+    return FeatureSpec(
+        xa_name(slug, base), dtype, unit, f"{slug.upper()}: {desc}", FeatureSource.CROSS_ASSET, cats,
+        since_version=3, mirror=mirror,
+    )  # fmt: skip
+
+
+def xa_feature_specs(slug: str) -> tuple[FeatureSpec, ...]:
+    return tuple(xa_spec(slug, base) for base in _XA_BASES)
+
+
 PROP_FEATURES: tuple[FeatureSpec, ...] = (
     FeatureSpec(
         "prop.direction",
@@ -290,9 +336,13 @@ def tf_feature_specs(tf: Timeframe) -> tuple[FeatureSpec, ...]:
     )
 
 
-def registry(timeframes: Iterable[Timeframe] = tuple(Timeframe)) -> dict[str, FeatureSpec]:
+def registry(
+    timeframes: Iterable[Timeframe] = tuple(Timeframe), instruments: Iterable[str] = ()
+) -> dict[str, FeatureSpec]:
+    """Every feature for these timeframes, plus the cross-asset features of these instrument slugs."""
     specs: list[FeatureSpec] = [s for tf in timeframes for s in tf_feature_specs(tf)]
     specs += [*CTX_FEATURES, *PROP_FEATURES]
+    specs += [s for slug in instruments for s in xa_feature_specs(slug)]
     return {s.name: s for s in specs}
 
 
@@ -300,18 +350,31 @@ _ALL = registry()
 
 
 def get(name: str) -> FeatureSpec:
-    """Look up any registered feature (all timeframes). KeyError if it does not exist."""
-    return _ALL[name]
+    """Look up any registered feature (any timeframe, any ``xa.<slug>.<base>``). KeyError if there is none."""
+    found = _ALL.get(name)
+    if found is not None:
+        return found
+    m = _XA_NAME.match(name)
+    if m is None or m.group(2) not in _XA_BASES:
+        raise KeyError(name)
+    return xa_spec(m.group(1), m.group(2))
+
+
+def _lookup(name: str) -> FeatureSpec | None:
+    try:
+        return get(name)
+    except KeyError:
+        return None
 
 
 def mirror_of(name: str) -> tuple[str, MirrorKind] | None:
     """(feature whose value mirrors ``name`` on the reflected market, how it transforms), or None."""
-    spec = _ALL.get(name)
+    spec = _lookup(name)
     if spec is None or spec.mirror is None:
         return None
     return (spec.mirror.partner or name, spec.mirror.kind)
 
 
 def is_rule_usable(name: str) -> bool:
-    spec = _ALL.get(name)
+    spec = _lookup(name)
     return spec is not None and spec.available_at_entry

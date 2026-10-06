@@ -193,14 +193,42 @@ Runs on the Mac against exported history (no broker, no network), except R.8 and
 | 9.6 | **Soak**: L2 DEMO gate (`06` §10); gate tracker + sign-off on the System page (`engine/rollout.py`, `/api/rollout`) | ops | All L2 gates met, signed off in `audit_log` |
 | 9.7 | **Go-live L3** micro risk — only strategies that passed E1 **and** E2 (`09` §7) | ops | L3 gates tracked on dashboard |
 
-## Phase 10 — Continuous improvement (backlog, not scheduled)
+## Phase 10 — Continuous improvement
+
+Scheduled 2026-10-06 by the operator: profitability first. Part A (10.1–10.6) gives every decision the state of
+the other markets and lets the LLM research and judge with it; the evidence gates are unchanged, so nothing
+reaches orders without E1. Part B (10.7–10.10, money path, tests first) loosens the per-symbol limits in a
+controlled way. One PR per part.
+
+### Part A — Cross-asset intelligence
+
+| # | Task | Size | DoD |
+|---|---|---|---|
+| 10.1 | **Reference instruments**: `cross_asset:` config — data-only `references` (never traded; e.g. EURUSD as the USD proxy, XAGUSD, an index or a volatility CFD if the broker lists them) plus every traded symbol; the engine reads their closed bars on `cross_asset.timeframe` (H1); startup warns on a reference the terminal cannot select; `export_history.py` exports them; the replay feed and SIM load them | M | Config tests; SIM replays with a reference |
+| 10.2 | **Cross-asset features** `xa.<instrument>.<feature>` (`market/cross_asset.py`, registry, `FEATURE_SET_VERSION` 3): the other instrument's 4- and 24-bar return z-scores, EMA stack and EMA50 distance; the pair's return correlation, relative strength and log-ratio z-score on timestamp-matched bars; the other instrument's move while this one was closed (weekend gap). Only bars CLOSED at decision time; an instrument whose last bar is older than `max_age_minutes` (closed market, missing data) gives nulls, never a guess. Mirrors reflect every instrument at once. Engine and research build identical values | L | No-lookahead tests across mismatched sessions; engine = research values on the same bars |
+| 10.3 | **Research on cross-asset features**: research history loads the references; DSL hypotheses may use `xa.*`; `researcher_v2` shows the LLM the cross-asset features and the instruments available (a proposal on an instrument without data is rejected); curated intermarket hypotheses, one file per symbol (`config/research/intermarket_<symbol>.json`) for `research.py dsl --symbols`; the weekly scheduled run's LLM rounds use v2 (`research.researcher_prompt_version`) | M | FakeLLM tests; v1 output unchanged; ideas validate |
+| 10.4 | **Challenger analyst**: `strategy.challenger_prompt_version` runs a second analyst (`analyst_v2`: v1 plus an INTERMARKET block) on every candidate bar in shadow (`SHADOW_CHALLENGER` virtual trades, never orders); `/api/analytics/challenger` compares it with the analyst and the baseline on the same bars, net of LLM cost — the prompt A/B framework | M | Pipeline tests; comparison numbers match fixtures |
+| 10.5 | **Learning with cross-asset features**: the pattern miner, validator, auditor and rule engine accept `xa.*`; v1 prompts (analyst, specialists, reviewer) keep their inputs unchanged | S | Planted cross-asset losing pattern is mined and enforced |
+| 10.6 | **Dashboard**: Cross-asset card (each instrument's last bar and freshness, the correlation matrix from the latest snapshots) and the challenger comparison on Analytics | M | Vitest + Playwright smoke |
+
+### Part B — Position and daily-cap controls
+
+| # | Task | Size | DoD |
+|---|---|---|---|
+| 10.7 | **Strategy identity on positions**: setup tag and committee family on the intent, the trade and the MT5 order comment | S | Reconcile tests: identity survives restarts |
+| 10.8 | **One slot per (symbol, family)**: a second position on a symbol only from a different family; an opposite-direction signal from a different family opens a hedge (operator decision 2026-10-06; the same family keeps the reversal rules); `max_symbol_heat_pct` caps the open risk on one symbol | M | Guard tests (100% branch); chaos invariants updated |
+| 10.9 | **Adaptive daily cap per strategy per symbol**: `limits.trades_per_strategy_per_day` — base 3, max 5, set per family from the setup-TF regime by a config map; a hard per-symbol ceiling stays; raising caps needs re-auth | M | Guard tests per regime |
+| 10.10 | **Replay, scenario and chaos suites** for several positions per symbol | S | Suites green |
+
+### Backlog (not scheduled)
 
 - Postgres/TimescaleDB migration if data volume or multi-process writes demand it.
 - Multi-account support (account_id already in schema).
 - *(Walk-forward research harness: promoted to Phase R.)*
 - Headline/sentiment inputs (with prompt-injection hardening).
 - Portfolio-level optimisation of risk across correlated buckets.
-- A/B testing framework for prompt versions using shadow decisions.
+- *(A/B testing of prompt versions on shadow decisions: scheduled as 10.4.)*
+- Longer research history from an external source (research only), exit research (MFE/MAE), meta-labelling.
 
 ---
 

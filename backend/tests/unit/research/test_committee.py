@@ -7,21 +7,21 @@ from decimal import Decimal as D
 
 import pytest
 
-from aifund.domain.trade import CommitteeBar
+from aifund.domain.trade import ContenderBar
 from aifund.research.committee import compare
 
 T = datetime(2026, 10, 1, tzinfo=UTC)
 
 
 def bar(i: int, base: str, analyst: str | None, committee: str | None, a_dir: str = "BUY",
-        c_dir: str = "BUY", a_cost: str = "0.01", c_cost: str = "0.03") -> CommitteeBar:  # fmt: skip
-    return CommitteeBar(
+        c_dir: str = "BUY", a_cost: str = "0.01", c_cost: str = "0.03") -> ContenderBar:  # fmt: skip
+    return ContenderBar(
         decision_id=f"d{i}", symbol="XAUUSD", bar_time=T + timedelta(hours=i),
-        baseline_r=D(base), analyst_r=D(analyst or 0), committee_r=D(committee or 0),
-        baseline_traded=True, analyst_traded=analyst is not None, committee_traded=committee is not None,
+        baseline_r=D(base), analyst_r=D(analyst or 0), contender_r=D(committee or 0),
+        baseline_traded=True, analyst_traded=analyst is not None, contender_traded=committee is not None,
         analyst_direction=a_dir if analyst is not None else None,
-        committee_direction=c_dir if committee is not None else None,
-        analyst_cost_usd=D(a_cost), committee_cost_usd=D(c_cost),
+        contender_direction=c_dir if committee is not None else None,
+        analyst_cost_usd=D(a_cost), contender_cost_usd=D(c_cost),
     )  # fmt: skip
 
 

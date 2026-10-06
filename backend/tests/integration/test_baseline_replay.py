@@ -113,6 +113,8 @@ async def replay(
     news: Callable[[], NewsCalendar | None] | None = None,
     committee: Committee | None = None,
     committee_mode: str | None = None,
+    extra: dict | None = None,  # type: ignore[type-arg]  # more series for the feed (cross-asset references)
+    challenger: Analyst | None = None,
 ) -> ReplayReport:
     cfg = load_trading_config(CONFIG).config
     risk = cfg.risk.model_copy(
@@ -130,7 +132,7 @@ async def replay(
     )
     profile = ProfileConfig(trigger_tf=Timeframe.M15, setup_tf=Timeframe.H1, context_tfs=[Timeframe.H4])
     clock = FakeClock(START + timedelta(days=WARMUP_DAYS, seconds=5))
-    feed = ReplayFeed(market, {"XAUUSD": XAU}, clock)
+    feed = ReplayFeed({**market, **(extra or {})}, {"XAUUSD": XAU}, clock)
     broker = SimBroker(feed=feed, clock=clock, config=SimConfig(starting_balance=Decimal("10000")))
     executor = Executor(broker, feed, factory, clock, account_id="acc")
     risk = RiskManager(cfg.risk, magic=cfg.engine.magic, broker=broker, clock=clock)
@@ -146,7 +148,7 @@ async def replay(
         cfg, broker=broker, market=feed, factory=factory, clock=clock, executor=executor, risk=risk,
         detectors=detectors, equity=tracker, account_id="acc",
         profile_override={"intraday_m15": profile}, analyst=analyst,
-        news=news, committee=committee,
+        news=news, committee=committee, challenger=challenger,
     )  # fmt: skip
     bar_clock = BarClock(feed, clock, [("XAUUSD", Timeframe.M15)], DecisionCursorStore(factory))
     manager = PositionManager(cfg.position_management, cfg.risk.stops, magic=cfg.engine.magic, account=1)
@@ -390,3 +392,22 @@ async def test_without_a_calendar_the_news_gate_fails_closed(
     assert report.reasons[ReasonCode.NEWS_BLACKOUT.value] == report.outcomes[
         DecisionOutcome.SKIPPED.value
     ] - report.reasons.get(ReasonCode.MARKET_CLOSED.value, 0)
+
+
+async def test_cross_asset_features_reach_every_snapshot(
+    market: dict,  # type: ignore[type-arg]
+    factory: sessionmaker[Session],
+) -> None:
+    """Roadmap 10.2: the example config's EURUSD reference feeds xa.eurusd.* into the snapshots; without its
+    data the same replay decides exactly as many bars, with null cross-asset features."""
+    m1 = random_walk_m1("EURUSD", START, (WARMUP_DAYS + REPLAY_DAYS + 1) * 1440, seed=7)
+    eurusd = {("EURUSD", Timeframe.H1): aggregate(m1, Timeframe.H1)}
+    report = await replay(market, factory, strategy=BASELINE, days=1, extra=eurusd)
+    assert report.violations == []
+    with factory() as s:
+        rows = s.scalars(select(FeatureSnapshotRow)).all()
+    assert rows
+    assert all(r.feature_set_version == 3 for r in rows)
+    known = [r.features["xa.eurusd.ret24_z"] for r in rows]
+    assert all(isinstance(v, float) for v in known)  # every decision saw a fresh EURUSD bar
+    assert all(r.features["xa.eurusd.corr100"] is not None for r in rows)

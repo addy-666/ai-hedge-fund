@@ -97,6 +97,12 @@ output: top 20 surviving clusters, plus the 10 strongest non-surviving ones mark
 Also emits descriptive tables for the auditor and dashboard: expectancy by symbol, setup_tag, session,
 regime, htf_alignment, confidence bucket, reviewer tag frequency among losses vs wins.
 
+Cross-asset features (roadmap 10.5, `02` §3) are ordinary registry features to the miner, the validator, the
+auditor and the rule engine: a loss cluster can live in another market ("gold longs while EURUSD's 24-bar
+move is below −1σ"), and its rule references `xa.eurusd.ret24_z`. When that market is shut the feature is
+null: the sample does not fall in the bin, and at decision time the rule does not match (it cannot judge, so
+it neither penalises nor blocks). Rules still only reduce risk.
+
 ---
 
 ## 4. Auditor agent (LLM) — `agents/auditor.py`

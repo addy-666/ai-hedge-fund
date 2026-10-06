@@ -73,11 +73,11 @@ async def test_the_committee_shadows_the_analyst_and_sends_nothing(
     agents = {r.agent for r in llm.requests}
     assert agents == {"analyst", "specialist_trend", "critic"}
     with factory() as s:
-        bars = VirtualTradeRepository(s, clock).committee_bars(
+        bars = VirtualTradeRepository(s, clock).contender_bars(
             "acc", analysed[0].bar_time, analysed[-1].bar_time + timedelta(days=1)
         )
     assert bars
-    assert all(b.committee_r == b.analyst_r and b.committee_traded for b in bars)
+    assert all(b.contender_r == b.analyst_r and b.contender_traded for b in bars)
     out = compare(bars, risk_usd=D(50))
     assert out.agreement == 1.0
     assert out.vs_analyst is not None

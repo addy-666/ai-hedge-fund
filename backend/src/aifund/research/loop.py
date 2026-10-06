@@ -48,6 +48,7 @@ class Evaluator(Protocol):
 
     symbols: list[str]
     roles: TfRoles
+    instruments: list[str]  # cross-asset instrument slugs the studied symbols can see (roadmap 10.3)
 
     def outcomes(
         self, hypothesis: EntryHypothesis, start: datetime, end: datetime
@@ -126,6 +127,15 @@ class HistoryEvaluator:
         self.specs = list(specs)
         self.symbols = [s.symbol.broker for s in specs]
         self.roles = specs[0].roles
+        self.instruments = sorted(  # only instruments with history: the researcher is offered nothing else
+            {
+                slug
+                for s in specs
+                if s.cross is not None
+                for slug, broker in s.cross.others
+                if history.get(broker, s.cross.timeframe) is not None
+            }
+        )
 
     def outcomes(self, hypothesis: EntryHypothesis, start: datetime, end: datetime) -> list[SignalOutcome]:
         out: list[SignalOutcome] = []
@@ -201,6 +211,7 @@ class ResearchLoop:
             run_id=run_id,
             roles=self.evaluator.roles,
             symbols=list(self.evaluator.symbols),
+            instruments=list(self.evaluator.instruments),
             playbooks=playbooks,
             ledger=self.ledger_lines(),
             tables=self.tables(probe),

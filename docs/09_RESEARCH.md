@@ -190,6 +190,22 @@ Implementation notes (R.6):
 - `scripts/research.py dsl --file ideas.json` runs operator hypotheses through the same loop (origin
   `operator`); `scripts/research.py llm --rounds N` runs the researcher (each round sees the updated ledger).
 
+Cross-asset research (roadmap 10.3):
+
+- Hypotheses may use the `xa.<instrument>.*` features (`02` §3). The study reads every instrument's bars
+  that had closed at each trigger close, exactly as the engine does (`signals.CrossAssetSpec`); research
+  history loads the references on `cross_asset.timeframe` only, and one never exported is absent (null
+  features, the hypothesis does not fire). `HistoryEvaluator.instruments` lists the instruments that HAVE
+  history; the brief carries them.
+- `researcher_v2.j2` (`research.researcher_prompt_version: 2`) adds intermarket mechanisms to the guidance,
+  the mirror rule for other markets ("the mirror turns every market upside down") and a CROSS-ASSET
+  FEATURES table naming the instruments. A proposal on an instrument without data is rejected before it is
+  tested: it could never fire and would only enlarge the FDR family. v1 renders exactly as before.
+- Curated intermarket hypotheses: `config/research/intermarket_<symbol>.json`, one file per traded symbol,
+  each about OTHER markets only (a symbol never sees itself). The DSL has no symbol condition, so run each
+  file on its own symbol — the evidence record then names only that symbol and the engine deploys it only
+  there: `research.py dsl --file ../config/research/intermarket_xauusd.json --symbols XAUUSD`.
+
 ## 7. Evidence gates
 
 | Gate | Where | Pass condition (defaults in `research:` config) |

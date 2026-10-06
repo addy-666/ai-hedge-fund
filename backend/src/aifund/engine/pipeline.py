@@ -25,7 +25,7 @@ from typing import Any, NoReturn
 import structlog
 from sqlalchemy.orm import Session, sessionmaker
 
-from aifund.agents.analyst import Analyst, AnalystInput, Verdict
+from aifund.agents.analyst import Analyst, AnalystInput, AnalystResult, Verdict
 from aifund.agents.committee import Committee, Deliberation
 from aifund.agents.portfolio_manager import PortfolioManager, with_rules
 from aifund.config.evidence import (
@@ -57,6 +57,7 @@ from aifund.engine.equity import EquityTracker
 from aifund.engine.rulebook import RulebookCache
 from aifund.execution.executor import ExecutionResult, Executor
 from aifund.market.bar_clock import BarClosed
+from aifund.market.cross_asset import CrossAssetInput
 from aifund.market.feature_registry import tf_prefix
 from aifund.market.features import PortfolioContext, SnapshotError, build_snapshot
 from aifund.market.news import NewsCalendar
@@ -114,6 +115,7 @@ class DecisionRecord:
     virtual: dict[str, Any] | None = None  # a blocked signal's counterfactual trade plan (docs/03 §14.4)
     shadows: list[dict[str, Any]] = field(default_factory=list)  # G-LLM shadow plans (docs/09 §7)
     committee: dict[str, Any] | None = None  # the committee's deliberation in shadow (roadmap 8.4)
+    challenger: dict[str, Any] | None = None  # the challenger prompt's decision in shadow (roadmap 10.4)
     decision_id: str = field(default_factory=new_id)
 
 
@@ -172,9 +174,13 @@ class DecisionPipeline:
         rulebook: RulebookCache | None = None,
         committee: Committee | None = None,
         calibration: CalibrationCache | None = None,
+        challenger: Analyst | None = None,
     ) -> None:
         if cfg.committee.mode == "shadow" and committee is None:
             raise ValueError("committee.mode shadow needs the committee (specialists and critic: an LLM)")
+        wants_challenger = cfg.strategy.challenger_prompt_version is not None and cfg.strategy.analyst_enabled
+        if wants_challenger and analyst is not None and challenger is None:
+            raise ValueError("strategy.challenger_prompt_version needs the challenger analyst (an LLM)")
         if cfg.strategy.analyst_enabled and analyst is None and not cfg.strategy.baseline_enabled:
             raise ValueError(
                 "strategy.analyst_enabled needs an Analyst (an LLM); or enable the baseline instead"
@@ -205,6 +211,10 @@ class DecisionPipeline:
         self._portfolio = portfolio or PortfolioManager(calibrator=self._calibration.calibrator("analyst"))
         if self._committee is not None:
             self._committee.use_calibrator(self._calibration.calibrator("committee"))
+        # the challenger prompt (roadmap 10.4) decides beside the analyst, in shadow; its confidences are its
+        # own (the analyst's calibration was fitted on another prompt), so its source has no model: identity
+        self._challenger = challenger if self._analyst is not None else None
+        self._challenger_pm = PortfolioManager(calibrator=self._calibration.calibrator("challenger"))
         self._rulebook = rulebook or RulebookCache(
             factory, clock, max_total_penalty=cfg.learning.max_total_penalty
         )
@@ -234,6 +244,28 @@ class DecisionPipeline:
 
     async def _tx(self, fn: Callable[[Session], Any]) -> Any:
         return await asyncio.to_thread(self._tx_sync, fn)
+
+    async def _cross_input(self, symbol: str, bars: dict[Timeframe, list[Bar]]) -> CrossAssetInput | None:
+        """The other instruments' closed bars for the cross-asset features (roadmap 10.2), or None when
+        ``cross_asset`` is off. An instrument the broker cannot serve gets no bars, so its features are null:
+        missing context never blocks a decision and never becomes a guess (a rule or hypothesis that needs
+        it simply does not match)."""
+        ca = self._cfg.cross_asset
+        instruments = [i for i in self._cfg.instruments() if i.broker != symbol]
+        if not instruments:
+            return None
+        others: dict[str, list[Bar]] = {}
+        for inst in instruments:
+            try:
+                others[inst.slug] = await self._market.closed_bars(inst.broker, ca.timeframe, ca.bars)
+            except BrokerError as exc:
+                log.warning("cross_asset.unavailable", instrument=inst.broker, error=str(exc)[:200])
+                others[inst.slug] = []
+        subject = bars.get(ca.timeframe)
+        if subject is None:
+            subject = await self._market.closed_bars(symbol, ca.timeframe, ca.bars)
+        max_age = timedelta(minutes=ca.max_age_minutes)
+        return CrossAssetInput(timeframe=ca.timeframe, max_age=max_age, others=others, subject=subject)
 
     async def _cache_bars(self, bars: dict[Timeframe, list[Bar]]) -> None:
         """Keep the dashboard's chart cache current with the bars just read (new ones only; best effort)."""
@@ -371,11 +403,23 @@ class DecisionPipeline:
 
     async def _deliberate(self, inp: AnalystInput, rules: Callable[..., RuleVerdict]) -> Deliberation | None:
         """The committee in shadow: a failure there is logged and never touches the real decision."""
-        assert self._committee is not None  # only called with a committee
+        if self._committee is None:
+            return None
         try:
             return await self._committee.deliberate(inp, rules)
         except Exception as exc:
             log.warning("committee.failed", decision_id=inp.decision_id, error=f"{type(exc).__name__}: {exc}")
+            return None
+
+    async def _challenge(self, inp: AnalystInput) -> AnalystResult | None:
+        """The challenger prompt in shadow (roadmap 10.4): a failure is logged, never touches the decision."""
+        if self._challenger is None:
+            return None
+        try:
+            return await self._challenger.analyse(inp)
+        except Exception as exc:
+            error = f"{type(exc).__name__}: {exc}"
+            log.warning("challenger.failed", decision_id=inp.decision_id, error=error)
             return None
 
     def _stop_atr(self, snapshot: FeatureSnapshot, roles: TfRoles) -> Decimal | None:
@@ -456,6 +500,7 @@ class DecisionPipeline:
         tfs = [roles.trigger, roles.setup, *roles.context]
         bars = {tf: await self._market.closed_bars(event.symbol, tf, profile.bars_per_tf) for tf in tfs}
         await self._cache_bars(bars)
+        cross = await self._cross_input(event.symbol, bars)
         positions = await self._broker.positions()
         own = [p for p in positions if p.magic == self._cfg.engine.magic]
         try:
@@ -470,6 +515,7 @@ class DecisionPipeline:
                 min_bars=profile.bars_per_tf,
                 portfolio=PortfolioContext(len(own), 0.0, 0.0, 0, float(drawdown_pct(equity_state))),
                 news_minutes=news_minutes,
+                cross_asset=cross,
             )
         except SnapshotError as exc:
             self._end(record, DecisionOutcome.ERROR, exc.reason, exc.detail)
@@ -543,17 +589,16 @@ class DecisionPipeline:
                 tick=tick, spread_points=spread_points, position=position, portfolio=portfolio,
                 lessons=[lesson(br) for br in lessons],
             )  # fmt: skip
-            deliberation: Deliberation | None = None
-            if self._committee is None:
-                analysis = await self._analyst.analyse(bar_input)
-            else:  # the committee deliberates concurrently, in shadow
 
-                def committee_rules(direction: Direction, setup_tag: str, confidence: int) -> RuleVerdict:
-                    return rules.evaluate(rule_context(direction, setup_tag, confidence))
+            def committee_rules(direction: Direction, setup_tag: str, confidence: int) -> RuleVerdict:
+                return rules.evaluate(rule_context(direction, setup_tag, confidence))
 
-                analysis, deliberation = await asyncio.gather(
-                    self._analyst.analyse(bar_input), self._deliberate(bar_input, committee_rules)
-                )
+            # the committee and the challenger (when configured) decide concurrently, in shadow
+            analysis, deliberation, challenge = await asyncio.gather(
+                self._analyst.analyse(bar_input),
+                self._deliberate(bar_input, committee_rules),
+                self._challenge(bar_input),
+            )
             record.model, record.cost_usd, record.prompt_version = (
                 analysis.model, analysis.cost_usd, analysis.prompt_version,
             )  # fmt: skip
@@ -597,6 +642,24 @@ class DecisionPipeline:
                 if chosen is not None and tradable:
                     committee_arm = _Blocked(event, sym_cfg, roles, spec, tick, snapshot, chosen.decision)
                     self._shadow(record, VirtualArm.SHADOW_COMMITTEE, committee_arm)
+            if challenge is not None:  # the challenger's shadow (roadmap 10.4): what it would have traded
+                record.challenger = {
+                    "prompt_version": challenge.prompt_version, "verdict": challenge.verdict.value,
+                    "model": challenge.model, "cost_usd": str(challenge.cost_usd), "proposal": challenge.raw,
+                    "tradable": False,
+                }  # fmt: skip
+                if challenge.verdict is Verdict.PROPOSAL and challenge.proposal is not None:
+                    c = challenge.proposal
+                    challenger_rules = rules.evaluate(rule_context(c.direction, c.setup_tag, c.confidence))
+                    chosen_c = self._challenger_pm.decide(
+                        decision_id=record.decision_id, symbol=event.symbol, proposal=c,
+                        rules=challenger_rules,
+                    )  # fmt: skip
+                    record.challenger["final_confidence"] = chosen_c.decision.final_confidence
+                    if _tradable(challenger_rules, chosen_c.decision, threshold):
+                        record.challenger["tradable"] = True
+                        arm = _Blocked(event, sym_cfg, roles, spec, tick, snapshot, chosen_c.decision)
+                        self._shadow(record, VirtualArm.SHADOW_CHALLENGER, arm)
 
             if self._cfg.strategy.analyst_orders:  # G-LLM signed off (or SIM): the analyst decides
                 record.proposal = analyst_proposal
@@ -782,11 +845,7 @@ class DecisionPipeline:
                 reason_code=record.reason.value if record.reason else None,
                 reason_detail=record.detail or None,
                 setups=record.setups or None,
-                proposal=(
-                    {**(record.proposal or {}), "committee": record.committee}
-                    if record.committee is not None
-                    else record.proposal
-                ),
+                proposal=_with_shadows(record),
                 llm_confidence=record.confidence,
                 calibrated_confidence=record.calibrated_confidence,
                 penalty_points=record.penalty_points,
@@ -814,3 +873,11 @@ class DecisionPipeline:
                 )
 
         await self._tx(_write)
+
+
+def _with_shadows(record: DecisionRecord) -> dict[str, Any] | None:
+    """The proposal as stored: the analyst's (or the baseline's), with the shadow contenders' records."""
+    extra = {k: v for k, v in (("committee", record.committee), ("challenger", record.challenger)) if v}
+    if not extra:
+        return record.proposal
+    return {**(record.proposal or {}), **extra}

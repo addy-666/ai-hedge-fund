@@ -340,3 +340,60 @@ def test_first_evaluated_bar_and_r_net_list() -> None:
     result = study(world({ENTRY + timedelta(minutes=10): {"low": "97.00"}}))
     assert result.first_evaluated == START + timedelta(minutes=15)
     assert result.r_net == [D("-1.0000")]
+
+
+class Recorder:
+    setup_tag = "recorder"
+    playbook_id = "recorder"
+    version = "1"
+
+    def __init__(self) -> None:
+        self.seen: list[FeatureSnapshot] = []
+
+    def detect(self, snapshot: FeatureSnapshot) -> list[SetupCandidate]:
+        self.seen.append(snapshot)
+        return []
+
+
+def test_the_study_sees_the_other_instruments_as_the_engine_does() -> None:
+    """Roadmap 10.2: the study reads each reference's bars closed at the trigger close; an instrument without
+    history gets null features, as a reference the terminal cannot serve does live."""
+    import random
+
+    from aifund.config.loader import load_trading_config
+    from aifund.config.settings import PROJECT_ROOT
+    from aifund.research.signals import CrossAssetSpec
+
+    rng = random.Random(3)
+    closes = [1.1]
+    for _ in range(14 * 24 - 1):
+        closes.append(round(closes[-1] * (1 + rng.gauss(0, 0.001)), 5))
+    eurusd = [
+        Bar(symbol="EURUSD", timeframe=Timeframe.H1, time=T0 + i * timedelta(hours=1), open=D(str(c)),
+            high=D(str(c)) + D("0.001"), low=D(str(c)) - D("0.001"), close=D(str(c)), tick_volume=1)
+        for i, c in enumerate(closes)
+    ]  # fmt: skip
+    base = world()
+    history = History(
+        {**base._series, ("EURUSD", Timeframe.H1): History.from_bars({("EURUSD", Timeframe.H1): eurusd}, {})
+         .series("EURUSD", Timeframe.H1)}, base.specs,
+    )  # fmt: skip
+    others = (("eurusd", "EURUSD"), ("btcusd", "BTCUSD"))
+    cross = CrossAssetSpec(Timeframe.H1, 120, timedelta(hours=2), others)
+    recorder = Recorder()
+    run_study(history, spec(cross=cross), [recorder], START, START + timedelta(hours=6))
+    assert recorder.seen
+    for snap in recorder.seen:
+        close = snap.bar_time + timedelta(minutes=15)
+        last = [b for b in eurusd if b.time + timedelta(hours=1) <= close][-1]
+        expected = cross.input(history, history.get("XAUUSD", Timeframe.H1), close)
+        assert expected.others["eurusd"][-1] == last  # closed bars only
+        assert isinstance(snap.features["xa.eurusd.ret4_z"], float)
+        assert all(v is None for k, v in snap.features.items() if k.startswith("xa.btcusd."))
+
+    cfg = load_trading_config(PROJECT_ROOT / "config" / "trading.example.yaml").config
+    xau = CrossAssetSpec.from_config(cfg, cfg.symbol("XAUUSD"))
+    assert xau is not None
+    assert xau.others == (("eurusd", "EURUSD"), ("btcusd", "BTCUSD"), ("nas100", "NAS100.r"))
+    off = cfg.model_copy(update={"cross_asset": cfg.cross_asset.model_copy(update={"enabled": False})})
+    assert CrossAssetSpec.from_config(off, cfg.symbol("XAUUSD")) is None

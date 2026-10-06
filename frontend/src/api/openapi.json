@@ -729,6 +729,128 @@
         "title": "CalibrationSourceOut",
         "type": "object"
       },
+      "ChallengerComparison": {
+        "description": "The challenger analyst prompt vs the analyst vs the baseline in shadow (roadmap 10.4).",
+        "properties": {
+          "agreement": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agreement"
+          },
+          "analyst_prompt": {
+            "title": "Analyst Prompt",
+            "type": "string"
+          },
+          "arms": {
+            "items": {
+              "$ref": "#/components/schemas/ArmStat"
+            },
+            "title": "Arms",
+            "type": "array"
+          },
+          "bars": {
+            "title": "Bars",
+            "type": "integer"
+          },
+          "challenger_prompt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Challenger Prompt"
+          },
+          "days": {
+            "title": "Days",
+            "type": "number"
+          },
+          "first": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First"
+          },
+          "last": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last"
+          },
+          "mode": {
+            "title": "Mode",
+            "type": "string"
+          },
+          "risk_usd": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Risk Usd"
+          },
+          "vs_analyst": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UpliftStat"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "vs_baseline": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UpliftStat"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "mode",
+          "bars",
+          "first",
+          "last",
+          "days",
+          "arms",
+          "agreement",
+          "risk_usd",
+          "vs_analyst",
+          "vs_baseline",
+          "analyst_prompt",
+          "challenger_prompt"
+        ],
+        "title": "ChallengerComparison",
+        "type": "object"
+      },
       "CommandAccepted": {
         "properties": {
           "command_id": {
@@ -854,7 +976,7 @@
         "type": "object"
       },
       "CommitteeComparison": {
-        "description": "Committee vs analyst vs baseline in shadow (roadmap 8.4): paired bars, net of LLM cost in R.",
+        "description": "A contender vs analyst vs baseline in shadow, paired bars, net of LLM cost in R: the committee\n(roadmap 8.4) or, as ``ChallengerComparison``, the challenger prompt (10.4).",
         "properties": {
           "agreement": {
             "anyOf": [
@@ -1158,6 +1280,54 @@
           "avg_exit_slippage_points"
         ],
         "title": "Costs",
+        "type": "object"
+      },
+      "CrossAssetOut": {
+        "description": "The cross-asset universe and what each traded symbol's latest decision saw of it (roadmap 10.6).",
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "instruments": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Instruments",
+            "type": "array"
+          },
+          "max_age_minutes": {
+            "title": "Max Age Minutes",
+            "type": "integer"
+          },
+          "references": {
+            "items": {
+              "type": "string"
+            },
+            "title": "References",
+            "type": "array"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/IntermarketRow"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "timeframe": {
+            "title": "Timeframe",
+            "type": "string"
+          }
+        },
+        "required": [
+          "enabled",
+          "timeframe",
+          "max_age_minutes",
+          "instruments",
+          "references",
+          "rows"
+        ],
+        "title": "CrossAssetOut",
         "type": "object"
       },
       "DealOut": {
@@ -1955,6 +2125,87 @@
           "created_at"
         ],
         "title": "IntentOut",
+        "type": "object"
+      },
+      "IntermarketCell": {
+        "properties": {
+          "corr100": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Corr100"
+          },
+          "ema_stack": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ema Stack"
+          },
+          "instrument": {
+            "title": "Instrument",
+            "type": "string"
+          },
+          "open": {
+            "title": "Open",
+            "type": "boolean"
+          },
+          "ret24_z": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ret24 Z"
+          }
+        },
+        "required": [
+          "instrument",
+          "open",
+          "corr100",
+          "ret24_z",
+          "ema_stack"
+        ],
+        "title": "IntermarketCell",
+        "type": "object"
+      },
+      "IntermarketRow": {
+        "properties": {
+          "bar_time": {
+            "format": "date-time",
+            "title": "Bar Time",
+            "type": "string"
+          },
+          "cells": {
+            "items": {
+              "$ref": "#/components/schemas/IntermarketCell"
+            },
+            "title": "Cells",
+            "type": "array"
+          },
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
+          }
+        },
+        "required": [
+          "symbol",
+          "bar_time",
+          "cells"
+        ],
+        "title": "IntermarketRow",
         "type": "object"
       },
       "LLMCallOut": {
@@ -4258,6 +4509,74 @@
         ]
       }
     },
+    "/api/analytics/challenger": {
+      "get": {
+        "description": "The challenger prompt's shadow record beside the analyst and the baseline: the prompt A/B (10.4).",
+        "operationId": "challenger_api_analytics_challenger_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChallengerComparison"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Challenger",
+        "tags": [
+          "analytics"
+        ]
+      }
+    },
     "/api/analytics/committee": {
       "get": {
         "description": "The committee's shadow record beside the analyst and the baseline (roadmap 8.4).",
@@ -4971,6 +5290,27 @@
         ]
       }
     },
+    "/api/cross-asset": {
+      "get": {
+        "operationId": "cross_asset_api_cross_asset_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CrossAssetOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Cross Asset",
+        "tags": [
+          "cross-asset"
+        ]
+      }
+    },
     "/api/decisions": {
       "get": {
         "operationId": "decisions_api_decisions_get",
@@ -5350,7 +5690,7 @@
     },
     "/api/features": {
       "get": {
-        "description": "The rule-usable features (entry-time, known before the rules run) for the rule editor.",
+        "description": "The rule-usable features (entry-time, known before the rules run) for the rule editor, with the\ncross-asset features of the configured instruments (roadmap 10.5).",
         "operationId": "features_api_features_get",
         "responses": {
           "200": {

@@ -124,7 +124,7 @@ def test_committee_bars_need_a_deliberation_and_finished_arms(
     B, A, C = VirtualArm.SHADOW_BASELINE, VirtualArm.SHADOW_ANALYST, VirtualArm.SHADOW_COMMITTEE
     window = (T0 - timedelta(days=1), T0 + timedelta(days=1))
     with factory() as s:
-        assert VirtualTradeRepository(s, clock).committee_bars("acc", *window) == []
+        assert VirtualTradeRepository(s, clock).contender_bars("acc", *window) == []
     done = decided(factory, clock, 0, {B: (VirtualStatus.CLOSED, "-1"), C: (VirtualStatus.CLOSED, "2")})
     busy = decided(factory, clock, 15, {B: (VirtualStatus.CLOSED, "1"), C: (VirtualStatus.OPEN, None)})
     plain = decided(factory, clock, 30, {B: (VirtualStatus.CLOSED, "1"), A: (VirtualStatus.CLOSED, "1")})
@@ -138,7 +138,7 @@ def test_committee_bars_need_a_deliberation_and_finished_arms(
         assert other is not None
         other.setups, other.proposal = [{"setup_tag": "stub"}], {"source": "analyst"}  # no committee ran
     with factory() as s:
-        (bar,) = VirtualTradeRepository(s, clock).committee_bars("acc", *window)
-    assert (bar.decision_id, bar.baseline_r, bar.analyst_r, bar.committee_r) == (done, D(-1), D(0), D(2))
-    assert (bar.analyst_traded, bar.committee_traded, bar.committee_direction) == (False, True, "BUY")
-    assert (bar.analyst_cost_usd, bar.committee_cost_usd) == (D("0.002"), D("0.004"))
+        (bar,) = VirtualTradeRepository(s, clock).contender_bars("acc", *window)
+    assert (bar.decision_id, bar.baseline_r, bar.analyst_r, bar.contender_r) == (done, D(-1), D(0), D(2))
+    assert (bar.analyst_traded, bar.contender_traded, bar.contender_direction) == (False, True, "BUY")
+    assert (bar.analyst_cost_usd, bar.contender_cost_usd) == (D("0.002"), D("0.004"))

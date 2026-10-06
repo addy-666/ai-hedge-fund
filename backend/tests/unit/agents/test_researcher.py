@@ -201,3 +201,60 @@ async def test_a_provider_that_does_not_enforce_json_is_repaired_too() -> None:
     result = await Researcher(llm, CFG, max_hypotheses=5).propose(brief())  # type: ignore[arg-type]
     assert len(result.hypotheses) == 1
     assert result.rejected[0].item == "not json at all"
+
+
+# ---------------------------------------------------------------- cross-asset (roadmap 10.3)
+
+XA_HYP = hyp(
+    setup_tag="usd_weakness_pullback",
+    long={"all": [{"feature": "xa.eurusd.ret24_z", "op": ">", "value": 0.5},
+                  {"feature": "m15.rsi14", "op": "between", "value": [35, 50]}]},
+)  # fmt: skip
+
+
+async def propose_v2(*script: Scripted, instruments: list[str]):  # type: ignore[no-untyped-def]
+    llm = FakeLLM(list(script))
+    b = ResearchBrief(run_id="R-2", roles=ROLES, symbols=["XAUUSD"], playbooks=[], ledger=[LINE],
+                      instruments=instruments)  # fmt: skip
+    result = await Researcher(llm, CFG, max_hypotheses=5, version=2).propose(b)
+    return result, llm
+
+
+async def test_v2_shows_the_cross_asset_features_and_the_instruments() -> None:
+    result, llm = await propose_v2({"hypotheses": [XA_HYP]}, instruments=["btcusd", "eurusd"])
+    system, user = (m.content for m in llm.requests[0].messages)
+    assert "CROSS-ASSET FEATURES" in user
+    assert "instrument from: btcusd, eurusd" in user
+    assert "\nxa.<instrument>.ret24_z | float | z |" in user
+    assert "xa.<instrument>.corr100 | float | corr |" in user
+    assert "| same\n" in user  # the correlation does not flip under the mirror
+    assert "turns EVERY\n  market upside down" in system
+    assert result.prompt_version == "researcher_v2"
+    (h,) = result.hypotheses
+    assert h.instruments() == {"eurusd"}
+    assert h.short_condition is not None  # mirrored: xa.eurusd.ret24_z < -0.5
+
+
+async def test_an_instrument_without_data_is_rejected_before_it_costs_a_test() -> None:
+    xag = hyp(setup_tag="silver_lead", long={"all": [{"feature": "xa.xagusd.ret4_z", "op": ">", "value": 1}]})
+    result, _ = await propose_v2({"hypotheses": [xag, XA_HYP]}, {"hypotheses": []}, instruments=["eurusd"])
+    assert [h.setup_tag for h in result.hypotheses] == ["usd_weakness_pullback"]
+    assert result.rejected[0].reason == "no cross-asset data for xagusd (instruments: eurusd)"
+
+
+async def test_without_instruments_v2_reads_like_v1_and_refuses_xa() -> None:
+    result, llm = await propose_v2({"hypotheses": [XA_HYP]}, {"hypotheses": []}, instruments=[])
+    assert "CROSS-ASSET FEATURES" not in llm.requests[0].messages[1].content
+    assert result.hypotheses == []
+    assert "instruments: none" in result.rejected[0].reason
+
+
+async def test_v1_is_unchanged_by_the_cross_asset_brief() -> None:
+    v1 = FakeLLM([{"hypotheses": []}, {"hypotheses": []}])
+    b = brief()
+    with_xa = ResearchBrief(run_id=b.run_id, roles=ROLES, symbols=b.symbols, playbooks=[], ledger=b.ledger,
+                            instruments=["eurusd"])  # fmt: skip
+    await Researcher(v1, CFG, max_hypotheses=5).propose(b)
+    await Researcher(v1, CFG, max_hypotheses=5).propose(with_xa)
+    first, second = v1.requests
+    assert [m.content for m in first.messages] == [m.content for m in second.messages]

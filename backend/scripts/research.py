@@ -356,8 +356,9 @@ def prepare(args: argparse.Namespace) -> tuple[TradingConfig, History, ResearchL
         {"server": manifest.server, "start": manifest.start, "end": manifest.end, "rows": manifest.rows}
     )
     history = History.load(
-        root, [s.broker for s in symbols], [Timeframe.M1, Timeframe.M5, Timeframe.M15, Timeframe.H1, *context]
-    )
+        root, [s.broker for s in symbols], [Timeframe.M1, Timeframe.M5, Timeframe.M15, Timeframe.H1, *context],
+        references=[i.broker for i in cfg.instruments()], reference_tf=cfg.cross_asset.timeframe,
+    )  # fmt: skip
     start, holdout_start, end = holdout_window(args, manifest, rc)
     costs = CostModel(commission_per_lot=rc.commission_per_lot, slippage_points=rc.slippage_points)
     specs = [StudySpec.from_config(cfg, s, profile=profile, costs=costs) for s in symbols]
@@ -399,7 +400,10 @@ async def loop_main(args: argparse.Namespace) -> int:
     client = DeepSeekClient(
         cfg.llm, settings.DEEPSEEK_API_KEY.get_secret_value(), factory=factory, clock=SystemClock()
     )
-    researcher = Researcher(client, cfg.llm, max_hypotheses=cfg.research.max_hypotheses_per_run)
+    researcher = Researcher(
+        client, cfg.llm, max_hypotheses=cfg.research.max_hypotheses_per_run,
+        version=cfg.research.researcher_prompt_version,
+    )  # fmt: skip
     playbooks = [load_playbook(PLAYBOOKS, p.stem) for p in sorted(PLAYBOOKS.glob("*.yaml"))]
     w = loop.window
     print("probe study for the descriptive tables (pre-holdout only) ...", flush=True)

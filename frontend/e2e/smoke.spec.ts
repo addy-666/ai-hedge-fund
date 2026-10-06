@@ -58,6 +58,7 @@ test("analytics shows the committee shadow and approving a calibration is queued
   await login(page);
   await page.getByRole("navigation").first().getByRole("link", { name: "Analytics", exact: true }).click();
   await expect(page.getByText(/6 paired bars over/)).toBeVisible();
+  await expect(page.getByText(/analyst_v2 vs analyst_v1: 5 paired bars/)).toBeVisible(); // the prompt A/B (10.4)
   await expect(page.getByRole("img", { name: "analyst reliability" })).toBeVisible();
   await page.getByRole("button", { name: "Approve" }).click();
   const sent = page.getByRole("status").filter({ hasText: "approve v2 sent" });
@@ -68,4 +69,12 @@ test("analytics shows the committee shadow and approving a calibration is queued
     await page.getByRole("button", { name: "Confirm" }).click();
   }
   await expect(sent).toBeVisible();
+});
+
+test("the system page shows what each symbol saw of the other markets", async ({ page }) => {
+  await login(page);
+  await page.getByRole("navigation").first().getByRole("link", { name: "System", exact: true }).click();
+  await expect(page.getByText(/4 instruments on H1 bars \(data only: EURUSD\)/)).toBeVisible();
+  await expect(page.getByRole("cell", { name: "BTCUSD", exact: true })).toBeVisible();
+  await expect(page.getByText("shut").first()).toBeVisible(); // BTC's decision saw EURUSD shut
 });

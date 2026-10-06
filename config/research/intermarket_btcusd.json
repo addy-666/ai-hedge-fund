@@ -1,0 +1,110 @@
+[
+  {
+    "id": "XA-BTC-1",
+    "version": 1,
+    "setup_tag": "btc_equity_risk_on_pullback",
+    "long": {
+      "all": [
+        {
+          "feature": "xa.nas100.ret24_z",
+          "op": ">",
+          "value": 0.5
+        },
+        {
+          "feature": "h1.ema_stack",
+          "op": "==",
+          "value": "BULL"
+        },
+        {
+          "feature": "m15.rsi14",
+          "op": "between",
+          "value": [
+            35,
+            50
+          ]
+        }
+      ]
+    },
+    "short": "mirror",
+    "invalidation": {
+      "type": "atr",
+      "tf": "trigger",
+      "k": 1.5
+    },
+    "target": {
+      "type": "rr",
+      "rr": 2.0
+    },
+    "mechanism": "A strong Nasdaq day signals risk appetite that crypto shares; it supports an H1 bitcoin uptrend, so an M15 pullback should resume. Weekends have no Nasdaq data and never fire."
+  },
+  {
+    "id": "XA-BTC-2",
+    "version": 1,
+    "setup_tag": "btc_weak_dollar_trend",
+    "long": {
+      "all": [
+        {
+          "feature": "xa.eurusd.ret24_z",
+          "op": ">",
+          "value": 0.5
+        },
+        {
+          "feature": "xa.eurusd.ema_stack",
+          "op": "==",
+          "value": "BULL"
+        },
+        {
+          "feature": "m15.stoch_cross_up",
+          "op": "==",
+          "value": true
+        }
+      ]
+    },
+    "short": "mirror",
+    "invalidation": {
+      "type": "atr",
+      "tf": "trigger",
+      "k": 1.5
+    },
+    "target": {
+      "type": "rr",
+      "rr": 2.0
+    },
+    "mechanism": "Bitcoin trades as a dollar-liquidity asset: a weakening dollar in an established EURUSD uptrend favours bitcoin longs on a fresh M15 momentum turn."
+  },
+  {
+    "id": "XA-BTC-3",
+    "version": 1,
+    "setup_tag": "btc_nas_relative_revert",
+    "long": {
+      "all": [
+        {
+          "feature": "xa.nas100.ratio_z100",
+          "op": "<",
+          "value": -2.0
+        },
+        {
+          "feature": "xa.nas100.corr100",
+          "op": ">",
+          "value": 0.2
+        },
+        {
+          "feature": "m15.rsi14",
+          "op": "<",
+          "value": 40
+        }
+      ]
+    },
+    "short": "mirror",
+    "invalidation": {
+      "type": "atr",
+      "tf": "trigger",
+      "k": 1.5
+    },
+    "target": {
+      "type": "rr",
+      "rr": 2.0
+    },
+    "mechanism": "When bitcoin is two standard deviations cheap against the Nasdaq while both still co-move, the relative stretch tends to revert from bitcoin's side."
+  }
+]
