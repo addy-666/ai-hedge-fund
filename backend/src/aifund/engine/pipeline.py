@@ -192,9 +192,11 @@ class DecisionPipeline:
         sends_orders = not strategy.dry_run and (
             strategy.baseline_enabled or (strategy.analyst_enabled and strategy.analyst_orders)
         )  # an analyst in shadow with the baseline off decides, records its shadows, and sends nothing
+        override = cfg.engine.demo_orders_without_evidence  # DEMO-only (the config refuses it elsewhere)
         require_evidence(
-            self._deployments(detectors), evidence, mode=cfg.engine.mode, dry_run=not sends_orders
-        )
+            self._deployments(detectors), evidence, mode=cfg.engine.mode, dry_run=not sends_orders,
+            demo_override=override,
+        )  # fmt: skip
         # G-LLM (docs/09 §7): outside SIM the analyst's decisions reach the Risk Manager only after sign-off
         require_g_llm(
             g_llm,
@@ -202,6 +204,7 @@ class DecisionPipeline:
             model=cfg.llm.analyst_model,
             mode=cfg.engine.mode,
             analyst_orders=cfg.strategy.analyst_orders and not cfg.strategy.dry_run,
+            demo_override=override,
         )
         self._analyst = analyst if cfg.strategy.analyst_enabled else None
         # confidence calibration per source (docs/04 §9): identity until a model is ACTIVE
@@ -773,23 +776,42 @@ class DecisionPipeline:
         # facts for the guards and exposure (live broker state + our own records)
         deals = await self._broker.deals_between(now - timedelta(days=7), now)
         mine = [d for d in deals if d.symbol == event.symbol and d.magic == self._cfg.engine.magic]
-        exits = [d for d in mine if d.entry is not DealEntry.IN]
+        trades_today = len([d for d in mine if d.entry is DealEntry.IN and d.time >= day_start])
+        # roadmap 10.8-10.9: the strategy's family; with family slots, cooldowns and flip-flops are its own
+        committee, limits = self._cfg.committee, self._cfg.risk.limits
+        family = committee.strategy_family(decision.setup_tag)
+        slots = self._cfg.risk.guards.family_slots
+        tags = committee.family_tags(family) if slots else None
+        position_ids = sorted({p.position_id for p in own} | {d.position_id for d in mine})
+
+        def _facts(s: Session) -> tuple[list[Direction], int, dict[int, Any], int]:
+            directions = DecisionRepository(s, self._clock).recent_directions(
+                event.symbol, roles.trigger.value, setup_tags=tags
+            )
+            repo = IntentRepository(s, self._clock)
+            reversals = repo.count_since(event.symbol, IntentKind.REVERSE_CLOSE, day_start)
+            opens = repo.filled_opens(position_ids)
+            strategy_today = repo.opens_today(event.symbol, decision.setup_tag, day_start)
+            facts = {pid: (r.risk_money, r.volume, r.setup_tag) for pid, r in opens.items()}
+            return directions, reversals, facts, strategy_today
+
+        directions, reversals, open_facts, strategy_today = await self._tx(_facts)
+        families = {
+            pid: committee.strategy_family(tag) for pid, (_, _, tag) in open_facts.items() if tag is not None
+        }
+        exits = [
+            d for d in mine
+            if d.entry is not DealEntry.IN and (not slots or families.get(d.position_id, family) == family)
+        ]  # fmt: skip
         last_exit = max(exits, key=lambda d: d.time) if exits else None
         bars_since = None
         if last_exit is not None:
             bars_since = int((now - last_exit.time) / timedelta(minutes=roles.trigger.minutes))
-        trades_today = len([d for d in mine if d.entry is DealEntry.IN and d.time >= day_start])
-
-        def _facts(s: Session) -> tuple[list[Direction], int, dict[int, Any]]:
-            directions = DecisionRepository(s, self._clock).recent_directions(
-                event.symbol, roles.trigger.value
-            )
-            repo = IntentRepository(s, self._clock)
-            reversals = repo.count_since(event.symbol, IntentKind.REVERSE_CLOSE, day_start)
-            opens = repo.filled_opens([p.position_id for p in own])
-            return directions, reversals, {pid: (r.risk_money, r.volume) for pid, r in opens.items()}
-
-        directions, reversals, open_risk = await self._tx(_facts)
+        regime = snapshot.features.get("ctx.regime")
+        cap = limits.strategy_daily_cap
+        strategy_cap = cap.cap(family, regime if isinstance(regime, str) else None) if cap else None
+        open_risk = {pid: (risk, volume) for pid, (risk, volume, _) in open_facts.items()}
+        known = {p.ticket: families[p.position_id] for p in own if p.position_id in families}
         exposure = []
         for p in own:
             risk_money = open_risk.get(p.position_id, (Decimal(0), p.volume))[0]
@@ -830,6 +852,10 @@ class DecisionPipeline:
                 trades_today=trades_today,
                 reversals_today=reversals,
                 recent_directions=directions,
+                family=family if slots else None,
+                position_families=known,
+                trades_today_strategy=strategy_today,
+                strategy_cap=strategy_cap,
             ),
             open_exposure=exposure,
             bucket=sym_cfg.correlation_bucket,

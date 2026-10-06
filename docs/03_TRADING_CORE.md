@@ -290,6 +290,24 @@ Rationale: on a hedging account an opposite market order without `position=` ope
 (a hedge), which is never intended here; on netting accounts it would net/flip in one order — the netting
 branch must send a close-by-volume first and then the new order, with the same verification.
 
+### 9.3 Family slots and the per-strategy daily cap (roadmap 10.7–10.9)
+
+With `guards.family_slots` a symbol has one position slot per **strategy family** (`committee.families`;
+a setup tag in no family is its own family). The OPEN intent records its setup tag (`order_intents.setup_tag`),
+so an open position's family survives restarts; a position without one (opened before) counts as every
+family's. The duplicate guard, the reversal rules, the cooldown (exits of that family's positions) and the
+flip-flop lock (that family's proposals) are judged **within the family**; a position of another family does
+not block. An opposite-direction signal from another family opens a **hedge** only with
+`guards.hedge_across_families` (operator decision 2026-10-06), else `HEDGE_OFF`. `max_positions_per_symbol` stays
+the hard count across families, and `max_symbol_heat_pct` caps their combined risk (§11).
+
+`limits.strategy_daily_cap` limits each strategy (setup tag) per symbol per trading day: `base`, or the value
+`by_family_regime` names for the strategy's family in the current setup-TF regime (`ctx.regime`), never above
+`max` — e.g. trend 5 in TREND_UP/DOWN, reversal 5 in RANGE, breakout 5 in QUIET, 3 otherwise. It counts today's
+FILLED OPEN intents of that tag (`DAILY_STRATEGY_CAP`); `max_trades_per_symbol_per_day` stays the hard ceiling
+(checked first). Loosening any of these in the dashboard needs re-auth. The idempotency key is unchanged: one
+decision per symbol per bar, so two families never open on the same bar.
+
 ---
 
 ## 10. Stops and targets from ATR (`risk/stops.py`)
@@ -364,6 +382,8 @@ Portfolio limits (after sizing, using `initial_risk_money`):
 
 - `Σ open initial risk + new ≤ max_portfolio_heat_pct × equity` → else `PORTFOLIO_HEAT`.
 - Same for the symbol's `correlation_bucket` with `max_bucket_heat_pct` → else `BUCKET_HEAT`.
+- Same for the symbol itself with `max_symbol_heat_pct` when set (roadmap 10.8: families stacked on one symbol
+  ride the same price) → else `SYMBOL_HEAT`.
 - `open positions < max_open_positions` → else `MAX_POSITIONS`.
 - `Σ open notional + new notional ≤ equity × max_notional_leverage` → else `LEVERAGE_CAP`. Broker margin
   alone is not a limit on high-leverage accounts.

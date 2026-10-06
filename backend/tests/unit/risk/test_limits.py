@@ -90,6 +90,19 @@ def test_exactly_at_the_heat_limit_is_allowed() -> None:
     assert check_new_exposure(pos("X", "A", "150"), [pos("Y", "B", "150")], EQUITY, LIMITS) is None  # 3.0%
 
 
+def test_symbol_heat_caps_stacked_positions_on_one_symbol() -> None:
+    """Roadmap 10.8: families stacked on one symbol ride the same price; their risk is capped together."""
+    capped = LIMITS.model_copy(update={"max_symbol_heat_pct": D("1.0")})
+    stacked = [pos("XAUUSD", "USD_INVERSE", "50")]
+    assert check_new_exposure(pos("XAUUSD", "USD_INVERSE", "50"), stacked, EQUITY, capped) is None  # 1.0%
+    rejection = check_new_exposure(pos("XAUUSD", "USD_INVERSE", "60"), stacked, EQUITY, capped)  # 1.1%
+    assert rejection is not None
+    assert (rejection.reason, rejection.detail) == (ReasonCode.SYMBOL_HEAT, "XAUUSD heat 1.10% > 1.0%")
+    other = [pos("BTCUSD", "CRYPTO", "90")]  # another symbol does not count
+    assert check_new_exposure(pos("XAUUSD", "USD_INVERSE", "60"), other, EQUITY, capped) is None
+    assert check_new_exposure(pos("XAUUSD", "USD_INVERSE", "60"), stacked, EQUITY, LIMITS) is None  # off
+
+
 def test_leverage_matters_at_high_broker_leverage() -> None:
     # 0.25 lot of gold at 1:500 needs only ~$207 margin but is ~$103,750 notional = 10.4x a $10k account
     rejection = check_new_exposure(pos("XAUUSD", "USD_INVERSE", "50", notional="103750"), [], EQUITY, LIMITS)

@@ -133,6 +133,7 @@ async def run_replay(
     end: datetime,
     step: timedelta = timedelta(seconds=60),
     max_positions_per_symbol: int = 1,
+    family_of: Callable[[str], str] | None = None,  # family slots (10.8): at most one per (symbol, family)
     position_loop: PositionLoop | None = None,
     reconciler: Reconciler | None = None,
     enricher: Enricher | None = None,
@@ -171,7 +172,7 @@ async def run_replay(
             report.violations += [f"snapshotter error: {m}" for m in snap.errors]
             if snap.alerted and snap.breach is not None:
                 report.breaches[snap.breach.kind.value] += 1
-        await _check_step(report, broker, factory, magic, max_positions_per_symbol)
+        await _check_step(report, broker, factory, magic, max_positions_per_symbol, family_of)
         if clock.now().date() != last_day:
             last_day = clock.now().date()
             progress(f"{last_day} events={report.bar_events} fills={report.fills}")
@@ -329,7 +330,12 @@ def _check_ledger(
 
 
 async def _check_step(
-    report: ReplayReport, broker: SimBroker, factory: sessionmaker[Session], magic: int, max_per_symbol: int
+    report: ReplayReport,
+    broker: SimBroker,
+    factory: sessionmaker[Session],
+    magic: int,
+    max_per_symbol: int,
+    family_of: Callable[[str], str] | None = None,
 ) -> None:
     positions = [p for p in await broker.positions() if p.magic == magic]
     per_symbol = Counter(p.symbol for p in positions)
@@ -349,6 +355,19 @@ async def _check_step(
         for p in positions:
             if p.position_id not in linked:
                 report.violations.append(f"orphan position {p.position_id} ({p.symbol}) has no FILLED intent")
+        if family_of is not None:  # family slots (10.8): never two positions of one family on a symbol
+            with factory() as s:
+                rows = s.execute(
+                    select(OrderIntentRow.position_id, OrderIntentRow.setup_tag).where(
+                        OrderIntentRow.kind == IntentKind.OPEN,
+                        OrderIntentRow.position_id.in_([p.position_id for p in positions]),
+                    )
+                ).all()
+            tags: dict[int | None, str | None] = {pid: tag for pid, tag in rows}
+            families = Counter((p.symbol, family_of(tags.get(p.position_id) or "?")) for p in positions)
+            for (symbol, family), count in families.items():
+                if count > 1:
+                    report.violations.append(f"{symbol}: {count} positions of the {family} family at once")
 
 
 def _check_final(report: ReplayReport, factory: sessionmaker[Session]) -> None:

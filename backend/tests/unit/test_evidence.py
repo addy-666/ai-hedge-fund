@@ -108,12 +108,17 @@ def test_the_parameter_hash_follows_the_parameters() -> None:
 
 
 def pipeline(
-    mode: Mode, *, evidence: bool, dry_run: bool = False, strategy: StrategyConfig | None = None
+    mode: Mode,
+    *,
+    evidence: bool,
+    dry_run: bool = False,
+    strategy: StrategyConfig | None = None,
+    override: bool = False,
 ) -> DecisionPipeline:
     cfg = load_trading_config(PROJECT_ROOT / "config" / "trading.example.yaml").config
     cfg = cfg.model_copy(
         update={
-            "engine": cfg.engine.model_copy(update={"mode": mode}),
+            "engine": cfg.engine.model_copy(update={"mode": mode, "demo_orders_without_evidence": override}),
             "symbols": [s for s in cfg.symbols if s.broker == "XAUUSD"],
             "strategy": strategy
             or StrategyConfig(analyst_enabled=False, baseline_enabled=True, dry_run=dry_run),
@@ -209,3 +214,24 @@ def test_sign_off_file_names_are_safe_on_windows(tmp_path: Path) -> None:
     placeholder = SIGNOFF.model_copy(update={"model": "<set from DeepSeek /models>"})
     assert placeholder.filename == "g_llm_analyst_v1_set_from_DeepSeek_models.json"
     assert write_g_llm(tmp_path, placeholder).is_file()
+
+
+# ---------------------------------------------------------------- DEMO-only override (roadmap 10.11)
+
+
+def test_the_demo_override_waives_both_gates_in_demo_only() -> None:
+    kw: dict[str, Any] = dict(prompt_version="analyst_v1", model="deepseek-chat", analyst_orders=True)
+    require_evidence(deploy(), [], mode=Mode.DEMO, dry_run=False, demo_override=True)
+    require_g_llm([], mode=Mode.DEMO, demo_override=True, **kw)
+    for mode in (Mode.LIVE, Mode.PAPER):  # never outside DEMO, whatever the flag says
+        with pytest.raises(EvidenceError):
+            require_evidence(deploy(), [], mode=mode, dry_run=False, demo_override=True)
+        with pytest.raises(EvidenceError):
+            require_g_llm([], mode=mode, demo_override=True, **kw)
+
+
+def test_the_pipeline_starts_in_demo_with_the_override() -> None:
+    orders = StrategyConfig(baseline_enabled=True, analyst_orders=True)
+    with pytest.raises(EvidenceError):
+        pipeline(Mode.DEMO, evidence=False, strategy=orders)
+    pipeline(Mode.DEMO, evidence=False, strategy=orders, override=True)

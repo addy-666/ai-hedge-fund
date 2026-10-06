@@ -282,3 +282,44 @@ def test_the_challenger_prompt(base: dict[str, Any]) -> None:
         TradingConfig.model_validate(_mutated(base, "strategy.challenger_prompt_version", 1))
     off = _mutated(_mutated(base, "strategy.analyst_enabled", False), "strategy.baseline_enabled", True)
     assert TradingConfig.model_validate(off).strategy.challenger_prompt_version == 2
+
+
+# ---------------------------------------------------------------- Part B (roadmap 10.8-10.11)
+
+
+def test_the_evidence_override_is_demo_only(base: dict[str, Any]) -> None:
+    baseline = _mutated(_mutated(base, "strategy.analyst_enabled", False), "strategy.baseline_enabled", True)
+    demo = _mutated(_mutated(baseline, "engine.mode", "DEMO"), "engine.demo_orders_without_evidence", True)
+    assert TradingConfig.model_validate(demo).engine.demo_orders_without_evidence
+    for mode in ("SIM", "PAPER", "LIVE"):
+        raw = _mutated(_mutated(demo, "engine.mode", mode), "engine.allow_live", True)
+        with pytest.raises(ValidationError, match="DEMO-only"):
+            TradingConfig.model_validate(raw)
+
+
+def test_family_slots_and_the_strategy_cap(base: dict[str, Any]) -> None:
+    cfg = TradingConfig.model_validate(base)
+    assert (cfg.risk.guards.family_slots, cfg.risk.guards.hedge_across_families) == (True, True)
+    cap = cfg.risk.limits.strategy_daily_cap
+    assert cap is not None
+    assert [cap.cap("trend", "TREND_UP"), cap.cap("trend", "RANGE"), cap.cap(None, None)] == [5, 3, 3]
+    assert (cfg.committee.strategy_family("nr7_breakout"), cfg.committee.strategy_family("h-0007")) == (
+        "breakout", "h-0007",
+    )  # fmt: skip
+    assert cfg.committee.family_tags("reversal") == ["failure_test_2b", "sr_fade_range"]
+    assert cfg.committee.family_tags("my_hypothesis") == ["my_hypothesis"]
+
+
+@pytest.mark.parametrize(
+    ("path", "value", "error"),
+    [
+        ("risk.guards.family_slots", False, "hedge_across_families needs guards.family_slots"),
+        ("risk.limits.max_symbol_heat_pct", 2.0, "max_symbol_heat_pct must be <= max_bucket_heat_pct"),
+        ("risk.limits.strategy_daily_cap", {"base": 6, "max": 5}, "base must be <= max"),
+        ("risk.limits.strategy_daily_cap", {"by_family_regime": {"trend": {"TREND_UP": 9}}}, "within 1..5"),
+        ("risk.limits.strategy_daily_cap", {"by_family_regime": {"trend": {"SIDEWAYS": 4}}}, "TREND_UP"),
+    ],
+)
+def test_part_b_settings_are_validated(base: dict[str, Any], path: str, value: Any, error: str) -> None:
+    with pytest.raises(ValidationError, match=error):
+        TradingConfig.model_validate(_mutated(base, path, value))

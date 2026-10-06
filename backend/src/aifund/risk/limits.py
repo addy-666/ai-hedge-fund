@@ -106,6 +106,14 @@ def check_new_exposure(
             reason=ReasonCode.BUCKET_HEAT,
             detail=f"bucket {new.bucket} heat {bucket_pct:.2f}% > {limits.max_bucket_heat_pct}%",
         )
+    if limits.max_symbol_heat_pct is not None:
+        same = sum((p.initial_risk_money for p in open_positions if p.symbol == new.symbol), Decimal(0))
+        symbol_pct = (same + new.initial_risk_money) / equity * 100
+        if symbol_pct > limits.max_symbol_heat_pct:
+            return Rejection(
+                reason=ReasonCode.SYMBOL_HEAT,
+                detail=f"{new.symbol} heat {symbol_pct:.2f}% > {limits.max_symbol_heat_pct}%",
+            )
     notional = sum((p.notional for p in open_positions), Decimal(0)) + new.notional
     leverage = notional / equity
     if leverage > limits.max_notional_leverage:

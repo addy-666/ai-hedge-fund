@@ -134,5 +134,6 @@ Moving up a level is an operator decision recorded in `audit_log`. The gates are
 ≤ 0.25% risk L3, above L4); every L2/L3 gate is measured from the engine's own tables (trades, intents, the
 nightly ledger check, `position.sl_missing` and restart events — kept by retention for this —, FLATTEN_ALL
 commands); L0/L1/L4 show as operator judgements. The sign-off needs re-auth and is refused while a measured
-gate fails. Moving *down* (e.g. LIVE → DEMO) after a
+gate fails. With the DEMO evidence override (10.11) the L2 report adds an `evidence_override` note (MANUAL: it
+does not block L2, which tests the plumbing; L3 trades only strategies with E1 + E2, so turn it off first). Moving *down* (e.g. LIVE → DEMO) after a
 serious incident is always allowed and never requires re-auth.

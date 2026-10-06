@@ -254,3 +254,24 @@ async def test_a_restart_keeps_the_halt_cause_so_a_daily_halt_still_rearms(
     clock.advance(timedelta(days=1).total_seconds())
     await e._day_rearm()
     assert e.state.state is EngineState.PAUSED
+
+
+async def test_the_demo_override_starts_without_evidence_and_says_so_on_every_boot(
+    factory: sessionmaker[Session], clock: FakeClock
+) -> None:
+    """Roadmap 10.11: the same DEMO config that refused to start above, with the operator's override."""
+    from sqlalchemy import select
+
+    from aifund.engine.app import OVERRIDE_EVENT
+    from aifund.persistence.tables import EventRow
+
+    w = make_world(factory, clock)
+    e = engine(w, config(Mode.DEMO, demo_orders_without_evidence=True))
+    assert e.pipeline is not None
+    assert await e.boot() is EngineState.PAUSED
+    assert (Severity.WARN, "Evidence override ON (DEMO)") in titles(w)
+    await engine(w, config(Mode.DEMO, demo_orders_without_evidence=True)).boot()
+    with factory() as s:
+        events = s.scalars(select(EventRow).where(EventRow.type == OVERRIDE_EVENT)).all()
+    assert len(events) == 2
+    assert "Never valid in LIVE" in events[0].payload["detail"]

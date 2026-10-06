@@ -367,12 +367,15 @@ class ReasonCode(StrEnum):
     REVERSAL_WEAK = "REVERSAL_WEAK"
     REVERSAL_TOO_EARLY = "REVERSAL_TOO_EARLY"
     REVERSAL_CAP = "REVERSAL_CAP"
+    HEDGE_OFF = "HEDGE_OFF"  # an opposite position of another family is open and hedging is off (10.8)
+    DAILY_STRATEGY_CAP = "DAILY_STRATEGY_CAP"  # this strategy's trades today on this symbol (10.9)
     # sizing / limits (docs/03 §11)
     RISK_BELOW_MIN_LOT = "RISK_BELOW_MIN_LOT"
     MARGIN = "MARGIN"
     LEVERAGE_CAP = "LEVERAGE_CAP"
     PORTFOLIO_HEAT = "PORTFOLIO_HEAT"
     BUCKET_HEAT = "BUCKET_HEAT"
+    SYMBOL_HEAT = "SYMBOL_HEAT"  # open initial risk on one symbol (limits.max_symbol_heat_pct, 10.8)
     MAX_POSITIONS = "MAX_POSITIONS"
     PRICE_MOVED = "PRICE_MOVED"
     # execution

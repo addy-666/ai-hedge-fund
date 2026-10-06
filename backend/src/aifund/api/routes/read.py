@@ -85,6 +85,7 @@ def system(request: Request, _s: Authenticated) -> SystemOut:
             prompts=sorted(released_templates()),
             rulebook=rulebook,
         ),
+        evidence_override=cfg.engine.demo_orders_without_evidence,
     )
 
 

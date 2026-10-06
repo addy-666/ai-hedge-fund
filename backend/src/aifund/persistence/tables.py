@@ -296,6 +296,7 @@ class OrderIntentRow(Base):
     magic: Mapped[int] = mapped_column(BigInteger)
     position_ticket: Mapped[int | None] = mapped_column(BigInteger)
     close_reason: Mapped[CloseReason | None] = mapped_column(_enum(CloseReason))
+    setup_tag: Mapped[str | None] = mapped_column(String(40))  # an OPEN intent's strategy (roadmap 10.7)
     status: Mapped[IntentStatus] = mapped_column(_enum(IntentStatus))
     retcode: Mapped[int | None]
     retcode_name: Mapped[str | None] = mapped_column(String(64))

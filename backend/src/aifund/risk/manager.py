@@ -189,6 +189,7 @@ class RiskManager:
             risk_pct=sizing.initial_risk_money / req.account.equity * 100,
             magic=self._magic,
             comment=intent_comment(intent_id),
+            setup_tag=d.setup_tag,
             created_at=self._clock.now(),
         )
         return RiskOutcome(intent=intent, action=GuardAction.OPEN, stops=stops, sizing=sizing, worksheet=ws)

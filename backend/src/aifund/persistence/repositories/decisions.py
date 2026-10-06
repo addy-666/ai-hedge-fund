@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from datetime import datetime
 from typing import Any
 
@@ -37,21 +37,28 @@ class DecisionRepository:
         self._s.flush()
         return row
 
-    def recent_directions(self, symbol: str, trigger_tf: str, limit: int = 10) -> list[Direction]:
-        """Directions of the latest decisions that proposed a trade, oldest first (flip-flop input)."""
-        rows: Sequence[DecisionRow] = self._s.scalars(
+    def recent_directions(
+        self, symbol: str, trigger_tf: str, limit: int = 10, setup_tags: Collection[str] | None = None
+    ) -> list[Direction]:
+        """Directions of the latest decisions that proposed a trade, oldest first (flip-flop input).
+        ``setup_tags``: only proposals of these strategies (a family's, with family slots: roadmap 10.8)."""
+        query = (
             select(DecisionRow)
             .where(DecisionRow.symbol == symbol, DecisionRow.trigger_tf == trigger_tf,
                    DecisionRow.proposal.is_not(None))
             .order_by(DecisionRow.bar_time.desc(), DecisionRow.id.desc())
-            .limit(limit)
-        ).all()  # fmt: skip
-        out = []
-        for row in reversed(rows):
-            direction = (row.proposal or {}).get("direction")
+        )  # fmt: skip
+        out: list[Direction] = []
+        for row in self._s.scalars(query.limit(limit if setup_tags is None else limit * 10)).all():
+            proposal = row.proposal or {}
+            direction = proposal.get("direction")
+            if setup_tags is not None and proposal.get("setup_tag") not in setup_tags:
+                continue
             if direction in (Direction.LONG.value, Direction.SHORT.value):
                 out.append(Direction(direction))
-        return out
+            if len(out) == limit:
+                break
+        return list(reversed(out))
 
     def for_symbol_since(self, symbol: str, since: datetime) -> Sequence[DecisionRow]:
         return self._s.scalars(

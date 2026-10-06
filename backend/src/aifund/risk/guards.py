@@ -10,10 +10,17 @@ An opposite-direction engine position triggers the reversal rules: ``reversal_mo
 close_only / close_and_reverse), extra confidence, a minimum holding time, a daily reversal cap and the
 flip-flop lock. The guard never sends anything: it returns what may happen, and the executor closes the
 old position (and verifies the close) BEFORE any new one is opened.
+
+Family slots (roadmap 10.8, ``guards.family_slots``): the duplicate and reversal rules look only at the
+positions of the candidate's strategy family (a position whose family is unknown counts as the candidate's:
+the conservative reading). A position of another family does not block; an opposite one is hedged only with
+``hedge_across_families``. ``max_positions_per_symbol`` stays the hard count, the per-symbol daily cap the
+hard ceiling, and the strategy's own daily cap (10.9) follows it.
 """
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import StrEnum
@@ -50,6 +57,11 @@ class GuardContext:
     reversals_today: int = 0
     recent_directions: list[Direction] = field(default_factory=list)  # directional decisions, oldest first
     flip_flop_locked: bool = False
+    # roadmap 10.8-10.9 (the pipeline judges cooldown and flip-flops within the family when slots are on)
+    family: str | None = None  # the candidate's strategy family; None: the family slots do not apply
+    position_families: Mapping[int, str] = field(default_factory=dict)  # engine ticket -> family (known)
+    trades_today_strategy: int = 0  # this strategy's (setup tag) opens on this symbol today
+    strategy_cap: int | None = None  # its cap for today's regime; None: no strategy cap
 
 
 @dataclass(frozen=True)
@@ -78,8 +90,13 @@ def evaluate_guards(
     if ctx.direction is Direction.NONE:
         return _reject(ReasonCode.INTERNAL_ERROR, "guards called without a direction")
     side = ctx.direction.to_side()
-    own = [p for p in ctx.broker_positions if p.symbol == ctx.symbol and p.magic == ctx.magic]
+    every = [p for p in ctx.broker_positions if p.symbol == ctx.symbol and p.magic == ctx.magic]
     foreign = [p for p in ctx.broker_positions if p.symbol == ctx.symbol and p.magic != ctx.magic]
+    if cfg.family_slots and ctx.family is not None:
+        own = [p for p in every if ctx.position_families.get(p.ticket, ctx.family) == ctx.family]
+        others = [p for p in every if p not in own]
+    else:
+        own, others = every, []
 
     if ctx.idempotency_key_used:
         return _reject(ReasonCode.DUPLICATE_IDEMPOTENCY, "this bar and direction were already acted on")
@@ -98,9 +115,14 @@ def evaluate_guards(
     opposite = [p for p in own if p.side is side.opposite]
     if opposite:
         return _reversal(ctx, cfg, opposite[0])
+    hedged = [p for p in others if p.side is side.opposite]
+    if hedged and not cfg.hedge_across_families:
+        p = hedged[0]
+        family = ctx.position_families.get(p.ticket)
+        return _reject(ReasonCode.HEDGE_OFF, f"opposite {family} position {p.ticket} open; hedging is off")
 
-    if len(own) >= max_positions_per_symbol:
-        return _reject(ReasonCode.MAX_PER_SYMBOL, f"{len(own)} engine position(s) on {ctx.symbol}")
+    if len(every) >= max_positions_per_symbol:
+        return _reject(ReasonCode.MAX_PER_SYMBOL, f"{len(every)} engine position(s) on {ctx.symbol}")
     if ctx.bars_since_last_close is not None:
         needed = cfg.cooldown_bars_after_loss if ctx.last_close_was_loss else cfg.cooldown_bars_after_close
         if ctx.bars_since_last_close < needed:
@@ -110,6 +132,9 @@ def evaluate_guards(
             )
     if ctx.trades_today >= max_trades_per_symbol_per_day:
         return _reject(ReasonCode.DAILY_SYMBOL_CAP, f"{ctx.trades_today} trade(s) on {ctx.symbol} today")
+    if ctx.strategy_cap is not None and ctx.trades_today_strategy >= ctx.strategy_cap:
+        done, cap = ctx.trades_today_strategy, ctx.strategy_cap
+        return _reject(ReasonCode.DAILY_STRATEGY_CAP, f"{done} trade(s) of this strategy today (cap {cap})")
     return GuardVerdict(GuardAction.OPEN)
 
 
