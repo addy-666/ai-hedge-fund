@@ -11,6 +11,22 @@ const INVALIDATES: Record<string, string[][]> = {
   "rule.status_changed": [["rules"], ["rule"], ["rulebook"], ["system"]],
 };
 
+// Whether the live stream is up, for the status bar (useSyncExternalStore-shaped).
+let linkUp = false;
+const linkListeners = new Set<() => void>();
+function setLink(up: boolean) {
+  if (up === linkUp) return;
+  linkUp = up;
+  for (const l of linkListeners) l();
+}
+export const link = {
+  get: () => linkUp,
+  subscribe: (l: () => void) => {
+    linkListeners.add(l);
+    return () => linkListeners.delete(l);
+  },
+};
+
 export function invalidationsFor(type: string): string[][] {
   if (INVALIDATES[type]) return INVALIDATES[type];
   if (type.startsWith("trade.")) return [["positions"], ["trades"], ["account"]];
@@ -29,6 +45,7 @@ export function connect(qc: QueryClient, onEvent: (e: LiveEvent) => void = () =>
     socket = new WebSocket(`${scheme}://${location.host}/api/ws?since=${since}`);
     socket.onopen = () => {
       delay = 1000;
+      setLink(true);
     };
     socket.onmessage = (msg) => {
       const event = JSON.parse(String(msg.data)) as LiveEvent;
@@ -38,6 +55,7 @@ export function connect(qc: QueryClient, onEvent: (e: LiveEvent) => void = () =>
       onEvent(event);
     };
     socket.onclose = () => {
+      setLink(false);
       if (stopped) return;
       setTimeout(open, delay);
       delay = Math.min(delay * 2, 30_000);

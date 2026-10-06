@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useTrade, useTrades, useVirtualTrades } from "../api/queries";
 import { PriceChart } from "../components/Charts";
 import { DecisionTrace } from "../components/DecisionTrace";
-import { Badge, Button, Card, Empty, ErrorNote, Loading, Select, Table, Td } from "../components/ui";
+import { Badge, Button, Card, Empty, ErrorNote, Loading, Select, Table, Td, ROW_CLICK, ROW_SELECTED } from "../components/ui";
 import { money, r, signed, tone, utc } from "../lib/format";
 
 export function Journal() {
@@ -18,8 +18,8 @@ export function Journal() {
         {trades.isLoading ? <Loading /> : trades.error ? <ErrorNote error={trades.error} /> : items.length === 0 ? <Empty>No closed trades yet.</Empty> : (
           <Table head={["Closed (UTC)", "Symbol", "Side", "Setup", "Net", "R", "MAE", "MFE", "Reason"]}>
             {items.map((t) => (
-              <tr key={t.id} onClick={() => setOpen(t.id)} className={`cursor-pointer hover:bg-zinc-800/40 ${open === t.id ? "bg-zinc-800/60" : ""}`}>
-                <Td>{utc(t.close_time)}</Td><Td>{t.symbol}</Td><Td>{t.side}</Td><Td>{t.setup_tag ?? "–"}</Td>
+              <tr key={t.id} onClick={() => setOpen(t.id)} className={`${ROW_CLICK} ${open === t.id ? ROW_SELECTED : ""}`}>
+                <Td>{utc(t.close_time)}</Td><Td className="font-medium text-zinc-100">{t.symbol}</Td><Td className={t.side === "BUY" ? "text-emerald-400" : "text-rose-400"}>{t.side}</Td><Td>{t.setup_tag ?? "–"}</Td>
                 <Td className={tone(t.net_pnl)}>{signed(t.net_pnl)}</Td><Td className={tone(t.r_multiple)}>{r(t.r_multiple)}</Td>
                 <Td>{r(t.mae_r)}</Td><Td>{r(t.mfe_r)}</Td><Td>{t.close_reason ?? "–"}</Td>
               </tr>
@@ -58,14 +58,14 @@ function TradeDossierView({ id }: { id: string }) {
       <Card title={`${data.symbol} ${data.side} · ${utc(data.open_time)} → ${utc(data.close_time)}`}>
         {bars.length ? (
           <PriceChart bars={bars} markers={data.markers ?? []}
-                      levels={[{ price: data.initial_sl, label: "SL", color: "#f43f5e" }, { price: data.initial_tp, label: "TP", color: "#10b981" }]} />
+                      levels={[{ price: data.initial_sl, label: "SL", color: "down" }, { price: data.initial_tp, label: "TP", color: "up" }]} />
         ) : <Empty>No cached bars for this trade.</Empty>}
-        <dl className="num mt-3 grid grid-cols-3 gap-2 text-sm">
-          <div><dt className="text-zinc-500">Net</dt><dd className={tone(data.net_pnl)}>{signed(data.net_pnl)}</dd></div>
-          <div><dt className="text-zinc-500">R</dt><dd>{r(data.r_multiple)}</dd></div>
-          <div><dt className="text-zinc-500">Held</dt><dd>{data.holding_minutes ?? "–"} min</dd></div>
-          {costs.map(([k, v]) => <div key={k}><dt className="text-zinc-500">{k}</dt><dd>{money(v)}</dd></div>)}
-          <div><dt className="text-zinc-500">Slippage in/out</dt><dd>{data.entry_slippage_points ?? "–"} / {data.exit_slippage_points ?? "–"} pts</dd></div>
+        <dl className="num my-3 grid grid-cols-3 gap-x-3 gap-y-2 border-y border-zinc-800 py-3 text-sm">
+          <div><dt className="label text-[0.625rem] text-amber-400/70">Net</dt><dd className={tone(data.net_pnl)}>{signed(data.net_pnl)}</dd></div>
+          <div><dt className="label text-[0.625rem] text-amber-400/70">R</dt><dd>{r(data.r_multiple)}</dd></div>
+          <div><dt className="label text-[0.625rem] text-amber-400/70">Held</dt><dd>{data.holding_minutes ?? "–"} min</dd></div>
+          {costs.map(([k, v]) => <div key={k}><dt className="label text-[0.625rem] text-amber-400/70">{k}</dt><dd>{money(v)}</dd></div>)}
+          <div><dt className="label text-[0.625rem] text-amber-400/70">Slippage in/out</dt><dd>{data.entry_slippage_points ?? "–"} / {data.exit_slippage_points ?? "–"} pts</dd></div>
         </dl>
         <Table head={["Deal", "Time", "Entry", "Volume", "Price", "Profit"]}>
           {deals.map((d) => <tr key={d.ticket}><Td>{d.ticket}</Td><Td>{utc(d.time_utc)}</Td><Td>{d.entry}</Td><Td>{d.volume}</Td><Td>{money(d.price)}</Td><Td>{money(d.profit)}</Td></tr>)}

@@ -78,3 +78,15 @@ test("the system page shows what each symbol saw of the other markets", async ({
   await expect(page.getByRole("cell", { name: "BTCUSD", exact: true })).toBeVisible();
   await expect(page.getByText("shut").first()).toBeVisible(); // BTC's decision saw EURUSD shut
 });
+
+test("the theme toggle switches to light and survives a reload", async ({ page }) => {
+  await login(page);
+  const html = page.locator("html");
+  await expect(html).toHaveAttribute("data-theme", "dark");
+  await page.getByRole("button", { name: "Switch to light theme" }).click();
+  await expect(html).toHaveAttribute("data-theme", "light");
+  await page.reload();
+  await expect(html).toHaveAttribute("data-theme", "light"); // set before the first paint by index.html
+  await page.getByRole("button", { name: "Switch to dark theme" }).click();
+  await expect(html).toHaveAttribute("data-theme", "dark");
+});
