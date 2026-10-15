@@ -36,6 +36,7 @@ cd backend && uv run python scripts/verify_ledger.py --days 7   # Windows: trade
 cd backend && CHAOS_RUNS=100 uv run pytest -q tests/scenario/test_chaos.py   # the chaos suite with 100 kill seeds (nightly CI; default 8)
 cd backend && uv run python scripts/engine_command.py RESUME   # operator command to the running engine (PAUSE, FLATTEN_ALL, CLOSE_POSITION --payload ...)
 cd backend && uv run python scripts/backup_db.py   # online SQLite backup -> <repo>/backups (30 daily + 12 monthly), then retention; --remote (rclone crypt only), --alert
+cd backend && uv run python scripts/diagnose.py --days 14 > ../diagnose.txt   # READ-ONLY: why no orders, LLM errors grouped, virtual R per arm, learning/research state
 cd backend && uv run python scripts/verify_db.py   # restore drill: verify the newest backup (or a given .db/.db.gz): integrity, schema, ledger consistency
 powershell -ExecutionPolicy Bypass -File deploy\windows\install_tasks.ps1   # Windows: register the MT5 / engine / backup tasks (docs/runbooks/install.md)
 cd backend && uv run python scripts/replay.py --from 2026-06-15 --to 2026-09-27   # full stack on exported history (SimBroker); --snapshot-minutes 1 for engine cadence
