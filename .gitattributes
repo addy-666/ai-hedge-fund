@@ -2,3 +2,5 @@
 *.j2 text eol=lf
 # Windows deployment scripts keep CRLF (PowerShell and Task Scheduler expect it)
 *.ps1 text eol=crlf
+# double-click helpers in the repo root (restart / status / stop) run under cmd: CRLF on Windows
+*.bat text eol=crlf

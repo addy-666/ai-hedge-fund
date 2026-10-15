@@ -107,6 +107,18 @@ uv run python scripts/engine_command.py RESUME
 Other commands: `PAUSE`, `STOP`, `START`, `REARM`, `FLATTEN_ALL` (the kill switch),
 `CLOSE_POSITION --payload '{"position_id": 123}'`, `RELOAD_CONFIG`.
 
+Double-click helpers in the repo root (each runs its script in `deploy\windows\`):
+
+| File | What it does |
+|---|---|
+| `status.bat` | MT5, the engine and the API/dashboard: running or not (with PIDs), and the last 10 lines of `logs\run_engine.log` |
+| `restart.bat` | stops the `aifund-engine` / `aifund-api` tasks and processes, then starts them again (via the scheduled tasks when they are installed, else as hidden background processes) |
+| `stop.bat` | stops both tasks and kills the engine and API processes |
+
+`stop.bat` and `restart.bat` end the engine abruptly, not through PAUSE/STOP. That is safe by design (intents are
+persisted before sending, open positions keep their SL/TP at the broker, and the next boot resolves anything
+unresolved and starts PAUSED), but PAUSE from the dashboard first when you can. MT5 is not touched by either.
+
 ## 6. Acceptance: reboot test (5.7 DoD)
 
 1. `Restart-Computer`. After auto-logon: the terminal and the engine start by themselves; the engine lands in
