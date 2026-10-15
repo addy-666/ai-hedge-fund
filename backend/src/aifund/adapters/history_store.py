@@ -104,6 +104,22 @@ def read_bars(root: Path, symbol: str, timeframe: Timeframe, digits: int) -> lis
     return bars
 
 
+def read_columns(root: Path, symbol: str, timeframe: Timeframe) -> dict[str, list[Any]]:
+    """The raw columns of one bar file (floats, UTC times), without building ``Bar`` objects: the basket
+    research reads years of M15 bars, where Decimal bars would cost minutes (roadmap 11.2)."""
+    path = bars_path(root, symbol, timeframe)
+    if not path.is_file():
+        raise HistoryError(f"no history file {path}")
+    table = pq.read_table(path)
+    if not table.schema.remove_metadata().equals(SCHEMA):
+        raise HistoryError(f"{path}: unexpected schema {table.schema}")
+    cols: dict[str, list[Any]] = table.to_pydict()
+    times = cols["time"]
+    if any(b <= a for a, b in pairwise(times)):
+        raise HistoryError(f"{path}: bars not strictly increasing")
+    return cols
+
+
 def write_specs(root: Path, specs: dict[str, SymbolSpec]) -> Path:
     path = root / "specs.json"
     root.mkdir(parents=True, exist_ok=True)
