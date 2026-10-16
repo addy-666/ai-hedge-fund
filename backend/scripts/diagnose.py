@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import gzip
+import io
 import json
 import re
 import sqlite3
@@ -65,7 +66,7 @@ def q(con: sqlite3.Connection, sql: str, *args: Any) -> list[tuple[Any, ...]]:
 def normalise(error: str) -> str:
     """Group error texts that differ only in numbers, ids or quoted values."""
     text = re.sub(r"\d+(\.\d+)?", "#", error)
-    text = re.sub(r"'[^']{12,}'", "'…'", text)
+    text = re.sub(r"'[^']{12,}'", "'...'", text)
     return text[:160]
 
 
@@ -109,7 +110,7 @@ def config_report(path: Path) -> None:
     )
     print()
     if mode in ("SIM", "PAPER"):
-        print(f"  ORDERS: none — engine.mode is {mode}")
+        print(f"  ORDERS: none - engine.mode is {mode}")
     elif not sends:
         print(
             "  ORDERS: none can be sent with these flags. The pipeline sends orders only when strategy.dry_run is\n"
@@ -206,7 +207,7 @@ def virtual_report(con: sqlite3.Connection, days: int) -> None:
 
 def llm_report(con: sqlite3.Connection, days: int) -> None:
     window = f"created_at >= datetime('now', '-{days} days')"
-    section(f"LLM CALLS (last {days} days) — 'Errors' on the Agents page = calls with valid = 0")
+    section(f"LLM CALLS (last {days} days) - 'Errors' on the Agents page = calls with valid = 0")
     table(q(con, f"SELECT agent, model, COUNT(*), SUM(valid=0), ROUND(SUM(CAST(cost_usd AS REAL)),4), "
                  f"CAST(AVG(latency_ms) AS INT), MAX(latency_ms) FROM llm_calls WHERE {window} GROUP BY agent, model"),
           ("agent", "model", "calls", "invalid", "cost $", "avg ms", "max ms"))  # fmt: skip
@@ -330,6 +331,8 @@ def main() -> int:
     p.add_argument("--db", help="a .db or .db.gz (default: DATABASE_URL)")
     p.add_argument("--days", type=int, default=14)
     args = p.parse_args()
+    if isinstance(sys.stdout, io.TextIOWrapper):  # plain ASCII: PowerShell mis-decodes UTF-8 (``ΓÇª``)
+        sys.stdout.reconfigure(encoding="ascii", errors="replace")
     settings = Settings()
     db = Path(args.db) if args.db else Path(settings.DATABASE_URL.removeprefix("sqlite:///"))
     print(f"diagnose: db={db}  days={args.days}")
