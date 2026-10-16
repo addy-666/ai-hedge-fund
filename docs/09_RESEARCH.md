@@ -274,7 +274,9 @@ form of TSMOM needs years of history and is not part of this study; declare it a
 
 ### 9.1 Hypotheses
 
-Two families, each its own hypothesis with its own walk-forward; every grid point is a ledger trial (6 in all).
+Two families, each its own hypothesis with its own walk-forward. Each grid point gets an in-sample ledger row
+(diagnostic) and the family one walk-forward row, which BH counts: the walk-forward pays for the choice among
+the three out-of-sample, as `research.py baseline` does.
 
 | Family | Decision (on a CLOSED bar) | Signal | Grid | Hold | Stop = R unit |
 |---|---|---|---|---|---|
