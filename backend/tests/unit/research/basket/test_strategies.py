@@ -3,16 +3,18 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from datetime import UTC, date, datetime
 
 import pytest
 
 from aifund.domain.enums import Side, Timeframe
-from aifund.research.basket.candles import DAY, Candles
+from aifund.research.basket.candles import DAY, Candles, server_minute
 from aifund.research.basket.harness import FlatRule
 from aifund.research.basket.strategies.base import finest, hhmm
 from aifund.research.basket.strategies.candle_streak import CandleStreak, StreakParams
 from aifund.research.basket.strategies.fib_pullback import FibParams, FibPullback
 from aifund.research.basket.strategies.ict_dmss import DmssParams, IctDmss
+from aifund.research.basket.strategies.index_opening import IndexOpeningS1, OpeningParams, server_open
 from aifund.research.basket.strategies.spike_fade import SpikeFade, SpikeParams
 from aifund.research.basket.strategies.sweep_pin import PinParams, SweepPinFollow, is_pin
 from aifund.research.basket.strategies.sweep_rejection import RejectionParams, SweepRejectionFollow
@@ -302,3 +304,89 @@ def test_ict_dmss_drops_a_shift_without_displacement_in_time() -> None:
     assert (
         IctDmss(ICT_P).signals({Timeframe.M30: bars(Timeframe.M30, no_gap, MON + DAY + 9 * 60)}, 0.01) == []
     )
+
+
+# ---------------------------------------------------------------- IndexOpening S1 + BOS
+
+
+@pytest.mark.parametrize(
+    ("symbol", "day", "server"),
+    [
+        ("GER40.r", date(2026, 1, 12), datetime(2026, 1, 12, 10, tzinfo=UTC)),  # both on winter time
+        ("GER40.r", date(2026, 3, 16), datetime(2026, 3, 16, 11, tzinfo=UTC)),  # US summer, EU winter
+        ("GER40.r", date(2026, 7, 13), datetime(2026, 7, 13, 10, tzinfo=UTC)),
+        ("GER40.r", date(2026, 10, 26), datetime(2026, 10, 26, 11, tzinfo=UTC)),  # EU back first
+        ("Nikkei225", date(2026, 1, 12), datetime(2026, 1, 12, 2, tzinfo=UTC)),  # Tokyo has no DST
+        ("Nikkei225", date(2026, 7, 13), datetime(2026, 7, 13, 3, tzinfo=UTC)),
+        ("NAS100.r", date(2026, 1, 12), datetime(2026, 1, 12, 16, 30, tzinfo=UTC)),
+    ],
+)
+def test_server_open_follows_each_exchanges_dst(symbol: str, day: date, server: datetime) -> None:
+    assert server_open(symbol, day) == server_minute(server, 0)  # naive server clock, read as minutes
+
+
+def opening(
+    row: Row,
+    *,
+    symbol: str = "GER40.r",
+    day: date = date(2026, 1, 12),
+    pre: float = 100.0,
+    spread: float = 0.01,
+    before: int = 60,
+    after: int = 60,
+) -> tuple[Candles, int]:
+    t_open = server_open(symbol, day)
+    rows = [(pre, pre + 0.05, pre - 0.05, pre)] * before + [row] + [(row[3],) * 4] * after  # type: ignore[list-item]
+    return bars(Timeframe.M1, rows, t_open - before, spread), t_open
+
+
+def test_index_opening_bull_and_bear_stop_orders() -> None:
+    m1, t_open = opening((100, 100.3, 99.99, 100.29))
+    (sig,) = IndexOpeningS1().signals({Timeframe.M1: m1}, 0.01, "GER40.r")
+    assert (sig.side, sig.decided_at, sig.limit_expires_at) == (Side.BUY, t_open + 1, t_open + 6)
+    assert sig.stop_price == pytest.approx(100.31)  # high + spread
+    assert sig.stop_level == 99.99
+    assert sig.max_chase == pytest.approx(0.3 * 0.32)
+    assert (sig.take_profit_r, sig.limit_price) == (1.5, None)
+    assert sig.flats == (FlatRule((t_open + 330) % DAY),)
+    m1, t_open = opening((100, 100.01, 99.7, 99.71))
+    (sig,) = IndexOpeningS1().signals({Timeframe.M1: m1}, 0.01, "GER40.r")
+    assert (sig.side, sig.stop_price, sig.stop_level) == (Side.SELL, 99.7, pytest.approx(100.02))
+    late = IndexOpeningS1(OpeningParams(entry_minutes=4))
+    m1, t_open = opening((100, 100.3, 99.99, 100.29))
+    assert late.signals({Timeframe.M1: m1}, 0.01, "GER40.r")[0].limit_expires_at == t_open + 4
+
+
+def test_index_opening_refusals() -> None:
+    strategy, bull = IndexOpeningS1(), (100.0, 100.3, 99.99, 100.29)
+    m1, _ = opening(bull)
+    assert strategy.signals({Timeframe.M1: m1}, 0.01, "XAUUSD") == []  # no exchange open known
+    assert strategy.signals({}, 0.01, "GER40.r") == []
+    assert (
+        strategy.signals({Timeframe.M1: opening(bull, day=date(2026, 1, 17))[0]}, 0.01, "GER40.r") == []
+    )  # Sat
+    assert (
+        strategy.signals({Timeframe.M1: opening(bull, before=5, after=5)[0]}, 0.01, "GER40.r") == []
+    )  # thin
+    assert (
+        strategy.signals({Timeframe.M1: opening((100, 100.3, 99.99, 100.2))[0]}, 0.01, "GER40.r") == []
+    )  # body
+    assert strategy.signals({Timeframe.M1: opening(bull, pre=100.3)[0]}, 0.01, "GER40.r") == []  # no BOS
+    assert (
+        strategy.signals({Timeframe.M1: opening((100, 100.01, 99.7, 99.71), pre=99.6)[0]}, 0.01, "GER40.r")
+        == []
+    )  # bear, no BOS
+    assert strategy.signals({Timeframe.M1: opening((100, 100.01, 100.0, 100.01))[0]}, 0.01, "GER40.r") == []
+    assert (
+        strategy.signals({Timeframe.M1: opening(bull, spread=0.2)[0]}, 0.01, "GER40.r") == []
+    )  # < 3 spreads
+    loose = IndexOpeningS1(OpeningParams(min_range_spread=0.5))
+    assert (
+        loose.signals({Timeframe.M1: opening(bull, spread=0.2)[0]}, 0.01, "GER40.r") == []
+    )  # spread > risk/4
+    m1, t_open = opening(bull)
+    gap = Candles.of(Timeframe.M1, [t for t in m1.t if t != t_open], *(
+        [x for t, x in zip(m1.t, col, strict=True) if t != t_open] for col in (m1.o, m1.h, m1.low, m1.c)
+    ))  # fmt: skip
+    assert strategy.signals({Timeframe.M1: gap}, 0.01, "GER40.r") == []  # no bar at the open: closed
+    assert strategy.params()["bos_lookback"] == 15

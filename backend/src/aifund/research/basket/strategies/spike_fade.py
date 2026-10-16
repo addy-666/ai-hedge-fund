@@ -62,7 +62,7 @@ class SpikeFade:
     def params(self) -> dict[str, Any]:
         return self.p.asdict()
 
-    def signals(self, data: Mapping[Timeframe, Candles], tick: float) -> list[Signal]:
+    def signals(self, data: Mapping[Timeframe, Candles], tick: float, symbol: str = "") -> list[Signal]:
         bars = data.get(Timeframe.M1)
         p = self.p
         if bars is None or len(bars) < p.min_vol_bars + p.shock_bars + 2:
