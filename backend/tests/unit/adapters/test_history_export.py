@@ -5,6 +5,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
+from typing import Any
 
 import pytest
 
@@ -257,3 +258,54 @@ async def test_merging_exports_from_different_servers_is_refused(tmp_path: Path)
     with pytest.raises(ValueError, match="cannot merge"):
         await export_history(gw, merge=True, **kw)  # type: ignore[arg-type]
     await gw.close()
+
+
+class DownloadingMT5(FakeMT5):
+    """A terminal that holds only what it has downloaded: an older range comes back empty the first time it
+    is asked for (the download starts then) and full afterwards."""
+
+    def __init__(self, held_from: int) -> None:
+        super().__init__()
+        self.held_from = held_from
+        self.asked: list[tuple[int, int]] = []
+
+    def copy_rates_range(
+        self, symbol: str, tf: int, date_from: int, date_to: int
+    ) -> list[dict[str, Any]] | None:
+        first_time = (date_from, date_to) not in self.asked
+        self.asked.append((date_from, date_to))
+        if first_time and date_to < self.held_from:
+            return []
+        return super().copy_rates_range(symbol, tf, date_from, date_to)
+
+
+async def test_export_asks_again_for_history_the_terminal_has_not_downloaded(tmp_path: Path) -> None:
+    listed = NOW - timedelta(days=200)  # the server's history begins here
+    held = NOW - timedelta(days=45)  # the terminal has downloaded only this much
+    n = int((NOW - listed) / timedelta(days=1))
+    fake = DownloadingMT5(held_from=int((held + OFFSET).timestamp()))
+    fake.rates[("XAUUSDm", c.TIMEFRAMES[Timeframe.D1])] = _rows(Timeframe.D1, listed, n)
+    clock = FakeClock(NOW)
+    gw = MT5Gateway(
+        MT5Credentials(login=12345678, password="x", server="Broker-Demo"),
+        clock=clock,
+        module_loader=lambda: fake,
+    )
+    await gw.connect()
+    gw.set_server_offset(OFFSET)
+    result = await export_history(
+        gw,
+        symbols=["XAUUSDm"],
+        timeframes=[Timeframe.D1],
+        start=NOW - timedelta(days=600),
+        now=NOW,
+        root=tmp_path,
+    )
+    await gw.close()
+    bars = hs.read_bars(tmp_path, "XAUUSDm", Timeframe.D1, digits=2)
+    assert bars[0].time == listed  # everything the server has, not only what the terminal held
+    assert result.rows["XAUUSDm"]["D1"] == n
+    # past the listing date: 3 empty chunks, each asked 1 + 3 times, then the walk stops (not 20 chunks)
+    assert len(fake.asked) <= 12 + 3 * 4
+    assert clock.now() > NOW  # it waited for the terminal
+    assert any("history starts" in w for w in result.warnings)

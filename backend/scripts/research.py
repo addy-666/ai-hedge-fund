@@ -11,6 +11,10 @@
     uv run python scripts/research.py llm --rounds 1             # the LLM researcher proposes, the loop judges
                                                                  #    (needs DEEPSEEK_API_KEY, llm.pricing and a
                                                                  #    migrated database for the llm_calls budget)
+    uv run python scripts/research.py basket --strategy candle_streak   # a workshop strategy at its frozen
+                                                                 #    parameters on the data before the workshop
+                                                                 #    searched (roadmap 11.4); --symbols to try
+                                                                 #    other markets (each run is one more trial)
 
 ``dsl`` and ``llm`` go through the research loop (docs/09 §6): walk-forward, ledger, BH over the whole ledger,
 and — for survivors, with ``--spend-holdout`` — the single holdout look. A validated hypothesis gets an evidence
@@ -51,6 +55,8 @@ from aifund.config.settings import PROJECT_ROOT, Settings
 from aifund.config.trading_config import ProfileConfig, TradingConfig
 from aifund.domain.enums import Timeframe
 from aifund.persistence.db import make_engine, make_session_factory
+from aifund.research.basket.candles import utc
+from aifund.research.basket.study import STRATEGIES, WORKSHOP_START, judge, load_symbol, study
 from aifund.research.describe import Probe
 from aifund.research.gates import e1_holdout_checks, e1_walk_forward_checks, passed, throughput
 from aifund.research.history import History
@@ -108,7 +114,12 @@ def build(detector: str, roles: TfRoles, params: Any) -> SetupDetector:
 
 def parse(argv: list[str]) -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("study", choices=["baseline", "dsl", "llm", "scheduled"])
+    p.add_argument("study", choices=["baseline", "dsl", "llm", "scheduled", "basket"])
+    p.add_argument("--strategy", choices=sorted(STRATEGIES), help="basket: which workshop strategy")
+    p.add_argument(
+        "--until", default=WORKSHOP_START.date().isoformat(),
+        help="basket: end of the pre-registered window (default: where the workshop's data starts)",
+    )  # fmt: skip
     p.add_argument("--force", action="store_true", help="scheduled: run even if not due")
     p.add_argument("--file", help="dsl: a JSON list of entry hypotheses")
     p.add_argument(
@@ -216,6 +227,8 @@ def main(argv: list[str]) -> int:
     args = parse(argv)
     if args.study == "scheduled":
         return scheduled(args)
+    if args.study == "basket":
+        return basket(args)
     if args.study != "baseline":
         return asyncio.run(loop_main(args))
     cfg = load_config()
@@ -335,6 +348,160 @@ def main(argv: list[str]) -> int:
             }
 
     out = Path(args.out) / f"report_baseline_{args.detector}_{now:%Y%m%d_%H%M%S}.json"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(report, indent=2, default=str))
+    print(f"report: {out}\nledger: {ledger.path}")
+    return 0
+
+
+def basket(args: argparse.Namespace) -> int:
+    """A workshop strategy at its frozen parameters (roadmap 11.4): the pre-registered test on the data before
+    ``--until``, the searched year after it reported for parity only. Never an evidence record (not a detector)."""
+    if not args.strategy:
+        print("basket needs --strategy", file=sys.stderr)
+        return 2
+    cfg = load_config()
+    rc = cfg.research
+    root = Path(args.history)
+    manifest = hs.read_manifest(root)
+    specs = hs.read_specs(root)
+    variants = STRATEGIES[args.strategy]
+    first = next(iter(variants.values()))
+    wanted = [s.strip() for s in args.symbols.split(",") if s.strip()] or list(first.symbols)
+    symbols = [s for s in wanted if s in specs]
+    if not symbols:
+        print(f"no exported history for {wanted} in {root}", file=sys.stderr)
+        return 2
+    offset = manifest.server_offset_minutes
+    end = manifest.end.replace(second=0, microsecond=0)
+    loaded = {s: load_symbol(root, s, specs[s], offset, first.needs) for s in symbols}
+    firsts = [m for sd in loaded.values() if (m := sd.first_minute(first.needs)) is not None]
+    start = max(manifest.start.replace(second=0, microsecond=0), utc(min(firsts), offset)) if firsts else end
+    until = min(max(datetime.fromisoformat(args.until).replace(tzinfo=UTC), start), end)
+    costs = CostModel(commission_per_lot=rc.commission_per_lot, slippage_points=rc.slippage_points)
+    fingerprint = digest(
+        {"server": manifest.server, "start": manifest.start, "end": manifest.end, "rows": manifest.rows}
+    )
+    ledger = Ledger(Path(args.out) / "ledger.jsonl")
+    now = datetime.now(UTC)
+    print(
+        f"basket {args.strategy} on {symbols}: pre-registered window {start:%Y-%m-%d} -> {until:%Y-%m-%d}, "
+        f"searched year {until:%Y-%m-%d} -> {end:%Y-%m-%d} (server UTC{offset / 60:+.0f}h)",
+        flush=True,
+    )
+    clean: dict[str, list[SignalOutcome]] = {}
+    searched: dict[str, list[SignalOutcome]] = {}
+    report: dict[str, Any] = {
+        "strategy": args.strategy,
+        "symbols": symbols,
+        "window": [start.isoformat(), until.isoformat(), end.isoformat()],
+        "variants": {},
+    }
+    for name, strategy in variants.items():
+        detector = f"{strategy.name}@{strategy.version}"
+        clean[name], searched[name] = [], []
+        meta: dict[str, Any] = {}
+        for sym, sd in loaded.items():  # one pass: a position open at --until carries on, as it would live
+            outs, result = study(
+                strategy, sd, offset=offset, costs=costs, start=start, end=end, detector=detector
+            )
+            clean[name] += [o for o in outs if o.bar_time < until]
+            searched[name] += [o for o in outs if o.bar_time >= until]
+            if result is not None:
+                meta[sym] = {
+                    "signals": result.signals,
+                    "trades": len(result.trades),
+                    "path": sd.path_tfs,
+                    "skipped": dict(result.skipped.most_common()),
+                }
+        for bucket in (clean[name], searched[name]):
+            bucket.sort(key=lambda o: o.entry_time)
+        hypothesis = {
+            "basket": strategy.name,
+            "version": strategy.version,
+            "params": strategy.params(),
+            "symbols": symbols,
+        }
+        s_in = summarize([o.r_net for o in searched[name]], times=[o.entry_time for o in searched[name]])
+        if searched[name]:
+            ledger.record(
+                hypothesis=hypothesis,
+                symbols=symbols,
+                start=until,
+                end=end,
+                split=Split.IN_SAMPLE,
+                origin=Origin.OPERATOR,
+                data_fingerprint=fingerprint,
+                summary=s_in,
+                now=now,
+            )
+        report["variants"][name] = {
+            "params": strategy.params(),
+            "per_symbol": meta,
+            "searched_year": s_in.render(),
+        }
+        print(f"  {name}: searched year (in-sample, parity only): {s_in.render()}", flush=True)
+
+    if until <= start:
+        print("no data before --until: export older history first (roadmap 11.1)")
+        return 0
+    wf = judge(clean, start, until, folds=rc.folds, min_train_signals=rc.min_train_signals)
+    family = {
+        "basket": args.strategy,
+        "variants": {n: v.params() for n, v in variants.items()},
+        "selection": "frozen"
+        if len(variants) == 1
+        else f"walk-forward best mean, min {rc.min_train_signals}",
+        "symbols": symbols,
+    }
+    ledger.record(
+        hypothesis=family,
+        symbols=symbols,
+        start=start,
+        end=until,
+        split=Split.WALK_FORWARD,
+        origin=Origin.OPERATOR,
+        data_fingerprint=fingerprint,
+        summary=wf.summary,
+        now=now,
+    )
+    survives = digest(family) in ledger.survivors(float(rc.fdr_q))
+    checks = e1_walk_forward_checks(wf, survives_fdr=survives, cfg=rc)
+    print("\npre-registered test (data the workshop never searched):")
+    for f in wf.folds:
+        oos = "none" if f.oos_mean is None else f"{f.oos_mean:+.3f}R"
+        print(
+            f"  segment {f.index}: {f.test_start:%Y-%m-%d} -> {f.test_end:%Y-%m-%d}  {f.chosen:<7} "
+            f"{len(f.out_of_sample)} trades {oos}"
+        )
+    print(f"  RESULT: {wf.summary.render()}; positive segments {wf.positive_fold_share:.0%}")
+    for c in checks:
+        print(f"  [{'x' if c.passed else ' '}] {c.name}: {c.detail}")
+    print(
+        f"verdict: {'PASSED' if passed(checks) else 'FAILED'} (E1 walk-forward part; no evidence record: "
+        "Part B ports it as a detector first)"
+    )
+    report.update(
+        pre_registered={
+            "summary": wf.summary.render(),
+            "positive_share": wf.positive_fold_share,
+            "monthly": wf.summary.monthly,
+            "segments": [
+                {
+                    "index": f.index,
+                    "start": f.test_start.isoformat(),
+                    "chosen": f.chosen,
+                    "n": len(f.out_of_sample),
+                    "mean": f.oos_mean,
+                }
+                for f in wf.folds
+            ],
+        },
+        checks=[asdict(c) for c in checks],
+        survives_fdr=survives,
+        passed=passed(checks),
+    )
+    out = Path(args.out) / f"report_basket_{args.strategy}_{now:%Y%m%d_%H%M%S}.json"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(report, indent=2, default=str))
     print(f"report: {out}\nledger: {ledger.path}")
