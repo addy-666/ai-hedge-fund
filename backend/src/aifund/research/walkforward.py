@@ -14,7 +14,7 @@ The concatenated out-of-sample series is the walk-forward result; in-sample numb
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Hashable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 
@@ -68,7 +68,9 @@ def walk_forward(
     folds: int = 4,
     min_train_signals: int = 30,
     seed: int = 0,
+    cluster_of: Callable[[SignalOutcome], Hashable] | None = None,
 ) -> WalkForwardResult:
+    """``cluster_of``: the key the bootstrap resamples outcomes by (docs/09 §9.4); None = each alone."""
     if not variants:
         raise ValueError("walk-forward needs at least one variant")
     edges = boundaries(start, end, folds)
@@ -83,13 +85,29 @@ def walk_forward(
                 test_start=test_start,
                 test_end=test_end,
                 chosen=chosen,
-                in_sample=summarize([o.r_net for o in train], seed=seed),
+                in_sample=_summary(train, seed, cluster_of, times=False),
                 out_of_sample=test,
             )
         )
     oos = [o for f in out for o in f.out_of_sample]
-    summary = summarize([o.r_net for o in oos], times=[o.entry_time for o in oos], seed=seed)
-    return WalkForwardResult(folds=out, out_of_sample=oos, summary=summary)
+    return WalkForwardResult(
+        folds=out, out_of_sample=oos, summary=_summary(oos, seed, cluster_of, times=True)
+    )
+
+
+def _summary(
+    outcomes: Sequence[SignalOutcome],
+    seed: int,
+    cluster_of: Callable[[SignalOutcome], Hashable] | None,
+    *,
+    times: bool,
+) -> Summary:
+    return summarize(
+        [o.r_net for o in outcomes],
+        times=[o.entry_time for o in outcomes] if times else None,
+        clusters=None if cluster_of is None else [cluster_of(o) for o in outcomes],
+        seed=seed,
+    )
 
 
 def choose(

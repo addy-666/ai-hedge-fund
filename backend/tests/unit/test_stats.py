@@ -191,3 +191,98 @@ def test_the_permutation_z_p_matches_brute_force_relabelling() -> None:
     assert permutation_z_p_lower([1.0, 1.0, 1.0], [True, False, False]) == 1.0
     assert permutation_z_p_lower([1.0, 2.0], [True, False]) == 1.0
     assert permutation_z_p_lower([3.0, 3.0, 1.0, 1.0], [True, True, False, False]) > 0.9  # a HIGHER group
+
+
+# ---------------------------------------------------------------- clustered bootstrap (docs/09 §9.4)
+
+
+def correlated(
+    seed: int, dates: int = 100, symbols: int = 4, mean: float = 0.0
+) -> tuple[list[float], list[int]]:
+    """Each date moves every symbol together (a common shock) plus a little of its own."""
+    rng = np.random.default_rng(seed)
+    common = rng.normal(mean, 1.0, dates)
+    r = [float(common[d] + rng.normal(0.0, 0.3)) for d in range(dates) for _ in range(symbols)]
+    return r, [d for d in range(dates) for _ in range(symbols)]
+
+
+def test_clusters_of_one_are_the_plain_bootstrap() -> None:
+    from aifund.stats import bootstrap_mean_ci, cluster_bootstrap_mean_ci
+
+    x = list(np.random.default_rng(3).normal(0.1, 1.0, 150))
+    plain = summarize(x, seed=4)
+    alone = summarize(x, clusters=list(range(150)), seed=4)
+    assert (alone.ci_low, alone.ci_high, alone.p_value) == (plain.ci_low, plain.ci_high, plain.p_value)
+    assert cluster_bootstrap_mean_ci(x, list(range(150)), seed=4) == bootstrap_mean_ci(x, seed=4)
+
+
+def test_outcomes_that_move_together_widen_the_interval() -> None:
+    r, dates = correlated(5)
+    plain = summarize(r)
+    clustered = summarize(r, clusters=dates)
+    assert clustered.mean == plain.mean
+    assert plain.ci_low is not None
+    assert plain.ci_high is not None
+    assert clustered.ci_low is not None
+    assert clustered.ci_high is not None
+    assert clustered.ci_high - clustered.ci_low > 1.6 * (plain.ci_high - plain.ci_low)  # ~sqrt(4) wider
+
+
+def test_correlated_noise_rarely_passes_when_clustered_but_often_when_not() -> None:
+    clustered = plain = 0
+    for seed in range(200):
+        r, dates = correlated(2000 + seed)
+        clustered += summarize(r, clusters=dates, seed=seed, resamples=500).significant
+        plain += summarize(r, seed=seed, resamples=500).significant
+    assert clustered / 200 <= 0.08  # nominal 5% (one-sided)
+    assert plain / 200 > 0.15  # treating 4 copies of one draw as 4 draws: the reason for clustering
+
+
+def test_clustered_degenerate_samples() -> None:
+    from aifund.stats import cluster_bootstrap_mean_ci
+
+    one = summarize([1.0, 2.0, 3.0], clusters=["d", "d", "d"])
+    assert (one.ci_low, one.p_value) == (None, 1.0)
+    assert cluster_bootstrap_mean_ci([1.0, 2.0], ["d", "d"]) is None
+    with pytest.raises(ValueError, match="same length"):
+        summarize([1.0, 2.0], clusters=["d"])
+    with pytest.raises(ValueError, match="same length"):
+        cluster_bootstrap_mean_ci([1.0, 2.0], ["d"])
+
+
+def test_power_is_the_smallest_detectable_mean_and_its_sharpe() -> None:
+    from aifund.stats import power
+
+    x = list(np.random.default_rng(8).normal(0.0, 1.0, 400))
+    pw = power(x, list(range(400)), clusters_per_year=252)
+    assert pw is not None
+    sd = float(np.std(x, ddof=1))
+    assert pw.standard_error == pytest.approx(sd / 20, rel=0.1)  # sd / sqrt(400)
+    assert pw.min_detectable == pytest.approx(1.645 * pw.standard_error)
+    assert pw.annual_sharpe == pytest.approx(pw.min_detectable / sd * np.sqrt(252), rel=1e-6)
+    assert (pw.n, pw.clusters) == (400, 400)
+    assert "independent dates of 400 outcomes" in pw.render()
+    r, dates = correlated(9)
+    together = power(r, dates, clusters_per_year=252)
+    apart = power(r, list(range(len(r))), clusters_per_year=252)
+    assert together is not None
+    assert apart is not None
+    assert together.clusters == 100
+    assert together.min_detectable > 1.6 * apart.min_detectable
+    assert power([1.0, 2.0], ["d", "d"], clusters_per_year=252) is None
+    flat = power([1.0, 1.0], ["a", "b"], clusters_per_year=252)
+    assert flat is not None
+    assert flat.annual_sharpe is None
+    assert "Sharpe >= n/a" in flat.render()
+    with pytest.raises(ValueError, match="same length"):
+        power([1.0], ["a", "b"], clusters_per_year=1)
+
+
+def test_walk_forward_resamples_by_the_cluster_key() -> None:
+    days = [outcome(d, 0.4 if d % 3 else -0.5) for d in range(100) for _ in range(3)]
+    wf = walk_forward({"a": days}, start=T0, end=END, folds=4, cluster_of=lambda o: o.entry_time.date())
+    oos = wf.out_of_sample
+    expected = summarize([o.r_net for o in oos], times=[o.entry_time for o in oos],
+                         clusters=[o.entry_time.date() for o in oos])  # fmt: skip
+    assert wf.summary == expected
+    assert wf.summary != walk_forward({"a": days}, start=T0, end=END, folds=4).summary
