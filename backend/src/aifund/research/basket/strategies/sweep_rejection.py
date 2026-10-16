@@ -96,7 +96,7 @@ class SweepRejectionFollow:
     def params(self) -> dict[str, Any]:
         return self.p.asdict()
 
-    def signals(self, data: Mapping[Timeframe, Candles], tick: float) -> list[Signal]:
+    def signals(self, data: Mapping[Timeframe, Candles], tick: float, symbol: str = "") -> list[Signal]:
         p = self.p
         tf = Timeframe(p.signal_tf)
         bars, days, fine = data.get(tf), data.get(Timeframe.D1), finest(data, tf)

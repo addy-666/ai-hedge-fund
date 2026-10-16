@@ -57,7 +57,7 @@ class IctDmss:
     def params(self) -> dict[str, Any]:
         return self.p.asdict()
 
-    def signals(self, data: Mapping[Timeframe, Candles], tick: float) -> list[Signal]:
+    def signals(self, data: Mapping[Timeframe, Candles], tick: float, symbol: str = "") -> list[Signal]:
         bars = data.get(Timeframe.M30)
         if bars is None or len(bars) < 2:
             return []

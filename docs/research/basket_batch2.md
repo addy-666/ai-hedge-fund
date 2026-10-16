@@ -83,3 +83,36 @@ the weekend) the signal is dropped.
 USDJPY and XAGUSD agreement (also named in 11.5) cannot be run: there is no history for them on the Mac.
 EURUSD exists only from 2025-10-01, so these run on the base strategies' searched year; pass mark 3 (the uplift)
 is what judges the filter.
+
+## Results (run 2026-10-16, after this file was committed)
+
+Data root built with `scripts/import_workshop_m1.py` (workshop M1 from 2025-10-02, the export's M5–D1 before it).
+R net of the research costs (spread in every fill). Scratch evaluation for H3 (the filter is not in the code).
+
+| Hypothesis | Trades | Mean R | 90% CI | Segments + | Verdict |
+|---|---|---|---|---|---|
+| H1 SR break-retest, NAS100.r, 2025-07-07 → 2026-09-29 | 1377 | −0.029 | [−0.085, +0.025] | 3/5 | **skip** (mark 1) |
+| — of which on the M1 path (2025-10-02 on) | 1120 | −0.001 | [−0.060, +0.057] | | |
+| — of which on the M5 path (before; more bars touch both levels) | 257 | −0.154 | [−0.270, −0.037] | | |
+| H2 index opening S1 + BOS, GER40.r + Nikkei225, 2025-10-02 → 2026-09-29 | 158 | +0.239 | [+0.072, +0.397] | 5/5 | **add** (in-sample, see caveat) |
+| — GER40.r | 79 | +0.210 | [−0.020, +0.432] | | workshop tick replay: 79, +15.2R (here +16.6R) |
+| — Nikkei225 | 79 | +0.268 | [+0.044, +0.491] | | workshop tick replay: 79, +20.1R (here +21.1R) |
+
+H1: longs −0.032R (681), shorts −0.027R (696); the 5-per-day cap refused 1184 of 2875 signals. The retest adds
+nothing on NAS100: the level holding on the retest bar does not predict the next 1.5R.
+
+H3, 2025-10-03 → 2026-09-29 (EURUSD history starts 2025-10-02):
+
+| Base | Base trades, mean | Filtered run (mark 1, 2) | Kept vs dropped base trades (mark 3) | Verdict |
+|---|---|---|---|---|
+| `fib_pullback` XAUUSD | 149, +0.275 | 100, +0.265, CI [−0.063, +0.603], 5/5 | 91 +0.297 vs 58 +0.241: +0.055, CI lower −0.500 | **skip** (1, 3) |
+| `sweep_pin_follow` XAUUSD | 38, +0.527 | 25, +0.442, CI [+0.145, +0.730], 5/5 | 24 +0.502 vs 14 +0.570: −0.068, CI lower −0.640 | **skip** (3) |
+| `sweep_rejection_follow` BTCUSD | 54, +0.508 | 19, +0.299, CI [−0.194, +0.859], 4/5 | 19 +0.299 vs 35 +0.621: −0.322, CI lower −1.010 | **skip** (1, 3) |
+| `ict_dmss` C1 NAS100.r | 272, +0.279 | 160, +0.156, CI [−0.038, +0.359], 4/5 | 136 +0.210 vs 136 +0.349: −0.139, CI lower −0.467 | **skip** (1, 3) |
+
+The dollar's 24-hour direction does not separate good from bad signals in any of them; for BTC and the ICT setup
+the trades it would drop did better than those it keeps.
+
+**Added:** `index_opening_s1` (registered in `research/basket/study.py`). It is still in-sample: E1 needs
+GER40.r and Nikkei225 in the long export (11.1; neither is exported yet) and an engine port (Part B) before it can
+trade. **Skipped:** H1 and the four H3 variants (code not kept; this file is the record).
