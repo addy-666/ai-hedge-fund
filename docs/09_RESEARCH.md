@@ -249,3 +249,115 @@ L2 gate's 100 closed trades (`06` §10), and the learning loop's first possible 
 `min_matches_total` matches in one scope at ≤ 30% coverage). A strategy whose implied time to E2 exceeds
 `research.max_months_to_evidence` (6) is reported as **too slow to validate**: add symbols, a faster trigger
 timeframe, or a different hypothesis — do not lower the gates.
+
+## 9. Short-horizon momentum, pooled (roadmap 11.11–11.15)
+
+Specified 2026-10-16, **before any run**; revised the same day (still before any run) for the operator's two
+constraints: the research history is the 15-month export (2025-07 → 2026-09; pre-holdout ≈ 11 months), and
+each family must produce **100–200 trades a month** so its tests complete on that history. Everything in this
+section is the pre-registration: changing a hypothesis, a grid or the universe after a result is seen makes it
+a new trial (§4), never an edit.
+
+Why these hypotheses. Every idea tested so far was a pattern searched on the same short history. Momentum is
+the opposite kind: documented out-of-sample across decades and asset classes — time-series momentum
+(Moskowitz, Ooi & Pedersen 2012) and intraday momentum, where the first part of the session predicts the rest
+(Gao, Han, Li & Zhou 2018; Baltussen, Da, Lammers & Martens 2021) — with mechanisms (slow diffusion of
+information, hedging flows), and consistent with the operator's own gold verdict (FOLLOW wins, fades lose).
+The edge per instrument is small and comes from breadth, so each family is one hypothesis **pooled over every
+symbol**, judged as a whole. The ideas come from the literature, so they are data-snooped at the idea level
+(§1.7): E2 still applies.
+
+How the frequency is reached. Not by shorter holds: the spread is a fixed cost while the move grows with the
+square root of the holding time, so below about an hour the spread eats the edge (EURUSD on M15: spread ≈ 26%
+of ATR). Frequency comes from **one decision per symbol per day, times many symbols**. The 12-month weekly
+form of TSMOM needs years of history and is not part of this study; declare it again once a long export exists.
+
+### 9.1 Hypotheses
+
+Two families, each its own hypothesis with its own walk-forward; every grid point is a ledger trial (6 in all).
+
+| Family | Decision (on a CLOSED bar) | Signal | Grid | Hold | Stop = R unit |
+|---|---|---|---|---|---|
+| `tsmom_daily` | every D1 close (server rollover) | sign of ln(close_t / close_{t−L}), close_{t−L} = the last D1 close at or before t − L | L = 14, **28**, 56 calendar days | the next D1 bar: from its first bar's open to the next D1 close | 1.5 × ATR20(D1) from the segment's entry |
+| `intraday_momentum` | the end of the signal window after the exchange cash open | sign of the return over the signal window | window = open → +30 min, **prior cash close → open + 30 min**, open → +60 min | from the window's end to 15 min before the cash close | 1.0 × ATR20(D1) from the entry |
+
+Bold = the declared default (used when a fold has too few training signals). Both sides trade (long when the
+return is > 0, short when < 0; zero or missing history = no position). No target: a position ends at its time
+exit or its stop. Stops are catastrophe stops (≈ 2 standard deviations of the hold's move); as the R unit they
+give every symbol the same risk — the inverse-volatility weighting the literature uses.
+
+- `tsmom_daily` calendar-day lookbacks make BTCUSD's 7-day weeks comparable with the rest.
+- `intraday_momentum` anchors are exchange cash sessions in exchange local time: NAS100 / US30 09:30–16:00 New
+  York, XAUUSD 08:20–13:30 New York (COMEX), GER40 09:00–17:30 Frankfurt, UK100 08:00–16:30 London, JPN225
+  09:00–15:00 Tokyo; a half-day session uses its own close, a closed exchange day gives no signal. BTCUSD has no
+  session and is not in this family. Exchange times are converted from server time (stored UTC + the
+  manifest's offset, `research/basket/candles.py`) with the server's DST rule (New York + 7 h) and the
+  exchange's zone — exact for every season without 11.10. Paths on M5 (the export's M1 is capped).
+
+### 9.2 Segments, weekends, costs, swap
+
+- **Weekday symbols are flat over weekends** in both families — the engine's flatten before long closes
+  (`flatten_before_close_minutes`, `long_close_hours`), so the study is the form the engine can run. The
+  Friday segment of `tsmom_daily` ends at that flatten; Monday's position (decided on Friday's D1 close) enters
+  at Monday's first bar (`max_entry_delay` 3 days). No new position inside the no-entries window before a
+  long close.
+- A `tsmom_daily` **segment** is one D1 period of one symbol; each is one `SignalOutcome` (R = its P&L over its
+  own R unit). Consecutive segments with the same sign are ONE live position: no spread at a continuing
+  boundary; the stop is re-anchored and the size re-set (live: a partial close or add). Spread is paid at a
+  real entry (sign change, after a stop, after a weekend flat) and a real exit. **The trade count is segments**
+  — the live order count is lower when the sign persists.
+- **Stress row** (diagnostic, not gated): the same segments with spread and slippage charged at every boundary
+  — the cost if every day were closed and reopened.
+- **Swap**: positions held through a rollover pay it (every continuing `tsmom_daily` night; triple on the
+  symbol's `swap_rollover3days`), from `swap_long` / `swap_short` / `swap_mode` recorded by the exporter.
+  Today's rates for all history; a positive swap counts as 0 (never a credit). An export without swap fields or
+  a swap mode the harness does not implement stops the study. `intraday_momentum` never holds a rollover.
+
+### 9.3 Universe and frequency
+
+The universe is declared before the run and recorded on every ledger row: the symbols the operator is willing to
+trade with the family, each exported over the same 15-month window (D1, H4, H1, M15, M5). **All or none**: the
+result is the pooled universe's; per-symbol rows are diagnostics, and no symbol is dropped after seeing them
+(selection on the outcome). A symbol in the evidence must be in `symbols:` before deployment.
+
+Frequency target (operator, 2026-10-16): **100–200 trades a month per family**. Measured on the export, a
+weekday symbol has ≈ 21.7 D1 bars a month and BTCUSD ≈ 30.
+
+| Family | Symbols today | Today | Universe to export (same window) | Projected |
+|---|---|---|---|---|
+| `tsmom_daily` | XAUUSD, NAS100.r, BTCUSD | ≈ 74 / month | + EURUSD (15 months; today only 6), GER40, JPN225, XAGUSD, USDJPY, US30 | ≈ 200 / month |
+| `intraday_momentum` | XAUUSD, NAS100.r | ≈ 43 / month | + GER40, JPN225, UK100, US30 | ≈ 130 / month |
+
+The report prints the measured rate; a run below 100 a month is reported as **below the frequency target**
+(add symbols — never a shorter hold or a second decision a day, which would be a new hypothesis). The
+broker's symbol names (e.g. `GER40`, `JP225`) go in the run's `--symbols`.
+
+### 9.4 Statistics and gate
+
+- **Clustered bootstrap.** Positions decided on the same day are correlated (risk-on days move the indices
+  together), so the CI and the p-value of this study resample **decision dates** with replacement, each
+  carrying all its outcomes (`stats.cluster_bootstrap_mean_ci`, seeded, 2,000 resamples). The report gives n
+  (outcomes) and the effective n (dates). This is what 150 trades a month are worth: ≈ 230 pre-holdout trading
+  days, each counting once in the precision however many symbols traded on it.
+- **E1 unchanged**: anchored walk-forward over the pre-holdout history (`research.folds`, the grid point chosen
+  in-sample, `min_train_signals`), OOS n ≥ `min_oos_signals`, mean R > 0 and clustered CI lower bound > 0 net of
+  costs and swap, ≥ `min_positive_fold_share` positive folds, BH over the whole ledger; then the holdout ONCE
+  (2026-06-08 → 2026-09-28: ≈ 3.7 months, ≥ 300 outcomes per family at the target rate). The 56-day lookback
+  leaves ≈ 9 months of pre-holdout signals for `tsmom_daily`; at the target rate both families clear
+  `min_oos_signals` several times over.
+- **Power line**: the report prints the smallest mean R the run could have detected (1.645 × the clustered
+  standard error) and its annual-Sharpe equivalent. Expected honestly: 15 months detects only a strong edge
+  (an annual Sharpe of roughly 2 or more for the pooled daily result: ≈ 190 OOS days at t ≥ 1.645); a weaker real one reads as FAIL with a power line
+  saying "too little data", which is a reason to keep collecting (E2 shadow runs, weekly `--update`), not to
+  lower a gate.
+- **Controls** (diagnostic, not trials, not in BH): always-long outcomes in the same R frame (the drift of a
+  rising market), and the chosen variant's long-only and short-only halves. Momentum that only matches
+  always-long is drift; the verdict says so.
+- **Throughput** (§8): at 100–200 a month, E2's 100 forward signals take 2–4 weeks of shadow trading.
+
+### 9.5 Deployment consequence (only if E1 passes; roadmap Part B)
+
+Both families respect the engine's weekend and pre-close flattens, so no exemption is needed there. Each needs
+its own time exit instead of `position_management.time_stop_bars` (per-strategy exits, 11.6), a daily
+decision clock (`tsmom_daily`) or an exchange-session clock (`intraday_momentum`), and, for `tsmom_daily`, the
+continuing position re-sized each day by its new stop.
