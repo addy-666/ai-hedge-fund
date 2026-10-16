@@ -204,7 +204,7 @@ class EveryHour:
     def params(self) -> dict[str, int]:
         return {"hold": 30}
 
-    def signals(self, data: dict[Timeframe, Any], tick: float) -> list[Signal]:
+    def signals(self, data: dict[Timeframe, Any], tick: float, symbol: str = "") -> list[Signal]:
         h1 = data[Timeframe.H1]
         return [Signal(decided_at=int(t) + 60, side=Side.BUY, setup_tag="every_hour", stop_distance=1.0,
                        max_hold=30) for t in h1.t]  # fmt: skip
