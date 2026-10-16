@@ -231,6 +231,37 @@ controlled way. One PR per part.
 - *(A/B testing of prompt versions on shadow decisions: scheduled as 10.4.)*
 - Longer research history from an external source (research only), exit research (MFE/MAE), meta-labelling.
 
+## Phase 11 — Strategy basket
+
+Scheduled 2026-10-16 by the operator after the DEMO diagnosis: the engine's detectors have no edge
+(`failure_test_2b` −0.25R per blocked signal; fades lose on gold), while the operator's workshop research
+(`claude dev workshop/`, outside the repo) found forward-test candidates: CandleStreak XAUUSD H4, Fibonacci
+61.8% pullback XAUUSD H1, SessionSweepPinBar FOLLOW XAUUSD H1, SessionSweepRejection FOLLOW BTCUSD M15,
+SpikeFade XAUUSD M1, IndexOpeningPlaybook S1+BOS (JPN225/GER40), ICT DisplacementMSS NAS100 M30. Every one of
+them was searched on the same year (Oct 2025 – Sep 2026), so none is evidence yet. **Validate first** (Part A,
+research only), then build engine support only for what survives (Part B). Goal: a basket of uncorrelated
+strategies, each with its own proven edge; deterministic allocation; the LLM informs and vetoes, never sizes.
+
+### Part A — Validate (research only; nothing here can place an order)
+
+| # | Task | Size | DoD |
+|---|---|---|---|
+| 11.1 | **Long history** (operator): MT5 "Max bars in chart" = Unlimited, export 2016 → 2025-07 on M15/H1/H4/D1 (+M1 where the server has it, + M30 for NAS100) and `--merge`. The export applies ONE server offset to every bar and records only the newest in the manifest (11.10), so every merge must use the existing export's offset: always pass `--server-offset-hours 3` (from 1 Nov 2026 the detected offset is +2, and the weekly `--update` would then mix offsets) | S | Manifest shows the long range, nothing capped |
+| 11.2 | **Basket harness** (`research/basket/`): candles in broker **server** time (stored UTC + the manifest's offset: exact whatever the DST state, and the clock the EAs are written in); market entries at the next bar open within a maximum delay, limit entries with expiry, cancel-beyond and supersession; structure or distance stops with floor and cap (clamp or skip); R or level targets; time and session flats; one position per strategy and symbol; daily entry caps. Paths on the finest exported timeframe (M1 → M5 → M15 → M30 → H1), SL first when a bar touches both, gaps at the open, sells on the ask. Outcomes are `SignalOutcome`s, so walk-forward, gate E1 and the trial ledger apply unchanged | M | Unit tests per rule; float fill rule = `market/fills.exit_on_bar` |
+| 11.3 | **Ports at the workshop's frozen parameters** (`research/basket/strategies/`), each EA rule for rule: `candle_streak` v1.1 A, `fib_pullback` (textbook), `sweep_pin_follow`, `sweep_rejection_follow`, `spike_fade`, `ict_dmss` (C1 / C1b declared grid) | L | Tests on hand-built bars per strategy; parity run against the workshop's numbers on Oct 2025 – Sep 2026 (PROGRESS) |
+| 11.4 | **Pre-registered test** `research.py basket --strategy X`: the frozen hypothesis on **[history start, 2025-10-01)** — data no workshop search saw — is the out-of-sample result (a declared grid of >1 variant goes through the anchored walk-forward instead); E1's walk-forward checks (≥ 200 signals, mean and 90% CI > 0, ≥ 60% positive segments, BH over the whole ledger); the workshop year is reported as in-sample. No evidence record yet: these are not engine detectors | M | Verdict per strategy in PROGRESS; ledger rows |
+| 11.5 | **Batch 2**, declared before any run: IndexOpening S1+BOS (needs GER40/JPN225 M1, exchange-DST opens, stop entries), `srea` (SR H1 + M5, NAS100), and cross-asset-conditioned variants of the 11.4 survivors (EURUSD / USDJPY / XAGUSD agreement filters, one hypothesis each) | L | As 11.4 |
+
+### Part B — Build (engine; only for strategies that pass 11.4)
+
+| # | Task | Size | DoD |
+|---|---|---|---|
+| 11.6 | **Per-strategy deployment** (money path, tests first): each strategy its own symbols, trigger timeframe, entry type, stop rule (structure stops inside `risk.stops` bands per strategy) and time exit / session flat in the position loop; detectors per symbol | L | Guard/stop/position-loop tests, 100% branch |
+| 11.7 | **Engine detectors** for the survivors, reading only closed bars; parity tests: the detector fires on exactly the harness's bars; E1 evidence records keyed to them | L | Parity suite |
+| 11.8 | **Basket allocation**: daily-R correlation matrix of the survivors; a risk budget per family from measured volatility and correlation (risk factor ≤ 1, never above the configured risk); the regime map per family (`strategy_daily_cap.by_family_regime`) from each strategy's research results by `ctx.regime` | M | Pure functions + config tests |
+| 11.9 | **The LLM's role per family**: the analyst confirms or vetoes a family's signal with regime and cross-asset context (G-LLM per family, shadow first); the researcher proposes variants of survivors only through the ledger | M | FakeLLM tests |
+| 11.10 | **Export DST fix**: convert each bar with the broker's DST rule (`engine.server_timezone`, e.g. New York + 7 h) instead of one offset; the research session calendars are then right for every season | S | Tests across both DST changes |
+
 ---
 
 ## Global quality gates (every phase)

@@ -13,6 +13,9 @@ from aifund.domain.enums import Timeframe
 from aifund.domain.market import Bar
 
 CHUNK = timedelta(days=30)
+EMPTY_RETRIES = 3  # an empty chunk is asked again: asking is what makes the terminal download it
+RETRY_WAIT_S = 1.0  # times the attempt number
+STOP_AFTER_EMPTY = 3  # consecutive empty chunks (after retries): the server's history ends there
 
 
 @dataclass
@@ -36,6 +39,12 @@ async def export_history(
 ) -> ExportResult:
     """Fetch [start, end or now) in 30-day chunks per symbol/timeframe and write CLOSED bars only.
 
+    Chunks go from the newest back. The terminal holds only the history it has downloaded, and returns an
+    empty chunk for an older range it has not fetched yet while it starts downloading it in the background;
+    so an empty chunk is asked again (``EMPTY_RETRIES``, waiting a little longer each time), and the walk
+    stops after ``STOP_AFTER_EMPTY`` empty chunks in a row — where the server's own history ends (roadmap
+    11.1: a one-shot request silently returned nothing before July 2025).
+
     A bar is closed when ``open_time + timeframe <= now``; the forming bar is always dropped. Chunks can
     overlap at their edges; duplicates are removed by open time. With ``merge`` the bars are added to what the
     store already holds (a date-range export extends an existing export; the manifest spans both).
@@ -56,12 +65,7 @@ async def export_history(
         specs[symbol] = await gateway.refresh_symbol_spec(symbol)
         result.rows[symbol] = {}
         for tf in timeframes:
-            bars: list[Bar] = []
-            cursor = start
-            while cursor < until:
-                chunk_end = min(cursor + CHUNK, until)
-                bars.extend(await gateway.bars_range(symbol, tf, cursor, chunk_end))
-                cursor = chunk_end
+            bars = await _fetch(gateway, symbol, tf, start, until)
             span = timedelta(minutes=tf.minutes)
             closed = [b for b in bars if b.time + span <= now]
             fetched = len({b.time for b in closed})
@@ -118,3 +122,22 @@ async def export_history(
         ),
     )
     return result
+
+
+async def _fetch(
+    gateway: MT5Gateway, symbol: str, tf: Timeframe, start: datetime, until: datetime
+) -> list[Bar]:
+    bars: list[Bar] = []
+    cursor, empty = until, 0
+    while cursor > start and empty < STOP_AFTER_EMPTY:
+        chunk_start = max(cursor - CHUNK, start)
+        got = await gateway.bars_range(symbol, tf, chunk_start, cursor)
+        for attempt in range(1, EMPTY_RETRIES + 1):
+            if got:
+                break
+            await gateway.wait(RETRY_WAIT_S * attempt)
+            got = await gateway.bars_range(symbol, tf, chunk_start, cursor)
+        empty = 0 if got else empty + 1
+        bars.extend(got)
+        cursor = chunk_start
+    return bars

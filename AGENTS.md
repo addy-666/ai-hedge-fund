@@ -45,6 +45,7 @@ cd backend && uv run python scripts/research.py baseline --detector nr7_breakout
 cd backend && uv run python scripts/research.py dsl --file ideas.json   # operator entry hypotheses (docs/09 §5) through the research loop
 cd backend && uv run python scripts/research.py dsl --file ../config/research/intermarket_nas100.json --symbols NAS100.r   # curated cross-asset hypotheses, one file per symbol (docs/09 §6)
 cd backend && uv run python scripts/research.py llm --rounds 1   # LLM researcher proposes, the loop judges (DEEPSEEK_API_KEY, llm.pricing, migrated DB)
+cd backend && uv run python scripts/research.py basket --strategy candle_streak   # Phase 11: a workshop strategy at frozen params on the pre-2025-10 data; --symbols, --until
 cd backend && uv run python scripts/research.py scheduled   # the weekly run: only on new history, rolls the holdout; --force
 cd backend && uv run python scripts/export_history.py --update   # Windows: merge the bars since the last export (the weekly research task)
 cd backend && uv run python scripts/spread_report.py   # spread vs ATR per symbol: evidence for the spread gates

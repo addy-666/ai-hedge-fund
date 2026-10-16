@@ -8,13 +8,15 @@ import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
+from typing import Any
 
 import pytest
 from pydantic import SecretStr
 
 from aifund.adapters import history_store as hs
 from aifund.adapters.llm.fake_llm import FakeLLM
-from aifund.domain.enums import Timeframe
+from aifund.domain.enums import Side, Timeframe
+from aifund.research.basket.harness import Signal
 from aifund.research.ledger import Ledger, Split
 from tests.unit.research.test_signals import flat
 from tests.unit.risk.test_stops import XAU
@@ -187,3 +189,88 @@ def test_the_scheduled_run_is_due_once_per_new_export(
     assert "not due: last run" in capsys.readouterr().out
     assert script.main(args(export, tmp_path, "scheduled", "--force")) == 0
     assert "scheduled research: forced" in capsys.readouterr().out
+
+
+class EveryHour:
+    """A stub basket strategy: a BUY on every H1 close, 30-minute hold (exercises the whole command)."""
+
+    name = "every_hour"
+    version = "0"
+    setup_tag = "every_hour"
+    symbols = ("XAUUSD",)
+    needs = (Timeframe.H1,)
+    max_trades_per_day = None
+
+    def params(self) -> dict[str, int]:
+        return {"hold": 30}
+
+    def signals(self, data: dict[Timeframe, Any], tick: float) -> list[Signal]:
+        h1 = data[Timeframe.H1]
+        return [Signal(decided_at=int(t) + 60, side=Side.BUY, setup_tag="every_hour", stop_distance=1.0,
+                       max_hold=30) for t in h1.t]  # fmt: skip
+
+
+def test_basket_without_older_data_reports_the_searched_period_only(
+    export: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    script = load()
+    monkeypatch.setitem(script.STRATEGIES, "every_hour", {"frozen": EveryHour()})
+    out = tmp_path / "research"
+    code = script.main(["basket", "--strategy", "every_hour", "--history", str(export), "--out", str(out)])
+    assert code == 0
+    printed = capsys.readouterr().out
+    assert "no data before --until" in printed  # the whole export is after 2025-10-01
+    assert "searched year (in-sample, parity only): n=" in printed
+    assert [t.split for t in Ledger(out / "ledger.jsonl").trials()] == [Split.IN_SAMPLE]
+
+
+def test_basket_judges_the_pre_registered_window(
+    export: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    script = load()
+    monkeypatch.setitem(script.STRATEGIES, "every_hour", {"frozen": EveryHour()})
+    out = tmp_path / "research"
+    argv = [
+        "basket",
+        "--strategy",
+        "every_hour",
+        "--until",
+        "2026-03-07",
+        "--history",
+        str(export),
+        "--out",
+        str(out),
+    ]
+    assert script.main(argv) == 0
+    printed = capsys.readouterr().out
+    assert "pre-registered test (data the workshop never searched):" in printed
+    assert "verdict: FAILED" in printed  # flat bars: every trade times out at 0R
+    assert [t.split for t in Ledger(out / "ledger.jsonl").trials()] == [Split.IN_SAMPLE, Split.WALK_FORWARD]
+    (report,) = out.glob("report_basket_every_hour_*.json")
+    data = json.loads(report.read_text())
+    assert data["passed"] is False
+    assert len(data["pre_registered"]["segments"]) == 5  # folds + 1
+
+
+def test_basket_walks_forward_over_declared_variants(export: Path, tmp_path: Path) -> None:
+    script = load()
+    argv = ["basket", "--strategy", "ict_dmss", "--symbols", "XAUUSD", "--until", "2026-03-07",
+            "--history", str(export), "--out", str(tmp_path / "r")]  # fmt: skip
+    assert script.main(argv) == 0  # M30 is built from M15; flat bars give no signal
+
+
+def test_basket_refuses_without_a_strategy_or_data(export: Path, tmp_path: Path) -> None:
+    script = load()
+    assert script.main(["basket", "--history", str(export), "--out", str(tmp_path)]) == 2
+    argv = [
+        "basket",
+        "--strategy",
+        "candle_streak",
+        "--symbols",
+        "NOPE",
+        "--history",
+        str(export),
+        "--out",
+        str(tmp_path),
+    ]
+    assert script.main(argv) == 2

@@ -403,6 +403,10 @@ class MT5Gateway:
         value = getattr(term, "maxbars", None) if term is not None else None
         return int(value) if isinstance(value, int) and value > 0 else None
 
+    async def wait(self, seconds: float) -> None:
+        """Pause on the gateway's clock (the history exporter waits for the terminal to download)."""
+        await self._clock.sleep(seconds)
+
     async def bars_range(
         self, symbol: str, timeframe: Timeframe, start: datetime, end: datetime
     ) -> list[Bar]:
