@@ -14,7 +14,7 @@ Updated by the coding agent at the end of every task.
 - Rollout level: L0 (SIM). `python -m aifund.engine` now runs the whole engine on MT5 (DEMO/LIVE) or in SIM;
   outside SIM it refuses to start without E1 evidence for its detectors (none has any yet: run DEMO with
   `strategy.dry_run: true` or the analyst in shadow).
-- Tests: backend 1,529 passing + 1 Windows-only (MQL5 constant cross-check against the real MetaTrader5
+- Tests: backend 1,589 passing + 1 Windows-only (MQL5 constant cross-check against the real MetaTrader5
   package); frontend 22 Vitest + 10 Playwright.
 - History: 15-month export (2025-07-05 → 2026-09-28) for XAUUSD, NAS100.r, BTCUSD (EURUSD files remain but
   the symbol was dropped from the config on 2026-09-28). M1 is capped at 99,999 bars per symbol by the

@@ -73,3 +73,13 @@ def test_a_frozen_strategy_is_judged_on_every_segment() -> None:
     assert len(two.folds) == 3  # the walk-forward: the first segment only trains
     assert outs[0].direction is Direction.LONG
     assert outs[0].r_net == D("1.0")
+
+
+def test_first_minute_is_where_every_needed_series_has_bars(tmp_path: Path) -> None:
+    for tf in (Timeframe.M15, Timeframe.H1):
+        hs.write_bars(tmp_path, "XAUUSD", tf, flat(tf, days=2))
+    sd = load_symbol(tmp_path, "XAUUSD", XAU, 0, (Timeframe.H4,))
+    assert sd.first_minute((Timeframe.H4,)) == int(sd.data[Timeframe.H4].t[0])
+    assert sd.first_minute((Timeframe.D1,)) is None  # not among the loaded needs
+    empty = load_symbol(tmp_path / "none", "XAUUSD", XAU, 0, (Timeframe.H4,))
+    assert empty.first_minute((Timeframe.H4,)) is None
