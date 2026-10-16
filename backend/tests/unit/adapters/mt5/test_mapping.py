@@ -13,6 +13,7 @@ from aifund.domain.enums import (
     DealReason,
     MarginMode,
     Side,
+    SwapMode,
     Timeframe,
 )
 from aifund.domain.market import FillingMode, OrderRequest, TradeAction
@@ -41,6 +42,23 @@ def test_account_mapping_and_unknown_enum() -> None:
 @pytest.mark.parametrize(("trade_mode", "allowed"), [(4, True), (3, False), (1, False), (0, False)])
 def test_only_full_trade_mode_allows_new_entries(trade_mode: int, allowed: bool) -> None:
     assert m.symbol_spec_from_mt5(make_symbol(trade_mode=trade_mode)).trade_allowed is allowed
+
+
+def test_symbol_swap_is_recorded_for_research() -> None:
+    spec = m.symbol_spec_from_mt5(make_symbol())
+    assert (spec.swap_long, spec.swap_short) == (Decimal("-55.3"), Decimal("12.1"))
+    assert spec.swap_mode is SwapMode.POINTS
+    assert spec.swap_rollover3days == 3  # MT5's day of week: Wednesday
+
+
+@pytest.mark.parametrize(
+    ("mode", "mapped"),
+    [(0, SwapMode.DISABLED), (1, SwapMode.POINTS), (2, SwapMode.UNSUPPORTED), (3, SwapMode.UNSUPPORTED),
+     (4, SwapMode.CURRENCY_DEPOSIT), (5, SwapMode.INTEREST_CURRENT), (6, SwapMode.UNSUPPORTED)],
+)  # fmt: skip
+def test_swap_modes_research_cannot_price_map_to_unsupported(mode: int, mapped: SwapMode) -> None:
+    # the engine keeps working with any mode; only research refuses UNSUPPORTED
+    assert m.symbol_spec_from_mt5(make_symbol(swap_mode=mode)).swap_mode is mapped
 
 
 def test_symbol_with_zero_tick_value_is_a_mapping_error() -> None:

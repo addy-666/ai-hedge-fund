@@ -17,6 +17,7 @@ from aifund.domain.enums import (
     DealReason,
     MarginMode,
     Side,
+    SwapMode,
     Timeframe,
 )
 from aifund.domain.market import FillingMode
@@ -88,6 +89,14 @@ MARGIN_MODE: Final[dict[int, MarginMode]] = {
 # ENUM_SYMBOL_TRADE_MODE
 SYMBOL_TRADE_MODE_DISABLED: Final = 0
 SYMBOL_TRADE_MODE_FULL: Final = 4
+
+# ENUM_SYMBOL_SWAP_MODE; every other mode maps to UNSUPPORTED (research refuses it, the engine ignores swap)
+SWAP_MODE: Final[dict[int, SwapMode]] = {
+    0: SwapMode.DISABLED,
+    1: SwapMode.POINTS,
+    4: SwapMode.CURRENCY_DEPOSIT,
+    5: SwapMode.INTEREST_CURRENT,
+}
 
 # Trade server return codes (order_send). order_check reports success as 0.
 ORDER_CHECK_OK: Final = 0
@@ -172,4 +181,10 @@ PACKAGE_CROSSCHECK: Final[list[tuple[str, int]]] = [
     ("TRADE_RETCODE_CLIENT_DISABLES_AT", 10027),
     ("TRADE_RETCODE_INVALID_FILL", 10030),
     ("SYMBOL_TRADE_MODE_FULL", 4),
+    ("SYMBOL_SWAP_MODE_DISABLED", 0),
+    ("SYMBOL_SWAP_MODE_POINTS", 1),
+    ("SYMBOL_SWAP_MODE_CURRENCY_SYMBOL", 2),
+    ("SYMBOL_SWAP_MODE_CURRENCY_MARGIN", 3),
+    ("SYMBOL_SWAP_MODE_CURRENCY_DEPOSIT", 4),
+    ("SYMBOL_SWAP_MODE_INTEREST_CURRENT", 5),
 ]
