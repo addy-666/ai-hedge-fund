@@ -146,6 +146,64 @@ def test_limit_sell_cancellations_and_replacement() -> None:
     assert simulate(sig, path((99, 99.5, 98.8, 99), (99, 100.5, 98.9, 100)), until=MON + 1) is Skip.CANCELLED
 
 
+def test_stop_buy_fills_on_the_ask_without_a_target_on_the_fill_bar() -> None:
+    p = path((100, 100.6, 100.1, 100.5), (100.5, 101.2, 100.4, 101), (101, 102.5, 100.9, 102), spread=0.1)
+    sig = buy(stop_price=100.8, stop_level=100.0, take_profit_r=1.5, max_chase=0.5)  # opened below: no chase
+    t = trade(simulate(sig, p))
+    assert (t.entry_minute, t.entry_price) == (
+        MON + 1,
+        100.8,
+    )  # ask high 101.3 >= 100.8; first bar's 100.7 not
+    assert t.stop_distance == pytest.approx(0.8)  # a pending order's stop is its level
+    assert (t.exit_minute, t.exit_reason) == (MON + 2, CloseReason.TP)  # target 102.0: not on the fill bar
+
+
+def test_stop_sell_fills_at_the_worse_open_and_stops_out_on_the_ask() -> None:
+    p = path((100, 100.2, 99.8, 100), (99.0, 99.2, 98.8, 99.0), (99.0, 101.6, 98.9, 101.5), spread=0.2)
+    t = trade(simulate(sell(stop_price=99.5, stop_level=101.0, take_profit_r=2.0), p))
+    assert t.entry_price == 99.0  # gapped below the stop price: the bid open
+    assert (t.exit_reason, t.exit_price) == (CloseReason.SL, 101.0)  # ask high 101.8
+
+
+def test_stop_entry_touching_both_sides_fills_then_stops_out() -> None:
+    p = path((100, 101, 98.5, 99))  # the entry and the stop on one bar: the pessimistic reading
+    t = trade(simulate(buy(stop_price=100.8, stop_level=99.0, take_profit_r=1.0), p))
+    assert (t.entry_price, t.exit_reason, t.r) == (100.8, CloseReason.SL, pytest.approx(-1.0))
+
+
+@pytest.mark.parametrize(
+    ("sig", "rows", "why"),
+    [
+        (buy(stop_price=100.5, stop_level=99.0, max_chase=0.3), [(100.9, 101, 100.8, 101)], Skip.CHASED),
+        (sell(stop_price=99.5, stop_level=101.0, max_chase=0.3), [(99.1, 99.2, 99, 99.1)], Skip.CHASED),
+        (buy(stop_price=100.5, stop_level=99.0), [(100, 100.2, 98.9, 99)], Skip.CANCELLED),  # stop side first
+        (sell(stop_price=99.5, stop_level=101.0), [(100, 101.1, 99.8, 101)], Skip.CANCELLED),
+        (buy(stop_price=100.5, stop_level=99.0, limit_expires_at=MON + 2), [(100, 100.2, 99.8, 100)] * 3,
+         Skip.CANCELLED),
+        (buy(stop_price=100.5, stop_level=99.0), [(100, 100.2, 99.8, 100)] * 3, Skip.NO_ENTRY),
+    ],
+)  # fmt: skip
+def test_stop_entry_refusals(sig: Signal, rows: list[tuple[float, float, float, float]], why: Skip) -> None:
+    assert simulate(sig, path(*rows)) is why
+
+
+def test_a_chased_check_only_on_a_timely_first_bar() -> None:
+    late = path(
+        (101, 101.2, 100.9, 101), (101, 101, 101, 101), start=MON + 30
+    )  # opened 30 minutes later: no chase rule, fills
+    t = trade(simulate(buy(stop_price=100.5, stop_level=99.0, max_chase=0.3, max_hold=1), late))
+    assert t.entry_price == 101.0
+
+
+def test_a_newer_signal_replaces_a_pending_stop() -> None:
+    rows = [(100, 100.2, 99.8, 100), (100, 100.2, 99.8, 100), (100, 101, 99.9, 101), (101, 101, 101, 101)]
+    first = buy(stop_price=100.4, stop_level=99.0, max_hold=1)
+    second = buy(stop_price=100.6, stop_level=99.0, decided_at=MON + 1, max_hold=1)
+    result = run([first, second], path(*rows), symbol="X", start=MON, end=MON + 9)
+    assert result.skipped == {Skip.CANCELLED: 1}
+    assert [(t.signal, t.entry_price) for t in result.trades] == [(second, 100.6)]
+
+
 def test_run_plays_one_position_at_a_time_with_a_daily_cap() -> None:
     rows = [(100, 100.2, 99.8, 100)] * 30
     sigs = [buy(stop_distance=5.0, max_hold=10, decided_at=MON + k) for k in (0, 5, 12, 25)]

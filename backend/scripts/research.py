@@ -15,6 +15,9 @@
                                                                  #    parameters on the data before the workshop
                                                                  #    searched (roadmap 11.4); --symbols to try
                                                                  #    other markets (each run is one more trial)
+    uv run python scripts/research.py momentum --family tsmom_daily   # pooled short-horizon momentum over every
+                                                                 #    exported symbol (roadmap 11.15, docs/09 §9);
+                                                                 #    also intraday_momentum; --spend-holdout
 
 ``dsl`` and ``llm`` go through the research loop (docs/09 §6): walk-forward, ledger, BH over the whole ledger,
 and — for survivors, with ``--spend-holdout`` — the single holdout look. A validated hypothesis gets an evidence
@@ -53,10 +56,12 @@ from aifund.agents.researcher import Researcher
 from aifund.config.loader import load_trading_config
 from aifund.config.settings import PROJECT_ROOT, Settings
 from aifund.config.trading_config import ProfileConfig, TradingConfig
-from aifund.domain.enums import Timeframe
+from aifund.domain.enums import Direction, Side, Timeframe
 from aifund.persistence.db import make_engine, make_session_factory
+from aifund.research.basket import momentum as mom
 from aifund.research.basket.candles import utc
 from aifund.research.basket.study import STRATEGIES, WORKSHOP_START, judge, load_symbol, study
+from aifund.research.basket.swap import SwapUnavailable
 from aifund.research.describe import Probe
 from aifund.research.gates import e1_holdout_checks, e1_walk_forward_checks, passed, throughput
 from aifund.research.history import History
@@ -65,7 +70,7 @@ from aifund.research.ledger import Ledger, Origin, Split, digest
 from aifund.research.loop import Evaluation, HistoryEvaluator, ResearchLoop, Window
 from aifund.research.signals import CostModel, SignalOutcome, StudySpec, run_study
 from aifund.research.walkforward import choose, walk_forward
-from aifund.stats import summarize
+from aifund.stats import power, summarize
 from aifund.strategies.base import SetupDetector, TfRoles
 from aifund.strategies.dsl_detector import EntryHypothesis
 from aifund.strategies.failure_test_2b import FailureTest2B, FailureTestParams
@@ -114,7 +119,8 @@ def build(detector: str, roles: TfRoles, params: Any) -> SetupDetector:
 
 def parse(argv: list[str]) -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("study", choices=["baseline", "dsl", "llm", "scheduled", "basket"])
+    p.add_argument("study", choices=["baseline", "dsl", "llm", "scheduled", "basket", "momentum"])
+    p.add_argument("--family", choices=sorted(mom.FAMILIES), help="momentum: which family (docs/09 §9)")
     p.add_argument("--strategy", choices=sorted(STRATEGIES), help="basket: which workshop strategy")
     p.add_argument(
         "--until", default=WORKSHOP_START.date().isoformat(),
@@ -229,6 +235,8 @@ def main(argv: list[str]) -> int:
         return scheduled(args)
     if args.study == "basket":
         return basket(args)
+    if args.study == "momentum":
+        return momentum(args)
     if args.study != "baseline":
         return asyncio.run(loop_main(args))
     cfg = load_config()
@@ -591,6 +599,187 @@ async def loop_main(args: argparse.Namespace) -> int:
         for r in p.rejected:
             print(f"  rejected (round {r.round}): {r.reason}")
         print_evaluations(report.evaluations)
+    return 0
+
+
+def clustered(outcomes: list[SignalOutcome]) -> Any:
+    """Summary with the bootstrap resampling decision dates (docs/09 §9.4)."""
+    return summarize(
+        [o.r_net for o in outcomes],
+        times=[o.entry_time for o in outcomes],
+        clusters=[mom.date_cluster(o) for o in outcomes],
+    )
+
+
+def momentum(args: argparse.Namespace) -> int:
+    """Pooled short-horizon momentum (roadmap 11.15, docs/09 §9): one hypothesis per family over the declared
+    universe, walk-forward -> ledger -> BH -> (``--spend-holdout``) the holdout once. Never an evidence record
+    (not an engine detector yet)."""
+    if not args.family:
+        print("momentum needs --family", file=sys.stderr)
+        return 2
+    cfg = load_config()
+    rc = cfg.research
+    root = Path(args.history)
+    manifest = hs.read_manifest(root)
+    specs = hs.read_specs(root)
+    variants = mom.FAMILIES[args.family]
+    offset = manifest.server_offset_minutes
+    wanted = [s.strip() for s in args.symbols.split(",") if s.strip()] or sorted(specs)
+    universe: list[mom.MomentumData] = []
+    for sym in wanted:
+        if sym not in specs:
+            print(f"  {sym}: not in the export", flush=True)
+            continue
+        try:
+            md = mom.load_momentum(root, sym, specs[sym], offset, args.family)
+        except SwapUnavailable as exc:
+            print(f"refused: {exc}; {args.family} holds positions overnight (docs/09 §9.2)", file=sys.stderr)
+            return 2
+        if md is None:
+            print(f"  {sym}: not in {args.family} (no session, or missing D1/path bars)", flush=True)
+            continue
+        universe.append(md)
+    if not universe:
+        print(f"no symbol of {wanted} can run {args.family}", file=sys.stderr)
+        return 2
+    symbols = [md.symbol for md in universe]
+    start, holdout_start, end = holdout_window(args, manifest, rc)
+    costs = CostModel(commission_per_lot=rc.commission_per_lot, slippage_points=rc.slippage_points)
+    fingerprint = digest(
+        {"server": manifest.server, "start": manifest.start, "end": manifest.end, "rows": manifest.rows}
+    )
+    ledger = Ledger(Path(args.out) / "ledger.jsonl")
+    now = datetime.now(UTC)
+    print(
+        f"momentum {args.family} on {symbols}: walk-forward {start:%Y-%m-%d} -> {holdout_start:%Y-%m-%d}, "
+        f"holdout {holdout_start:%Y-%m-%d} -> {end:%Y-%m-%d}; paths "
+        + ", ".join(f"{md.symbol} {'/'.join(md.path_tfs)}" for md in universe),
+        flush=True,
+    )
+    report: dict[str, Any] = {
+        "family": args.family,
+        "symbols": symbols,
+        "window": [start.isoformat(), holdout_start.isoformat(), end.isoformat()],
+        "swap": {md.symbol: md.swap is not None for md in universe},
+        "variants": {},
+    }
+    outs: dict[str, list[SignalOutcome]] = {}
+    for name, strategy in variants.items():
+        outs[name] = mom.pooled(
+            strategy, universe, costs=costs, offset=offset, start=start, end=holdout_start
+        )
+        s = clustered(outs[name])
+        hypothesis = {"momentum": strategy.name, "version": strategy.version, "params": strategy.params(),
+                      "symbols": symbols}  # fmt: skip
+        ledger.record(hypothesis=hypothesis, symbols=symbols, start=start, end=holdout_start, split=Split.IN_SAMPLE,
+                      origin=Origin.OPERATOR, data_fingerprint=fingerprint, summary=s, now=now)  # fmt: skip
+        report["variants"][name] = {"params": strategy.params(), "in_sample": s.render()}
+        print(f"  {name}: in-sample (diagnostic only): {s.render()}", flush=True)
+
+    wf = walk_forward(outs, start=start, end=holdout_start, folds=rc.folds, min_train_signals=rc.min_train_signals,
+                      cluster_of=mom.date_cluster)  # fmt: skip
+    first = next(iter(variants.values()))
+    family = {"momentum": args.family, "version": first.version,
+              "variants": {n: v.params() for n, v in variants.items()},
+              "selection": f"walk-forward best mean, min {rc.min_train_signals}", "symbols": symbols,
+              "costs": "spread, commission, slippage, swap", "bootstrap": "clustered by decision date"}  # fmt: skip
+    ledger.record(hypothesis=family, symbols=symbols, start=start, end=holdout_start, split=Split.WALK_FORWARD,
+                  origin=Origin.OPERATOR, data_fingerprint=fingerprint, summary=wf.summary, now=now)  # fmt: skip
+    survives = digest(family) in ledger.survivors(float(rc.fdr_q))
+    checks = e1_walk_forward_checks(wf, survives_fdr=survives, cfg=rc)
+
+    chosen, _ = choose(outs, start=start, before=holdout_start, min_train_signals=rc.min_train_signals)
+    picked = outs[chosen]
+    began = min((o.entry_time for o in picked), default=holdout_start)
+    rate = mom.per_month(len(picked), began, holdout_start)
+    oos = wf.out_of_sample
+    pw = power([o.r_net for o in oos], [mom.date_cluster(o) for o in oos],
+               clusters_per_year=mom.clusters_per_year(oos))  # fmt: skip
+    always_long = mom.pooled(variants[chosen], universe, costs=costs, offset=offset, start=start,
+                             end=holdout_start, force=Side.BUY)  # fmt: skip
+    stress = mom.pooled(variants[chosen], universe, costs=costs, offset=offset, start=start, end=holdout_start,
+                        stress=True)  # fmt: skip
+    controls = {
+        "always_long": clustered(always_long),
+        "long_only": clustered([o for o in picked if o.direction is Direction.LONG]),
+        "short_only": clustered([o for o in picked if o.direction is Direction.SHORT]),
+        "stress_every_boundary": clustered(stress),
+    }
+    per_symbol = {}
+    for sym in symbols:
+        mine = [o for o in picked if o.symbol == sym]
+        per_symbol[sym] = {"summary": clustered(mine).render(),
+                           "per_month": mom.per_month(len(mine), began, holdout_start)}  # fmt: skip
+    tp = throughput(len(picked), began, holdout_start, rc, cfg.learning)
+
+    print("\nwalk-forward (anchored, lookback/window chosen in-sample; CI resamples decision dates):")
+    for f in wf.folds:
+        mean = "none" if f.oos_mean is None else f"{f.oos_mean:+.3f}R"
+        print(f"  fold {f.index}: {f.test_start:%Y-%m-%d} -> {f.test_end:%Y-%m-%d}  chose {f.chosen:<8} "
+              f"in-sample {f.in_sample.n} {f.in_sample.mean:+.3f}R | out-of-sample {len(f.out_of_sample)} {mean}")  # fmt: skip
+    print(f"  OUT-OF-SAMPLE: {wf.summary.render()}; positive folds {wf.positive_fold_share:.0%}")
+    if pw is not None:
+        print(f"  power: {pw.render()}")
+    target = mom.TARGET_TRADES_PER_MONTH
+    flag = "" if rate >= target else f"  BELOW the frequency target of {target}: add symbols (docs/09 §9.3)"
+    print(f"frequency ({chosen}): {rate:.0f} trades/month{flag}")
+    print(f"throughput: {tp.render()}")
+    print("per symbol (diagnostic; the verdict is the pool's, all or none):")
+    for sym, row in per_symbol.items():
+        print(f"  {sym:<10} {row['per_month']:5.0f}/month  {row['summary']}")
+    print("controls (diagnostic, not trials):")
+    for name, ctl in controls.items():
+        print(f"  {name:<22} {ctl.render()}")
+    print("gate E1 (walk-forward part):")
+    for c in checks:
+        print(f"  [{'x' if c.passed else ' '}] {c.name}: {c.detail}")
+
+    report.update(
+        chosen=chosen,
+        walk_forward={
+            "summary": wf.summary.render(), "positive_fold_share": wf.positive_fold_share,
+            "folds": [{"index": f.index, "test_start": f.test_start.isoformat(), "chosen": f.chosen,
+                       "in_sample": f.in_sample.render(), "oos_n": len(f.out_of_sample), "oos_mean": f.oos_mean}
+                      for f in wf.folds],
+            "monthly": wf.summary.monthly,
+        },
+        power=None if pw is None else asdict(pw),
+        trades_per_month=rate, below_frequency_target=rate < target,
+        per_symbol=per_symbol, controls={k: v.render() for k, v in controls.items()},
+        throughput={"signals_per_month": tp.signals_per_month, "months_to": tp.months_to, "too_slow": tp.too_slow},
+        e1_walk_forward=[asdict(c) for c in checks], survives_fdr=survives, holdout=None,
+    )  # fmt: skip
+
+    if args.spend_holdout:
+        if not passed(checks):
+            print(
+                "holdout NOT spent: the walk-forward part of E1 failed (it stays clean for a better hypothesis)"
+            )
+        elif ledger.holdout_spent(family, holdout_start, end):
+            print("holdout NOT spent: this hypothesis already had its one look at this holdout window")
+        else:
+            held = mom.pooled(
+                variants[chosen], universe, costs=costs, offset=offset, start=holdout_start, end=end
+            )
+            hs_summary = clustered(held)
+            ledger.record(hypothesis=family, symbols=symbols, start=holdout_start, end=end, split=Split.HOLDOUT,
+                          origin=Origin.OPERATOR, data_fingerprint=fingerprint, summary=hs_summary, now=now)  # fmt: skip
+            hold = e1_holdout_checks(hs_summary, rc)
+            print(f"holdout ({chosen}): {hs_summary.render()}")
+            for c in hold:
+                print(f"  [{'x' if c.passed else ' '}] {c.name}: {c.detail}")
+            print(f"gate E1: {'PASSED' if passed(checks + hold) else 'FAILED'} (no evidence record: Part B builds "
+                  "the engine detector first)")  # fmt: skip
+            report["holdout"] = {"chosen": chosen, "summary": hs_summary.render(),
+                                 "checks": [asdict(c) for c in hold]}  # fmt: skip
+    else:
+        print(f"verdict: {'PASSED' if passed(checks) else 'FAILED'} (E1 walk-forward part; holdout unspent)")
+
+    out = Path(args.out) / f"report_momentum_{args.family}_{now:%Y%m%d_%H%M%S}.json"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(report, indent=2, default=str))
+    print(f"report: {out}\nledger: {ledger.path}")
     return 0
 
 

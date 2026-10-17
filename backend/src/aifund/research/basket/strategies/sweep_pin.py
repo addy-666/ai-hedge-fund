@@ -63,7 +63,7 @@ class SweepPinFollow:
     def params(self) -> dict[str, Any]:
         return self.p.asdict()
 
-    def signals(self, data: Mapping[Timeframe, Candles], tick: float) -> list[Signal]:
+    def signals(self, data: Mapping[Timeframe, Candles], tick: float, symbol: str = "") -> list[Signal]:
         bars, fine = data.get(Timeframe.H1), finest(data, Timeframe.H1)
         if bars is None or fine is None:
             return []

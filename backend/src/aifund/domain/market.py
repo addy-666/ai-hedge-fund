@@ -14,6 +14,7 @@ from aifund.domain.enums import (
     DealReason,
     MarginMode,
     Side,
+    SwapMode,
     Timeframe,
 )
 from aifund.domain.values import UtcDatetime
@@ -86,6 +87,12 @@ class SymbolSpec(BaseModel):
     currency_profit: str
     currency_margin: str
     trade_allowed: bool = True
+    # Overnight financing as the broker states it today (roadmap 11.11). Research charges it on positions held
+    # through a rollover; the engine does not read it. None: not recorded (exports before 11.11).
+    swap_long: Decimal | None = None
+    swap_short: Decimal | None = None
+    swap_mode: SwapMode | None = None
+    swap_rollover3days: int | None = Field(default=None, ge=0, le=6)  # ENUM_DAY_OF_WEEK: 0 = Sunday
 
     @model_validator(mode="after")
     def _volumes_consistent(self) -> Self:

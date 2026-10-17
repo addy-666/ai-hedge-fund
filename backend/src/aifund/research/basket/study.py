@@ -29,6 +29,7 @@ from aifund.research.basket.strategies.base import BasketStrategy
 from aifund.research.basket.strategies.candle_streak import CandleStreak
 from aifund.research.basket.strategies.fib_pullback import FibPullback
 from aifund.research.basket.strategies.ict_dmss import DmssParams, IctDmss
+from aifund.research.basket.strategies.index_opening import IndexOpeningS1
 from aifund.research.basket.strategies.spike_fade import SpikeFade
 from aifund.research.basket.strategies.sweep_pin import SweepPinFollow
 from aifund.research.basket.strategies.sweep_rejection import SweepRejectionFollow
@@ -48,6 +49,7 @@ STRATEGIES: dict[str, dict[str, BasketStrategy]] = {
     "sweep_rejection_follow": {"frozen": SweepRejectionFollow()},
     "spike_fade": {"frozen": SpikeFade()},
     "ict_dmss": {"c1": IctDmss(), "c1b": IctDmss(DmssParams(target_r=3.0))},
+    "index_opening_s1": {"frozen": IndexOpeningS1()},
 }
 
 
@@ -127,7 +129,7 @@ def study(
 ) -> tuple[list[SignalOutcome], BasketResult | None]:
     if sd.path is None:
         return [], None
-    signals = strategy.signals(sd.data, float(sd.spec.tick_size))
+    signals = strategy.signals(sd.data, float(sd.spec.tick_size), sd.symbol)
     result = run(
         signals,
         sd.path,

@@ -23,7 +23,9 @@ class BasketStrategy(Protocol):
 
     def params(self) -> dict[str, Any]: ...
 
-    def signals(self, data: Mapping[Timeframe, Candles], tick: float) -> list[Signal]: ...
+    def signals(self, data: Mapping[Timeframe, Candles], tick: float, symbol: str = "") -> list[Signal]:
+        """Signals on closed bars; ``symbol`` (the broker's) for markets with exchange hours."""
+        ...
 
 
 @dataclass(frozen=True)

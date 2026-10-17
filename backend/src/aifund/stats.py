@@ -5,6 +5,10 @@ research (hypotheses) and rules (the learning loop), so it sits at the bottom of
   in time order, mean R per calendar month;
 - a percentile **bootstrap CI of the mean** (``confidence``, default 90%) and a **one-sided p-value** for
   mean > 0 from the bootstrap of the centred sample: p = (#{centred means >= observed mean} + 1) / (B + 1).
+- **clustered** (docs/09 §9.4): with ``clusters`` (one key per outcome, e.g. the decision date) the bootstrap
+  resamples whole clusters, each carrying all its outcomes, and the mean is their total over their count —
+  outcomes that move together (several symbols on one risk-on day) then count as one draw, not many;
+  ``power`` gives the smallest mean the sample could have detected.
 
 A 90% two-sided interval puts 5% in each tail, so "CI lower bound > 0" is a one-sided 5% test; with pure
 noise it fires about 1 time in 20 — which is why the trial ledger corrects for how many hypotheses were tried.
@@ -14,7 +18,7 @@ from __future__ import annotations
 
 import math
 from collections import defaultdict
-from collections.abc import Mapping, Sequence
+from collections.abc import Hashable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
@@ -66,10 +70,96 @@ def _bootstrap_means(x: np.ndarray, resamples: int, rng: np.random.Generator) ->
     return out
 
 
+def _cluster_totals(x: np.ndarray, clusters: Sequence[Hashable]) -> tuple[np.ndarray, np.ndarray]:
+    """(sum, count) of ``x`` per distinct cluster key, in first-seen order."""
+    index: dict[Hashable, int] = {}
+    keys = np.array([index.setdefault(k, len(index)) for k in clusters], dtype=np.int64)
+    sums = np.bincount(keys, weights=x, minlength=len(index))
+    counts = np.bincount(keys, minlength=len(index)).astype(float)
+    return sums, counts
+
+
+def _cluster_bootstrap_means(
+    sums: np.ndarray, counts: np.ndarray, resamples: int, rng: np.random.Generator
+) -> np.ndarray:
+    out = np.empty(resamples)
+    k_all = len(sums)
+    done = 0
+    while done < resamples:
+        k = min(CHUNK, resamples - done)
+        idx = rng.integers(0, k_all, size=(k, k_all))
+        out[done : done + k] = sums[idx].sum(axis=1) / counts[idx].sum(axis=1)
+        done += k
+    return out
+
+
+def cluster_bootstrap_mean_ci(
+    x: Sequence[float] | np.ndarray,
+    clusters: Sequence[Hashable],
+    *,
+    seed: int = 0,
+    resamples: int = 2000,
+    confidence: float = 0.90,
+) -> tuple[float, float] | None:
+    """Percentile CI of the mean, resampling whole clusters (None below 2 clusters)."""
+    arr = np.asarray(x, dtype=float)
+    if len(clusters) != len(arr):
+        raise ValueError("clusters and x must have the same length")
+    sums, counts = _cluster_totals(arr, clusters)
+    if len(sums) < 2:
+        return None
+    means = _cluster_bootstrap_means(sums, counts, resamples, np.random.default_rng(seed))
+    tail = (1 - confidence) / 2 * 100
+    lo, hi = np.percentile(means, [tail, 100 - tail])
+    return float(lo), float(hi)
+
+
+@dataclass(frozen=True)
+class Power:
+    n: int
+    clusters: int
+    standard_error: float  # of the mean, from the clustered bootstrap
+    min_detectable: float  # mean R the one-sided test could have told from zero
+    annual_sharpe: float | None  # the same edge as the annual Sharpe of the per-cluster totals
+
+    def render(self) -> str:
+        sharpe = "n/a" if self.annual_sharpe is None else f"{self.annual_sharpe:.2f}"
+        return (
+            f"could detect mean >= {self.min_detectable:+.3f}R (SE {self.standard_error:.3f}, "
+            f"{self.clusters} independent dates of {self.n} outcomes) = annual Sharpe >= {sharpe}"
+        )
+
+
+def power(
+    r: Sequence[float | Decimal],
+    clusters: Sequence[Hashable],
+    *,
+    clusters_per_year: float,
+    seed: int = 0,
+    resamples: int = 2000,
+    z: float = 1.645,
+) -> Power | None:
+    """The smallest mean R a one-sided test at ``z`` could have detected on this sample (docs/09 §9.4), and
+    that edge as the annual Sharpe of the per-cluster R totals (``clusters_per_year`` of them). None below 2
+    clusters."""
+    x = np.array([float(v) for v in r], dtype=float)
+    if len(clusters) != len(x):
+        raise ValueError("clusters and r must have the same length")
+    sums, counts = _cluster_totals(x, clusters)
+    if len(sums) < 2:
+        return None
+    se = float(np.std(_cluster_bootstrap_means(sums, counts, resamples, np.random.default_rng(seed)), ddof=1))
+    mde = z * se
+    spread = float(np.std(sums - x.mean() * counts, ddof=1))
+    sharpe = mde * float(counts.mean()) / spread * math.sqrt(clusters_per_year) if spread > 0 else None
+    return Power(len(x), len(sums), se, mde, sharpe)
+
+
 def summarize(
     r: Sequence[float | Decimal],
     *,
     times: Sequence[datetime] | None = None,
+    clusters: Sequence[Hashable] | None = None,
     seed: int = 0,
     resamples: int = 2000,
     confidence: float = 0.90,
@@ -78,6 +168,8 @@ def summarize(
         raise ValueError(f"confidence must be in (0, 1), got {confidence}")
     if times is not None and len(times) != len(r):
         raise ValueError("times and r must have the same length")
+    if clusters is not None and len(clusters) != len(r):
+        raise ValueError("clusters and r must have the same length")
     x = np.array([float(v) for v in r], dtype=float)
     n = len(x)
     if n == 0:
@@ -95,10 +187,18 @@ def summarize(
     mean = float(x.mean())
     ci_low = ci_high = None
     p_value = 1.0
-    if n >= 2:
+    tail = (1 - confidence) / 2 * 100
+    if clusters is not None:
+        sums, counts = _cluster_totals(x, clusters)
+        if len(sums) >= 2:
+            rng = np.random.default_rng(seed)
+            means = _cluster_bootstrap_means(sums, counts, resamples, rng)
+            ci_low, ci_high = (float(v) for v in np.percentile(means, [tail, 100 - tail]))
+            centred = _cluster_bootstrap_means(sums - mean * counts, counts, resamples, rng)
+            p_value = float((np.sum(centred >= mean) + 1) / (resamples + 1))
+    elif n >= 2:
         rng = np.random.default_rng(seed)
         means = _bootstrap_means(x, resamples, rng)
-        tail = (1 - confidence) / 2 * 100
         ci_low, ci_high = (float(v) for v in np.percentile(means, [tail, 100 - tail]))
         centred = _bootstrap_means(x - mean, resamples, rng)
         p_value = float((np.sum(centred >= mean) + 1) / (resamples + 1))
