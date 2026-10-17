@@ -111,6 +111,16 @@ class MarginMode(StrEnum):
     HEDGING = "HEDGING"
 
 
+class SwapMode(StrEnum):
+    """How the broker states a symbol's swap (ENUM_SYMBOL_SWAP_MODE); research prices only the first four."""
+
+    DISABLED = "DISABLED"
+    POINTS = "POINTS"
+    CURRENCY_DEPOSIT = "CURRENCY_DEPOSIT"  # account money per lot
+    INTEREST_CURRENT = "INTEREST_CURRENT"  # annual percent of the current price
+    UNSUPPORTED = "UNSUPPORTED"  # any other mode (base/margin currency, interest on open price, reopen)
+
+
 class DealEntry(StrEnum):
     """MT5 DEAL_ENTRY_*: whether a deal opens, closes, reverses or closes-by a position."""
 

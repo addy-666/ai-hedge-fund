@@ -252,6 +252,19 @@ strategies, each with its own proven edge; deterministic allocation; the LLM inf
 | 11.4 | **Pre-registered test** `research.py basket --strategy X`: the frozen hypothesis on **[history start, 2025-10-01)** — data no workshop search saw — is the out-of-sample result (a declared grid of >1 variant goes through the anchored walk-forward instead); E1's walk-forward checks (≥ 200 signals, mean and 90% CI > 0, ≥ 60% positive segments, BH over the whole ledger); the workshop year is reported as in-sample. No evidence record yet: these are not engine detectors | M | Verdict per strategy in PROGRESS; ledger rows |
 | 11.5 | **Batch 2**, declared before any run: IndexOpening S1+BOS (needs GER40/JPN225 M1, exchange-DST opens, stop entries), `srea` (SR H1 + M5, NAS100), and cross-asset-conditioned variants of the 11.4 survivors (EURUSD / USDJPY / XAGUSD agreement filters, one hypothesis each) | L | As 11.4 |
 
+### Part C — Short-horizon momentum, pooled (research only; `09` §9, pre-registered 2026-10-16)
+
+Runs on the 15-month export; target 100–200 trades a month per family, reached by breadth (one decision per
+symbol per day), not by shorter holds.
+
+| # | Task | Size | DoD |
+|---|---|---|---|
+| 11.11 | **Universe export + swap** (operator export, code in the exporter): export EURUSD, GER40, JPN225, XAGUSD, USDJPY, US30, UK100 (broker names) — and the three traded symbols again, so their specs gain swap — over the existing window with `--merge --server-offset-hours 3`; `export_history.py` records `swap_long`, `swap_short`, `swap_mode`, `swap_rollover3days` per symbol in `specs.json` (optional fields; the engine is untouched); `research/basket/swap.py` prices it and the segment player (11.12) charges it per server rollover crossed, triple on the rollover-3-days weekday, positive swap counted as 0; a missing field or an unimplemented mode refuses. The 11.3 workshop ports do not charge swap yet (their 11.4 numbers stay comparable) | S | Tests per mode, the triple day, the refusal; manifest lists the universe |
+| 11.12 | **Daily segments in the harness**: a position held across D1 closes is one position (no spread at a continuing boundary; stop re-anchored and size reset per segment), one `SignalOutcome` per segment; flat before long closes for weekday symbols, entry delayed over the weekend; a stress mode charging spread + slippage at every boundary | M | Hand-built bars: continuing vs flipping segments, stop inside a segment then flat to the next decision, the Friday flatten, stress = primary minus the boundary costs exactly |
+| 11.13 | **Strategies** (`research/basket/strategies/`): `tsmom_daily` (calendar-day lookbacks 14/28/56) and `intraday_momentum` (exchange-session anchors converted from server time with the New York + 7 h rule and the exchange's zone; signal windows declared in `09` §9.1; half days and closed days) | M | Sign, warm-up and no-lookahead tests; the price-reflected market gives the opposite side; session anchors across US and EU DST changes and Tokyo |
+| 11.14 | **Clustered statistics**: `stats.cluster_bootstrap_mean_ci` and its p-value (resample dates, each with all its outcomes); the walk-forward / E1 checks take an optional cluster key; power line (minimum detectable mean R and its annual Sharpe) | M | On i.i.d. data ≈ the plain bootstrap; wider under planted cross-symbol correlation; correlated-noise false positives ≤ 8% over 200 seeds |
+| 11.15 | **`research.py momentum --family tsmom_daily\|intraday_momentum`**: the declared universe, walk-forward → ledger → BH → holdout once; report with the measured trades a month (flagged below 100), per-symbol rows, always-long and long/short-only controls, the stress row, power line and throughput | S | Verdict per family in PROGRESS, whatever it says; ledger rows |
+
 ### Part B — Build (engine; only for strategies that pass 11.4)
 
 | # | Task | Size | DoD |

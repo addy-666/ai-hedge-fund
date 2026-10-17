@@ -52,6 +52,10 @@ def make_symbol(name: str = "XAUUSDm", **over: Any) -> NS:
         currency_profit="USD",
         currency_margin="USD",
         trade_mode=4,
+        swap_long=-55.3,
+        swap_short=12.1,
+        swap_mode=1,
+        swap_rollover3days=3,
     )
     return NS(**{**base, **over})
 

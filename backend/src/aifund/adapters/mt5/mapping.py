@@ -13,7 +13,7 @@ from typing import Any
 
 from aifund.adapters.mt5 import constants as c
 from aifund.adapters.mt5.server_time import server_epoch_to_utc
-from aifund.domain.enums import DealReason, Timeframe
+from aifund.domain.enums import DealReason, SwapMode, Timeframe
 from aifund.domain.market import (
     AccountInfo,
     Bar,
@@ -84,6 +84,10 @@ def symbol_spec_from_mt5(info: Any) -> SymbolSpec:
             currency_margin=str(info.currency_margin),
             # Close-only / long-only / short-only / disabled symbols are not open for new entries.
             trade_allowed=int(info.trade_mode) == c.SYMBOL_TRADE_MODE_FULL,
+            swap_long=dec(info.swap_long),
+            swap_short=dec(info.swap_short),
+            swap_mode=c.SWAP_MODE.get(int(info.swap_mode), SwapMode.UNSUPPORTED),
+            swap_rollover3days=int(info.swap_rollover3days),
         )
     except ValueError as exc:
         raise MappingError(f"symbol_info({getattr(info, 'name', '?')}): {exc}") from exc

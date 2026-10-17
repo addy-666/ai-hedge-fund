@@ -48,6 +48,7 @@ cd backend && uv run python scripts/research.py llm --rounds 1   # LLM researche
 cd backend && uv run python scripts/research.py basket --strategy candle_streak   # Phase 11: a workshop strategy at frozen params on the pre-2025-10 data; --symbols, --until
 cd backend && uv run python scripts/import_workshop_m1.py --workshop "<path>/claude dev workshop" --base "<export>/history"   # Mac: workshop tick-built M1 + an export -> data/research/history (pass --history to research.py)
 cd backend && uv run python scripts/research.py basket --strategy index_opening_s1 --history ../data/research/history   # 11.5: GER40.r + Nikkei225 opening S1 + BOS
+cd backend && uv run python scripts/research.py momentum --family tsmom_daily --symbols XAUUSD,NAS100.r,BTCUSD   # Phase 11 Part C: pooled momentum (also intraday_momentum); --spend-holdout
 cd backend && uv run python scripts/research.py scheduled   # the weekly run: only on new history, rolls the holdout; --force
 cd backend && uv run python scripts/export_history.py --update   # Windows: merge the bars since the last export (the weekly research task)
 cd backend && uv run python scripts/spread_report.py   # spread vs ATR per symbol: evidence for the spread gates
